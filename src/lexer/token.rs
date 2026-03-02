@@ -26,6 +26,7 @@ pub enum TokenKind {
     Def, Struct, Enum, Interface, Impl, Annotation, Processor,
     Type, Hook, Const, Priv, Return, Raise, Spawn, As, Mut,
     If, Elif, Else, While, Do, For, Break, Continue, Match,
+    Try, Except, Finally,
     Import, Export, Self_, Void,
 
     // Operators

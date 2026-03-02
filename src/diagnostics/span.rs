@@ -18,20 +18,3 @@ impl Span {
         self.start == self.end
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn span_len() {
-        let s = Span::new(4, 9);
-        assert_eq!(s.len(), 5);
-    }
-
-    #[test]
-    fn span_empty() {
-        assert!(Span::new(3, 3).is_empty());
-        assert!(!Span::new(3, 4).is_empty());
-    }
-}

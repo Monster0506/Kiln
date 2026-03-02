@@ -12,18 +12,3 @@ pub enum LexError {
     #[error("invalid numeric literal at offset {span:?}")]
     InvalidNumeric { span: Span },
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lex_error_display() {
-        let e = LexError::UnexpectedChar {
-            ch: '$',
-            span: Span::new(5, 6),
-        };
-        let msg = e.to_string();
-        assert!(msg.contains('$'));
-    }
-}

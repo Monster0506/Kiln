@@ -1,5 +1,5 @@
-use kiln_compiler::lexer::{Lexer, TokenKind};
 use kiln_compiler::diagnostics::Span;
+use kiln_compiler::lexer::{Lexer, TokenKind};
 
 #[test]
 fn lex_identifier() {

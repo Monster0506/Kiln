@@ -1,4 +1,4 @@
-pub mod span;
 pub mod error;
-pub use span::Span;
+pub mod span;
 pub use error::LexError;
+pub use span::Span;

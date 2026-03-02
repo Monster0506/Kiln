@@ -1,5 +1,5 @@
-use thiserror::Error;
 use super::Span;
+use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum LexError {

@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
-use std::fs;
 use kiln_compiler::lexer::Lexer;
+use std::fs;
 
 #[derive(Parser)]
 #[command(name = "kiln", about = "The Kiln compiler")]
@@ -22,8 +22,10 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         Command::Lex { file } => {
-            let src = fs::read_to_string(&file)
-                .unwrap_or_else(|e| { eprintln!("error reading {file}: {e}"); std::process::exit(1); });
+            let src = fs::read_to_string(&file).unwrap_or_else(|e| {
+                eprintln!("error reading {file}: {e}");
+                std::process::exit(1);
+            });
 
             match Lexer::new(&src).tokenize() {
                 Ok(tokens) => {

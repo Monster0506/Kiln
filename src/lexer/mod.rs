@@ -1,8 +1,8 @@
-mod mode;
-mod token;
 mod lexer;
+mod mode;
 mod normal;
 mod string;
+mod token;
 
-pub use token::{Token, TokenKind};
 pub use lexer::Lexer;
+pub use token::{Token, TokenKind};

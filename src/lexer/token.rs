@@ -23,14 +23,44 @@ pub enum TokenKind {
     Ident(String),
 
     // Keywords
-    Def, Struct, Enum, Interface, Impl, Annotation, Processor,
-    Type, Hook, Const, Priv, Return, Raise, Spawn, As, Mut,
-    If, Elif, Else, While, Do, For, Break, Continue, Match,
-    Try, Except, Finally,
-    Import, Export, Self_, Void,
+    Def,
+    Struct,
+    Enum,
+    Interface,
+    Impl,
+    Annotation,
+    Processor,
+    Type,
+    Hook,
+    Const,
+    Priv,
+    Return,
+    Raise,
+    Spawn,
+    As,
+    Mut,
+    If,
+    Elif,
+    Else,
+    While,
+    Do,
+    For,
+    Break,
+    Continue,
+    Match,
+    Try,
+    Except,
+    Finally,
+    Import,
+    Export,
+    Self_,
+    Void,
 
     // Operators
-    Plus, Minus, Star, Slash,
+    Plus,
+    Minus,
+    Star,
+    Slash,
     Eq,        // `=`
     EqEq,      // `==`
     Bang,      // `!`
@@ -50,10 +80,15 @@ pub enum TokenKind {
     At,        // `@`
 
     // Punctuation
-    LParen, RParen,
-    LBrace, RBrace,
-    LBracket, RBracket,
-    Comma, Colon, Dot,
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
+    Comma,
+    Colon,
+    Dot,
 
     // Special
     Eof,
@@ -68,6 +103,9 @@ pub struct Token {
 
 impl Token {
     pub fn new(kind: TokenKind, start: usize, end: usize) -> Self {
-        Self { kind, span: crate::diagnostics::Span::new(start, end) }
+        Self {
+            kind,
+            span: crate::diagnostics::Span::new(start, end),
+        }
     }
 }

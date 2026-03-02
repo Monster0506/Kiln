@@ -1,7 +1,7 @@
-use crate::diagnostics::{LexError, Span};
-use super::token::{Token, TokenKind};
-use super::mode::Mode;
 use super::lexer::Lexer;
+use super::mode::Mode;
+use super::token::{Token, TokenKind};
+use crate::diagnostics::{LexError, Span};
 
 impl<'src> Lexer<'src> {
     pub(super) fn lex_string(&mut self) -> Result<Token, LexError> {
@@ -36,13 +36,35 @@ impl<'src> Lexer<'src> {
                 Some('\\') => {
                     self.advance(); // consume `\`
                     match self.peek() {
-                        Some('{')  => { self.advance(); text.push('{'); }
-                        Some('}')  => { self.advance(); text.push('}'); }
-                        Some('n')  => { self.advance(); text.push('\n'); }
-                        Some('t')  => { self.advance(); text.push('\t'); }
-                        Some('"')  => { self.advance(); text.push('"'); }
-                        Some('\\') => { self.advance(); text.push('\\'); }
-                        Some(c)    => { text.push('\\'); text.push(c); self.advance(); }
+                        Some('{') => {
+                            self.advance();
+                            text.push('{');
+                        }
+                        Some('}') => {
+                            self.advance();
+                            text.push('}');
+                        }
+                        Some('n') => {
+                            self.advance();
+                            text.push('\n');
+                        }
+                        Some('t') => {
+                            self.advance();
+                            text.push('\t');
+                        }
+                        Some('"') => {
+                            self.advance();
+                            text.push('"');
+                        }
+                        Some('\\') => {
+                            self.advance();
+                            text.push('\\');
+                        }
+                        Some(c) => {
+                            text.push('\\');
+                            text.push(c);
+                            self.advance();
+                        }
                         None => {}
                     }
                 }

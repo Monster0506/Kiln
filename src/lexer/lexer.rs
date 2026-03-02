@@ -1,6 +1,6 @@
-use crate::diagnostics::LexError;
-use super::token::{Token, TokenKind};
 use super::mode::Mode;
+use super::token::{Token, TokenKind};
+use crate::diagnostics::LexError;
 
 pub struct Lexer<'src> {
     pub(super) src: &'src str,
@@ -43,7 +43,9 @@ impl<'src> Lexer<'src> {
     }
 
     pub(super) fn current_mode(&self) -> &Mode {
-        self.mode_stack.last().expect("mode stack should never be empty")
+        self.mode_stack
+            .last()
+            .expect("mode stack should never be empty")
     }
 
     pub fn tokenize(mut self) -> Result<Vec<Token>, Vec<LexError>> {
@@ -54,7 +56,9 @@ impl<'src> Lexer<'src> {
                 Ok(tok) => {
                     let is_eof = tok.kind == TokenKind::Eof;
                     tokens.push(tok);
-                    if is_eof { break; }
+                    if is_eof {
+                        break;
+                    }
                 }
                 Err(e) => {
                     errors.push(e);
@@ -62,7 +66,11 @@ impl<'src> Lexer<'src> {
                 }
             }
         }
-        if errors.is_empty() { Ok(tokens) } else { Err(errors) }
+        if errors.is_empty() {
+            Ok(tokens)
+        } else {
+            Err(errors)
+        }
     }
 
     pub fn next_token(&mut self) -> Result<Token, LexError> {

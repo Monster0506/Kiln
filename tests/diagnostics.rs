@@ -1,4 +1,4 @@
-use kiln_compiler::diagnostics::{Span, LexError};
+use kiln_compiler::diagnostics::{LexError, Span};
 
 #[test]
 fn span_len() {
@@ -14,6 +14,9 @@ fn span_empty() {
 
 #[test]
 fn lex_error_display_contains_char() {
-    let e = LexError::UnexpectedChar { ch: '$', span: Span::new(5, 6) };
+    let e = LexError::UnexpectedChar {
+        ch: '$',
+        span: Span::new(5, 6),
+    };
     assert!(e.to_string().contains('$'));
 }

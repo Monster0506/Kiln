@@ -316,7 +316,10 @@ impl Parser {
                 let expr = self.parse_expr(0)?;
                 self.expect(TokenKind::GtGt)?;
                 let end = self.peek_span().start;
-                Ok(TypeExpr::GenSplice(Box::new(expr), Span::new(start.start, end)))
+                Ok(TypeExpr::GenSplice(
+                    Box::new(expr),
+                    Span::new(start.start, end),
+                ))
             }
             found => Err(ParseError::Unexpected {
                 found,
@@ -902,9 +905,7 @@ impl Parser {
             }
             TokenKind::Raise => {
                 self.advance();
-                let value = if self.peek() != &TokenKind::RBrace
-                    && self.peek() != &TokenKind::Eof
-                {
+                let value = if self.peek() != &TokenKind::RBrace && self.peek() != &TokenKind::Eof {
                     Some(self.parse_expr(0)?)
                 } else {
                     None
@@ -1156,7 +1157,12 @@ impl Parser {
         Ok(lhs)
     }
 
-    fn parse_infix(&mut self, mut lhs: Expr, min_bp: u8, allow_struct: bool) -> Result<Expr, ParseError> {
+    fn parse_infix(
+        &mut self,
+        mut lhs: Expr,
+        min_bp: u8,
+        allow_struct: bool,
+    ) -> Result<Expr, ParseError> {
         loop {
             if let Some(lbp) = Self::postfix_bp(self.peek()) {
                 if lbp < min_bp {
@@ -2059,7 +2065,11 @@ export { Point, distance }
         let file = parse(src).unwrap();
         match &file.items[0] {
             Item::Function(f) => {
-                assert!(matches!(&f.body.stmts[0], Stmt::Assign { .. }), "expected Assign, got {:?}", &f.body.stmts[0]);
+                assert!(
+                    matches!(&f.body.stmts[0], Stmt::Assign { .. }),
+                    "expected Assign, got {:?}",
+                    &f.body.stmts[0]
+                );
             }
             other => panic!("{other:?}"),
         }
@@ -2072,7 +2082,10 @@ export { Point, distance }
             Item::Function(f) => {
                 assert_eq!(f.generic_params.len(), 1);
                 assert_eq!(f.generic_params[0].name, "a");
-                assert!(matches!(f.generic_params[0].kind, GenericParamKind::Lifetime));
+                assert!(matches!(
+                    f.generic_params[0].kind,
+                    GenericParamKind::Lifetime
+                ));
             }
             other => panic!("{other:?}"),
         }
@@ -2083,7 +2096,9 @@ export { Point, distance }
         let file = parse("def f[scope a](x: &a str) -> void {}").unwrap();
         match &file.items[0] {
             Item::Function(f) => match &f.params[0].ty {
-                TypeExpr::Ref { lifetime, mutable, .. } => {
+                TypeExpr::Ref {
+                    lifetime, mutable, ..
+                } => {
                     assert_eq!(lifetime.as_deref(), Some("a"));
                     assert!(!mutable);
                 }
@@ -2098,7 +2113,9 @@ export { Point, distance }
         let file = parse("def f[scope a](x: &a mut str) -> void {}").unwrap();
         match &file.items[0] {
             Item::Function(f) => match &f.params[0].ty {
-                TypeExpr::Ref { lifetime, mutable, .. } => {
+                TypeExpr::Ref {
+                    lifetime, mutable, ..
+                } => {
                     assert_eq!(lifetime.as_deref(), Some("a"));
                     assert!(mutable);
                 }
@@ -2142,7 +2159,10 @@ export { Point, distance }
                 assert_eq!(f.generic_params.len(), 2);
                 assert_eq!(f.generic_params[1].name, "b");
                 assert_eq!(f.generic_params[1].bound.as_deref(), Some("a"));
-                assert!(matches!(f.generic_params[1].kind, GenericParamKind::Lifetime));
+                assert!(matches!(
+                    f.generic_params[1].kind,
+                    GenericParamKind::Lifetime
+                ));
             }
             other => panic!("{other:?}"),
         }
@@ -2153,7 +2173,10 @@ export { Point, distance }
         let file = parse("def f() -> void { x = gen { return 5 } }").unwrap();
         match &file.items[0] {
             Item::Function(f) => match &f.body.stmts[0] {
-                Stmt::Assign { value: Expr::Gen { .. }, .. } => {}
+                Stmt::Assign {
+                    value: Expr::Gen { .. },
+                    ..
+                } => {}
                 other => panic!("{other:?}"),
             },
             other => panic!("{other:?}"),
@@ -2165,7 +2188,10 @@ export { Point, distance }
         let file = parse("def f() -> void { x = gen { <<target>> } }").unwrap();
         match &file.items[0] {
             Item::Function(f) => match &f.body.stmts[0] {
-                Stmt::Assign { value: Expr::Gen { body, .. }, .. } => {
+                Stmt::Assign {
+                    value: Expr::Gen { body, .. },
+                    ..
+                } => {
                     assert!(matches!(&body.stmts[0], Stmt::Expr(Expr::GenSplice(..))));
                 }
                 other => panic!("{other:?}"),

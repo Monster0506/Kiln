@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use kiln_compiler::lexer::Lexer;
 use kiln_compiler::parser::{ParseError, Parser as KilnParser};
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "kiln", about = "The Kiln compiler")]
@@ -21,6 +22,11 @@ enum Command {
     Parse {
         /// Path to the .kn file
         file: String,
+    },
+    /// Type-check a source file
+    Check {
+        /// Path to the .kn file
+        file: PathBuf,
     },
 }
 
@@ -47,6 +53,31 @@ fn main() {
                 }
             }
         }
+        Command::Check { file } => {
+            let src = fs::read_to_string(&file).unwrap_or_else(|e| {
+                eprintln!("error reading {}: {e}", file.display());
+                std::process::exit(1);
+            });
+            let tokens = Lexer::new(&src).tokenize().unwrap_or_else(|errors| {
+                for e in &errors {
+                    eprintln!("lex error: {e}");
+                }
+                std::process::exit(1);
+            });
+            let ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
+                eprintln!("parse error: {e}");
+                std::process::exit(1);
+            });
+            match kiln_compiler::analyzer::analyze(&ast) {
+                Ok(()) => println!("ok"),
+                Err(errs) => {
+                    for e in &errs {
+                        eprintln!("{e}");
+                    }
+                    std::process::exit(1);
+                }
+            }
+        }
         Command::Parse { file } => {
             let src = fs::read_to_string(&file).unwrap_or_else(|e| {
                 eprintln!("error reading {file}: {e}");
@@ -62,8 +93,15 @@ fn main() {
 
             match KilnParser::new(tokens).parse_file() {
                 Ok(ast) => println!("{:#?}", ast),
-                Err(ParseError::Unexpected { found, expected, span }) => {
-                    eprintln!("parse error at {:?}: expected {expected}, found {found:?}", span);
+                Err(ParseError::Unexpected {
+                    found,
+                    expected,
+                    span,
+                }) => {
+                    eprintln!(
+                        "parse error at {:?}: expected {expected}, found {found:?}",
+                        span
+                    );
                     std::process::exit(1);
                 }
                 Err(e) => {

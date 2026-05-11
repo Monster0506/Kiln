@@ -1,3 +1,5 @@
+use std::fmt;
+
 /// A half-open byte range [start, end) into the source string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -16,5 +18,11 @@ impl Span {
 
     pub fn is_empty(&self) -> bool {
         self.start == self.end
+    }
+}
+
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.start, self.end)
     }
 }

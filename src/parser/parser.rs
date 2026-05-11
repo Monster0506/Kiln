@@ -229,11 +229,28 @@ impl Parser {
             }
             TokenKind::Amp => {
                 self.advance();
+                // Check for a lifetime: `&a T`, `&a mut T`, `&static T`.
+                // A lifetime is present when the next token is an identifier
+                // and the token after it is also an identifier or `mut`.
+                let lifetime = if let TokenKind::Ident(_) = self.peek() {
+                    let next_is_type_or_mut = matches!(
+                        self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                        Some(TokenKind::Ident(_)) | Some(TokenKind::Mut)
+                    );
+                    if next_is_type_or_mut {
+                        Some(self.expect_ident()?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 let mutable = self.eat(&TokenKind::Mut);
                 let inner = self.parse_type_atom()?;
                 let end = inner.span();
                 Ok(TypeExpr::Ref {
                     mutable,
+                    lifetime,
                     inner: Box::new(inner),
                     span: Span::new(start.start, end.end),
                 })
@@ -294,6 +311,13 @@ impl Parser {
                     span: start,
                 })
             }
+            TokenKind::LtLt => {
+                self.advance();
+                let expr = self.parse_expr(0)?;
+                self.expect(TokenKind::GtGt)?;
+                let end = self.peek_span().start;
+                Ok(TypeExpr::GenSplice(Box::new(expr), Span::new(start.start, end)))
+            }
             found => Err(ParseError::Unexpected {
                 found,
                 expected: "type expression".into(),
@@ -309,18 +333,35 @@ impl Parser {
         let mut params = Vec::new();
         while self.peek() != &TokenKind::RBracket {
             let start = self.peek_span();
-            let name = self.expect_ident()?;
-            let bound = if self.eat(&TokenKind::Colon) {
-                Some(self.expect_ident()?)
+            if self.eat(&TokenKind::Scope) {
+                let name = self.expect_ident()?;
+                let bound = if self.eat(&TokenKind::Colon) {
+                    Some(self.expect_ident()?)
+                } else {
+                    None
+                };
+                let end = self.peek_span();
+                params.push(GenericParam {
+                    kind: GenericParamKind::Lifetime,
+                    name,
+                    bound,
+                    span: Span::new(start.start, end.start),
+                });
             } else {
-                None
-            };
-            let end = self.peek_span();
-            params.push(GenericParam {
-                name,
-                bound,
-                span: Span::new(start.start, end.start),
-            });
+                let name = self.expect_ident()?;
+                let bound = if self.eat(&TokenKind::Colon) {
+                    Some(self.expect_ident()?)
+                } else {
+                    None
+                };
+                let end = self.peek_span();
+                params.push(GenericParam {
+                    kind: GenericParamKind::Type,
+                    name,
+                    bound,
+                    span: Span::new(start.start, end.start),
+                });
+            }
             self.eat(&TokenKind::Comma);
         }
         self.expect(TokenKind::RBracket)?;
@@ -550,6 +591,22 @@ impl Parser {
                 self.advance();
                 Ok(HookName::Op("<=>".into()))
             }
+            TokenKind::Lt => {
+                self.advance();
+                Ok(HookName::Op("<".into()))
+            }
+            TokenKind::Gt => {
+                self.advance();
+                Ok(HookName::Op(">".into()))
+            }
+            TokenKind::LtEq => {
+                self.advance();
+                Ok(HookName::Op("<=".into()))
+            }
+            TokenKind::GtEq => {
+                self.advance();
+                Ok(HookName::Op(">=".into()))
+            }
             TokenKind::LBracket => {
                 self.advance();
                 self.expect(TokenKind::RBracket)?;
@@ -587,8 +644,11 @@ impl Parser {
             self.eat(&TokenKind::Comma);
         }
         self.expect(TokenKind::RParen)?;
-        self.expect(TokenKind::Arrow)?;
-        let return_type = self.parse_type()?;
+        let return_type = if self.eat(&TokenKind::Arrow) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         let default = if self.peek() == &TokenKind::LBrace {
             Some(self.parse_block()?)
         } else {
@@ -680,8 +740,11 @@ impl Parser {
             self.eat(&TokenKind::Comma);
         }
         self.expect(TokenKind::RParen)?;
-        self.expect(TokenKind::Arrow)?;
-        let return_type = self.parse_type()?;
+        let return_type = if self.eat(&TokenKind::Arrow) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         let body = self.parse_block()?;
         let end = self.peek_span().start;
         Ok(HookDef {
@@ -761,11 +824,17 @@ impl Parser {
             span: Span::new(ps.start, pe.start),
         };
         self.expect(TokenKind::RParen)?;
+        let return_type = if self.eat(&TokenKind::Arrow) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         let body = self.parse_block()?;
         let end = self.peek_span().start;
         Ok(ProcessorDef {
             annotation_name,
             target_param,
+            return_type,
             body,
             span: Span::new(start, end),
         })
@@ -833,7 +902,13 @@ impl Parser {
             }
             TokenKind::Raise => {
                 self.advance();
-                let value = self.parse_expr(0)?;
+                let value = if self.peek() != &TokenKind::RBrace
+                    && self.peek() != &TokenKind::Eof
+                {
+                    Some(self.parse_expr(0)?)
+                } else {
+                    None
+                };
                 Ok(Stmt::Raise { value, span: start })
             }
             TokenKind::Break => {
@@ -854,8 +929,37 @@ impl Parser {
                 let anns = self.parse_annotation_uses()?;
                 Ok(Stmt::FnDef(self.parse_fn_def(anns)?))
             }
+            TokenKind::Mut => {
+                self.advance();
+                let name = self.expect_ident()?;
+                self.expect(TokenKind::Colon)?;
+                let ty = self.parse_type()?;
+                self.expect(TokenKind::Eq)?;
+                let value = self.parse_expr(0)?;
+                let end = self.peek_span().start;
+                Ok(Stmt::VarDecl {
+                    name,
+                    ty,
+                    value,
+                    mutable: true,
+                    span: Span::new(start.start, end),
+                })
+            }
             TokenKind::Ident(_) => self.parse_ident_led_stmt(),
-            _ => Ok(Stmt::Expr(self.parse_expr(0)?)),
+            _ => {
+                let expr = self.parse_expr(0)?;
+                if self.eat(&TokenKind::Eq) {
+                    let value = self.parse_expr(0)?;
+                    let end = self.peek_span().start;
+                    Ok(Stmt::Assign {
+                        target: expr,
+                        value,
+                        span: Span::new(start.start, end),
+                    })
+                } else {
+                    Ok(Stmt::Expr(expr))
+                }
+            }
         }
     }
 
@@ -978,6 +1082,7 @@ impl Parser {
                 name,
                 ty,
                 value,
+                mutable: false,
                 span: Span::new(start.start, end),
             });
         }
@@ -995,7 +1100,7 @@ impl Parser {
             });
         }
 
-        let expr = self.parse_infix(lhs, 0)?;
+        let expr = self.parse_infix(lhs, 0, true)?;
         Ok(Stmt::Expr(expr))
     }
 
@@ -1037,7 +1142,7 @@ impl Parser {
     fn parse_expr_inner(&mut self, min_bp: u8, allow_struct: bool) -> Result<Expr, ParseError> {
         let mut lhs = self.parse_primary(allow_struct)?;
         lhs = self.parse_postfix_chain(lhs)?;
-        self.parse_infix(lhs, min_bp)
+        self.parse_infix(lhs, min_bp, allow_struct)
     }
 
     fn parse_postfix_chain(&mut self, mut lhs: Expr) -> Result<Expr, ParseError> {
@@ -1051,7 +1156,7 @@ impl Parser {
         Ok(lhs)
     }
 
-    fn parse_infix(&mut self, mut lhs: Expr, min_bp: u8) -> Result<Expr, ParseError> {
+    fn parse_infix(&mut self, mut lhs: Expr, min_bp: u8, allow_struct: bool) -> Result<Expr, ParseError> {
         loop {
             if let Some(lbp) = Self::postfix_bp(self.peek()) {
                 if lbp < min_bp {
@@ -1067,7 +1172,7 @@ impl Parser {
                 let op_kind = self.peek().clone();
                 let op_span = self.peek_span();
                 self.advance();
-                let rhs = self.parse_expr(rbp)?;
+                let rhs = self.parse_expr_inner(rbp, allow_struct)?;
                 let span = Span::new(lhs.span().start, rhs.span().end);
                 lhs = Expr::BinOp {
                     op: Self::token_to_binop(&op_kind),
@@ -1131,9 +1236,19 @@ impl Parser {
                     Ok(Expr::Ident(name, start))
                 }
             }
+            TokenKind::Amp => {
+                self.advance();
+                let mutable = self.eat(&TokenKind::Mut);
+                let e = self.parse_expr_inner(15, allow_struct)?;
+                Ok(Expr::Ref {
+                    mutable,
+                    expr: Box::new(e),
+                    span: start,
+                })
+            }
             TokenKind::Minus => {
                 self.advance();
-                let e = self.parse_expr(15)?;
+                let e = self.parse_expr_inner(15, allow_struct)?;
                 Ok(Expr::UnOp {
                     op: UnOp::Neg,
                     operand: Box::new(e),
@@ -1142,7 +1257,7 @@ impl Parser {
             }
             TokenKind::Bang => {
                 self.advance();
-                let e = self.parse_expr(15)?;
+                let e = self.parse_expr_inner(15, allow_struct)?;
                 Ok(Expr::UnOp {
                     op: UnOp::Not,
                     operand: Box::new(e),
@@ -1152,8 +1267,17 @@ impl Parser {
             TokenKind::Match => self.parse_match_expr(),
             TokenKind::Spawn => {
                 self.advance();
-                let e = self.parse_expr(0)?;
+                let e = self.parse_expr_inner(0, allow_struct)?;
                 Ok(Expr::Spawn(Box::new(e), start))
+            }
+            TokenKind::Gen => self.parse_gen_expr(),
+            TokenKind::LtLt => {
+                let ss = self.peek_span();
+                self.advance();
+                let expr = self.parse_expr(0)?;
+                self.expect(TokenKind::GtGt)?;
+                let end = self.peek_span().start;
+                Ok(Expr::GenSplice(Box::new(expr), Span::new(ss.start, end)))
             }
             found => Err(ParseError::Unexpected {
                 found,
@@ -1462,6 +1586,37 @@ impl Parser {
         }
     }
 
+    fn parse_gen_expr(&mut self) -> Result<Expr, ParseError> {
+        let start = self.peek_span().start;
+        self.expect(TokenKind::Gen)?;
+        self.expect(TokenKind::LBrace)?;
+        let mut stmts = Vec::new();
+        while self.peek() != &TokenKind::RBrace && self.peek() != &TokenKind::Eof {
+            if self.peek() == &TokenKind::LtLt {
+                let ss = self.peek_span();
+                self.advance();
+                let expr = self.parse_expr(0)?;
+                self.expect(TokenKind::GtGt)?;
+                let end = self.peek_span().start;
+                stmts.push(Stmt::Expr(Expr::GenSplice(
+                    Box::new(expr),
+                    Span::new(ss.start, end),
+                )));
+            } else {
+                stmts.push(self.parse_stmt()?);
+            }
+        }
+        self.expect(TokenKind::RBrace)?;
+        let end = self.peek_span().start;
+        Ok(Expr::Gen {
+            body: Block {
+                stmts,
+                span: Span::new(start, end),
+            },
+            span: Span::new(start, end),
+        })
+    }
+
     fn parse_string_expr(&mut self) -> Result<Expr, ParseError> {
         let start = self.peek_span().start;
         self.expect(TokenKind::StringStart)?;
@@ -1707,6 +1862,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_mut_var_decl() {
+        let file = parse("def f() -> void { mut x: int = 5 }").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.body.stmts[0] {
+                Stmt::VarDecl { name, mutable, .. } => {
+                    assert_eq!(name, "x");
+                    assert!(*mutable);
+                }
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_return_stmt() {
         let file = parse("def f() -> int { return 42 }").unwrap();
         match &file.items[0] {
@@ -1881,5 +2051,126 @@ export { Point, distance }
 "#;
         let file = parse(src).unwrap();
         assert_eq!(file.items.len(), 5);
+    }
+
+    #[test]
+    fn parse_tuple_destruct_assign() {
+        let src = r#"def f(pair: (int, int)) -> void { (a, b) = pair }"#;
+        let file = parse(src).unwrap();
+        match &file.items[0] {
+            Item::Function(f) => {
+                assert!(matches!(&f.body.stmts[0], Stmt::Assign { .. }), "expected Assign, got {:?}", &f.body.stmts[0]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_lifetime_generic_param() {
+        let file = parse("def longest[scope a](x: &a str, y: &a str) -> &a str {}").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => {
+                assert_eq!(f.generic_params.len(), 1);
+                assert_eq!(f.generic_params[0].name, "a");
+                assert!(matches!(f.generic_params[0].kind, GenericParamKind::Lifetime));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_ref_type_with_lifetime() {
+        let file = parse("def f[scope a](x: &a str) -> void {}").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.params[0].ty {
+                TypeExpr::Ref { lifetime, mutable, .. } => {
+                    assert_eq!(lifetime.as_deref(), Some("a"));
+                    assert!(!mutable);
+                }
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_mut_ref_type_with_lifetime() {
+        let file = parse("def f[scope a](x: &a mut str) -> void {}").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.params[0].ty {
+                TypeExpr::Ref { lifetime, mutable, .. } => {
+                    assert_eq!(lifetime.as_deref(), Some("a"));
+                    assert!(mutable);
+                }
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_static_lifetime_ref() {
+        let file = parse("def f() -> &static str {}").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.return_type {
+                TypeExpr::Ref { lifetime, .. } => {
+                    assert_eq!(lifetime.as_deref(), Some("static"));
+                }
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_elided_ref_has_no_lifetime() {
+        let file = parse("def f(x: &str) -> void {}").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.params[0].ty {
+                TypeExpr::Ref { lifetime, .. } => assert!(lifetime.is_none()),
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_lifetime_outlives_bound() {
+        let file = parse("def f[scope a, scope b: a](x: &a str, y: &b str) -> &a str {}").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => {
+                assert_eq!(f.generic_params.len(), 2);
+                assert_eq!(f.generic_params[1].name, "b");
+                assert_eq!(f.generic_params[1].bound.as_deref(), Some("a"));
+                assert!(matches!(f.generic_params[1].kind, GenericParamKind::Lifetime));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_gen_block_expr() {
+        let file = parse("def f() -> void { x = gen { return 5 } }").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.body.stmts[0] {
+                Stmt::Assign { value: Expr::Gen { .. }, .. } => {}
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_gen_splice_expr() {
+        let file = parse("def f() -> void { x = gen { <<target>> } }").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.body.stmts[0] {
+                Stmt::Assign { value: Expr::Gen { body, .. }, .. } => {
+                    assert!(matches!(&body.stmts[0], Stmt::Expr(Expr::GenSplice(..))));
+                }
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
     }
 }

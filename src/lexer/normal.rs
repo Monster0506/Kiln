@@ -137,6 +137,8 @@ impl<'src> Lexer<'src> {
                     }
                 } else if self.eat('-') {
                     Ok(Token::new(TokenKind::LArrow, start, self.pos))
+                } else if self.eat('<') {
+                    Ok(Token::new(TokenKind::LtLt, start, self.pos))
                 } else {
                     Ok(Token::new(TokenKind::Lt, start, self.pos))
                 }
@@ -144,6 +146,8 @@ impl<'src> Lexer<'src> {
             Some('>') => {
                 if self.eat('=') {
                     Ok(Token::new(TokenKind::GtEq, start, self.pos))
+                } else if self.eat('>') {
+                    Ok(Token::new(TokenKind::GtGt, start, self.pos))
                 } else {
                     Ok(Token::new(TokenKind::Gt, start, self.pos))
                 }
@@ -181,6 +185,8 @@ fn keyword_or_ident(s: &str) -> TokenKind {
         "spawn" => TokenKind::Spawn,
         "as" => TokenKind::As,
         "mut" => TokenKind::Mut,
+        "scope" => TokenKind::Scope,
+        "gen" => TokenKind::Gen,
         "if" => TokenKind::If,
         "elif" => TokenKind::Elif,
         "else" => TokenKind::Else,

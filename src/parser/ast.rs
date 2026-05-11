@@ -29,12 +29,15 @@ pub enum TypeExpr {
         ret: Box<TypeExpr>,
         span: Span,
     },
-    /// `&T` or `&mut T`
+    /// `&T`, `&mut T`, `&a T`, `&a mut T`, `&static T`
     Ref {
         mutable: bool,
+        lifetime: Option<String>,
         inner: Box<TypeExpr>,
         span: Span,
     },
+    /// `<<expr>>` type splice inside a gen block
+    GenSplice(Box<Expr>, Span),
 }
 
 impl TypeExpr {
@@ -45,16 +48,26 @@ impl TypeExpr {
             TypeExpr::Tuple(_, span) => *span,
             TypeExpr::Callable { span, .. } => *span,
             TypeExpr::Ref { span, .. } => *span,
+            TypeExpr::GenSplice(_, span) => *span,
         }
     }
 }
 
 // -- Generic Parameters -------------------------------------------------------
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum GenericParamKind {
+    /// A type parameter: `T`, `T: Comparable`
+    Type,
+    /// A lifetime parameter: `scope a`, `scope b: a`
+    Lifetime,
+}
+
 #[derive(Debug, Clone)]
 pub struct GenericParam {
+    pub kind: GenericParamKind,
     pub name: String,
-    /// Optional bound: `T: Comparable`
+    /// Optional bound: `T: Comparable` or `scope b: a`
     pub bound: Option<String>,
     pub span: Span,
 }
@@ -156,7 +169,7 @@ pub enum InterfaceItemKind {
     Hook {
         name: HookName,
         params: Vec<Param>,
-        return_type: TypeExpr,
+        return_type: Option<TypeExpr>,
         default: Option<Block>,
     },
     /// Regular method with optional default body
@@ -192,7 +205,7 @@ pub struct ImplBlock {
 pub struct HookDef {
     pub name: HookName,
     pub params: Vec<Param>,
-    pub return_type: TypeExpr,
+    pub return_type: Option<TypeExpr>,
     pub body: Block,
     pub span: Span,
 }
@@ -208,6 +221,7 @@ pub struct AnnotationDef {
 pub struct ProcessorDef {
     pub annotation_name: String,
     pub target_param: Param,
+    pub return_type: Option<TypeExpr>,
     pub body: Block,
     pub span: Span,
 }
@@ -251,11 +265,12 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    /// `x: int = 5`
+    /// `x: int = 5` (immutable) or `mut x: int = 5` (mutable)
     VarDecl {
         name: String,
         ty: TypeExpr,
         value: Expr,
+        mutable: bool,
         span: Span,
     },
     /// `x = 5`
@@ -266,8 +281,8 @@ pub enum Stmt {
     },
     /// `return expr`
     Return { value: Option<Expr>, span: Span },
-    /// `raise expr`
-    Raise { value: Expr, span: Span },
+    /// `raise expr` or bare `raise` (re-raise)
+    Raise { value: Option<Expr>, span: Span },
     /// `break`
     Break(Span),
     /// `continue`
@@ -382,6 +397,19 @@ pub enum Expr {
     },
     /// `spawn expr`
     Spawn(Box<Expr>, Span),
+    /// `&expr` or `&mut expr`
+    Ref {
+        mutable: bool,
+        expr: Box<Expr>,
+        span: Span,
+    },
+    /// `gen { ... }` quasi-quotation block
+    Gen {
+        body: Block,
+        span: Span,
+    },
+    /// `<<expr>>` splice inside a gen block
+    GenSplice(Box<Expr>, Span),
 }
 
 impl Expr {
@@ -404,6 +432,9 @@ impl Expr {
             Expr::Match { span, .. } => *span,
             Expr::Closure { span, .. } => *span,
             Expr::Spawn(_, s) => *s,
+            Expr::Ref { span, .. } => *span,
+            Expr::Gen { span, .. } => *span,
+            Expr::GenSplice(_, s) => *s,
         }
     }
 }

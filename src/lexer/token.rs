@@ -39,6 +39,8 @@ pub enum TokenKind {
     Spawn,
     As,
     Mut,
+    Scope,
+    Gen,
     If,
     Elif,
     Else,
@@ -72,6 +74,8 @@ pub enum TokenKind {
     AmpAmp,    // `&&`
     PipePipe,  // `||`
     Pipe,      // `|`
+    LtLt,      // `<<`
+    GtGt,      // `>>`
     Arrow,     // `->`
     FatArrow,  // `=>`
     LArrow,    // `<-`

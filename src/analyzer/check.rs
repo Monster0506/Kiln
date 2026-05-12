@@ -38,7 +38,7 @@ fn check_stmt(
             // Shadowing is allowed in Kiln: redeclaring a name creates a new binding.
             let declared = resolve_type_expr(ty, env, registry, errors);
             let found = infer_expr(value, env, registry, errors);
-            check_assignable(&declared, &found, span, errors);
+            check_assignable(&declared, &found, &value.span(), errors);
             env.define(
                 name,
                 Symbol::Var {
@@ -52,22 +52,22 @@ fn check_stmt(
         Stmt::Assign {
             target,
             value,
-            span,
+            span: _,
         } => {
             // Check that the target binding is mutable (if it's a plain ident).
-            if let Expr::Ident(name, _) = target {
+            if let Expr::Ident(name, ident_span) = target {
                 match env.lookup(name) {
                     Some(Symbol::Var { mutable: false, .. }) => {
                         errors.push(AnalysisError::AssignToImmutable {
                             name: name.clone(),
-                            span: *span,
+                            span: *ident_span,
                         });
                         return;
                     }
                     None => {
                         errors.push(AnalysisError::UndefinedName {
                             name: name.clone(),
-                            span: *span,
+                            span: *ident_span,
                         });
                         return;
                     }
@@ -76,15 +76,15 @@ fn check_stmt(
             }
             let target_ty = infer_expr(target, env, registry, errors);
             let value_ty = infer_expr(value, env, registry, errors);
-            check_assignable(&target_ty, &value_ty, span, errors);
+            check_assignable(&target_ty, &value_ty, &value.span(), errors);
         }
 
         Stmt::Return { value, span } => {
-            let found = value
-                .as_ref()
-                .map(|v| infer_expr(v, env, registry, errors))
-                .unwrap_or(Ty::Void);
-            check_assignable(return_ty, &found, span, errors);
+            let (found, value_span) = match value {
+                Some(v) => (infer_expr(v, env, registry, errors), v.span()),
+                None => (Ty::Void, *span),
+            };
+            check_assignable(return_ty, &found, &value_span, errors);
         }
 
         Stmt::Raise { value, .. } => {

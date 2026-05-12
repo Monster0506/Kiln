@@ -110,7 +110,7 @@ pub fn infer_expr(
                     }
                     for (param_ty, arg) in params.iter().zip(args.iter()) {
                         let arg_ty = infer_expr(arg, env, registry, errors);
-                        check_assignable(param_ty, &arg_ty, span, errors);
+                        check_assignable(param_ty, &arg_ty, &arg.span(), errors);
                     }
                     *ret
                 }

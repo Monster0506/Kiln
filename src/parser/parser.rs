@@ -17,6 +17,42 @@ pub enum ParseError {
     UnexpectedEof { expected: String },
 }
 
+impl ParseError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            ParseError::LexError => "P001",
+            ParseError::Unexpected { .. } => "P002",
+            ParseError::UnexpectedEof { .. } => "P003",
+        }
+    }
+
+    pub fn kind(&self) -> &'static str {
+        "syntax error"
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            ParseError::LexError => "lex error".into(),
+            ParseError::Unexpected {
+                found, expected, ..
+            } => {
+                format!("unexpected token {found:?}, expected {expected}")
+            }
+            ParseError::UnexpectedEof { expected } => {
+                format!("unexpected end of file, expected {expected}")
+            }
+        }
+    }
+
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            ParseError::LexError => None,
+            ParseError::Unexpected { span, .. } => Some(*span),
+            ParseError::UnexpectedEof { .. } => None,
+        }
+    }
+}
+
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,

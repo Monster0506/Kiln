@@ -91,7 +91,7 @@ fn nth(tys: &[Ty], i: usize) -> Ty {
 mod tests {
     use super::*;
     use crate::analyzer::env::Env;
-    use crate::analyzer::ty::{Ty, TypeKind, TypeRegistry};
+    use crate::analyzer::ty::{Ty, TypeRegistry};
     use crate::diagnostics::Span;
     use crate::parser::ast::TypeExpr;
     fn s() -> Span {

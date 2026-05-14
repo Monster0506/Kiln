@@ -16,7 +16,6 @@ pub enum ConstraintReason {
     Operator(BinOp),
     UnaryNeg,
     Interpolation,
-    FunctionBound { fn_name: String, bound: String },
     GenericBoundCheck { param: String, bound: String, fn_name: String },
 }
 
@@ -26,9 +25,6 @@ impl ConstraintReason {
             ConstraintReason::Operator(op) => format!(" (required by operator `{op:?}`)"),
             ConstraintReason::UnaryNeg => " (required by unary `-`)".into(),
             ConstraintReason::Interpolation => " (required by string interpolation)".into(),
-            ConstraintReason::FunctionBound { fn_name, bound } => {
-                format!(" (required by `{fn_name}`, which needs `{bound}`)")
-            }
             ConstraintReason::GenericBoundCheck { param, bound, fn_name } => {
                 format!(" (required by bound `{param}: {bound}` on `{fn_name}`)")
             }

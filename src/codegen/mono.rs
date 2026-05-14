@@ -101,9 +101,7 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
 // ---------------------------------------------------------------------------
 
 fn is_generic_fn(f: &TypedFnDef) -> bool {
-    // Builtins have empty bodies; they must not be monomorphized — codegen handles
-    // them specially by name (e.g. "println" -> "__kiln_println").
-    if f.body.stmts.is_empty() {
+    if f.is_builtin {
         return false;
     }
     f.params.iter().any(|p| contains_type_param(&p.ty))

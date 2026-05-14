@@ -61,12 +61,12 @@ fn import_fn(
     name: &str,
     sig: cranelift_codegen::ir::Signature,
 ) -> FuncId {
-    module.declare_function(name, Linkage::Import, &sig).unwrap_or_else(|_| match module
-        .get_name(name)
-    {
-        Some(FuncOrDataId::Func(id)) => id,
-        _ => panic!("failed to declare runtime fn '{}'", name),
-    })
+    module
+        .declare_function(name, Linkage::Import, &sig)
+        .unwrap_or_else(|_| match module.get_name(name) {
+            Some(FuncOrDataId::Func(id)) => id,
+            _ => panic!("failed to declare runtime fn '{}'", name),
+        })
 }
 
 /// Emit a string literal as a pair of global data objects and return a
@@ -89,9 +89,18 @@ pub fn emit_str_literal(
     let bytes_name = format!(".str.bytes.{}", mangled);
     let bytes_id = module
         .declare_data(&bytes_name, Linkage::Local, false, false)
-        .unwrap_or_else(|_| module.get_name(&bytes_name).and_then(|fod| {
-            if let cranelift_module::FuncOrDataId::Data(id) = fod { Some(id) } else { None }
-        }).expect("bytes data id"));
+        .unwrap_or_else(|_| {
+            module
+                .get_name(&bytes_name)
+                .and_then(|fod| {
+                    if let cranelift_module::FuncOrDataId::Data(id) = fod {
+                        Some(id)
+                    } else {
+                        None
+                    }
+                })
+                .expect("bytes data id")
+        });
 
     {
         let mut desc = DataDescription::new();
@@ -106,9 +115,18 @@ pub fn emit_str_literal(
     let fat_name = format!(".str.fat.{}", mangled);
     let fat_id = module
         .declare_data(&fat_name, Linkage::Local, false, false)
-        .unwrap_or_else(|_| module.get_name(&fat_name).and_then(|fod| {
-            if let cranelift_module::FuncOrDataId::Data(id) = fod { Some(id) } else { None }
-        }).expect("fat data id"));
+        .unwrap_or_else(|_| {
+            module
+                .get_name(&fat_name)
+                .and_then(|fod| {
+                    if let cranelift_module::FuncOrDataId::Data(id) = fod {
+                        Some(id)
+                    } else {
+                        None
+                    }
+                })
+                .expect("fat data id")
+        });
 
     {
         let mut desc = DataDescription::new();
@@ -155,7 +173,11 @@ mod tests {
     fn str_literal_emits_ptr_and_len() {
         let mut cgx = CodegenContext::new("test");
         let mut fbc = FunctionBuilderContext::new();
-        cgx.ctx.func.signature.returns.push(AbiParam::new(types::I64));
+        cgx.ctx
+            .func
+            .signature
+            .returns
+            .push(AbiParam::new(types::I64));
 
         let mut builder = FunctionBuilder::new(&mut cgx.ctx.func, &mut fbc);
         let block = builder.create_block();

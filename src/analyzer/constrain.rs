@@ -16,7 +16,11 @@ pub enum ConstraintReason {
     Operator(BinOp),
     UnaryNeg,
     Interpolation,
-    GenericBoundCheck { param: String, bound: String, fn_name: String },
+    GenericBoundCheck {
+        param: String,
+        bound: String,
+        fn_name: String,
+    },
 }
 
 impl ConstraintReason {
@@ -25,7 +29,11 @@ impl ConstraintReason {
             ConstraintReason::Operator(op) => format!(" (required by operator `{op:?}`)"),
             ConstraintReason::UnaryNeg => " (required by unary `-`)".into(),
             ConstraintReason::Interpolation => " (required by string interpolation)".into(),
-            ConstraintReason::GenericBoundCheck { param, bound, fn_name } => {
+            ConstraintReason::GenericBoundCheck {
+                param,
+                bound,
+                fn_name,
+            } => {
                 format!(" (required by bound `{param}: {bound}` on `{fn_name}`)")
             }
         }
@@ -86,7 +94,11 @@ fn collect_stmt(stmt: &TypedStmt, out: &mut Vec<Constraint>) {
             collect_expr(target, out);
             collect_expr(value, out);
         }
-        TypedStmt::If { branches, else_branch, .. } => {
+        TypedStmt::If {
+            branches,
+            else_branch,
+            ..
+        } => {
             for (cond, body) in branches {
                 collect_expr(cond, out);
                 collect_block(body, out);
@@ -112,7 +124,12 @@ fn collect_stmt(stmt: &TypedStmt, out: &mut Vec<Constraint>) {
                 collect_expr(v, out);
             }
         }
-        TypedStmt::TryCatch { body, handlers, finally, .. } => {
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            ..
+        } => {
             collect_block(body, out);
             for h in handlers {
                 collect_block(&h.body, out);
@@ -167,7 +184,12 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
             }
         }
 
-        TypedExprKind::Call { callee, args, generic_bounds, generic_params } => {
+        TypedExprKind::Call {
+            callee,
+            args,
+            generic_bounds,
+            generic_params,
+        } => {
             if let TypedExprKind::Ident(name) = &callee.kind {
                 // Generic bounds declared on the called function.
                 if !generic_bounds.is_empty() {
@@ -318,7 +340,11 @@ mod tests {
     }
 
     fn int_expr() -> TypedExpr {
-        TypedExpr { kind: TypedExprKind::Int(1), ty: Ty::Int, span: s() }
+        TypedExpr {
+            kind: TypedExprKind::Int(1),
+            ty: Ty::Int,
+            span: s(),
+        }
     }
 
     #[test]
@@ -339,7 +365,11 @@ mod tests {
 
     #[test]
     fn string_interp_emits_display() {
-        let interp = TypedExpr { kind: TypedExprKind::Int(42), ty: Ty::Int, span: s() };
+        let interp = TypedExpr {
+            kind: TypedExprKind::Int(42),
+            ty: Ty::Int,
+            span: s(),
+        };
         let expr = TypedExpr {
             kind: TypedExprKind::Str(vec![TypedStringSegment::Interp(interp)]),
             ty: Ty::Str,
@@ -355,7 +385,11 @@ mod tests {
         let expr = TypedExpr {
             kind: TypedExprKind::BinOp {
                 op: BinOp::And,
-                left: Box::new(TypedExpr { kind: TypedExprKind::Bool(true), ty: Ty::Bool, span: s() }),
+                left: Box::new(TypedExpr {
+                    kind: TypedExprKind::Bool(true),
+                    ty: Ty::Bool,
+                    span: s(),
+                }),
                 right: Box::new(TypedExpr {
                     kind: TypedExprKind::Bool(false),
                     ty: Ty::Bool,

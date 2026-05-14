@@ -28,7 +28,10 @@ fn encode_op(op: &str) -> String {
         ">" => "gt".into(),
         "<=" => "lte".into(),
         ">=" => "gte".into(),
-        other => format!("op_{}", other.chars().map(|c| c as u32).fold(0u32, |a, b| a ^ b)),
+        other => format!(
+            "op_{}",
+            other.chars().map(|c| c as u32).fold(0u32, |a, b| a ^ b)
+        ),
     }
 }
 
@@ -66,12 +69,12 @@ fn register_fn(
     if let Some(ret) = clif_type(return_type) {
         sig.returns.push(AbiParam::new(ret));
     }
-    module.declare_function(name, Linkage::Export, &sig).unwrap_or_else(|_| {
-        match module.get_name(name) {
+    module
+        .declare_function(name, Linkage::Export, &sig)
+        .unwrap_or_else(|_| match module.get_name(name) {
             Some(FuncOrDataId::Func(id)) => id,
             _ => panic!("failed to declare function '{}'", name),
-        }
-    })
+        })
 }
 
 struct FnJob {
@@ -96,7 +99,9 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
         sig.params.push(AbiParam::new(types::I64));
         sig.params.push(AbiParam::new(types::I64));
         sig.returns.push(AbiParam::new(types::I64));
-        cgx.module.declare_function("__kiln_spawn", Linkage::Import, &sig).ok();
+        cgx.module
+            .declare_function("__kiln_spawn", Linkage::Import, &sig)
+            .ok();
     }
 
     // Pass 0: build struct/enum layouts.
@@ -121,17 +126,16 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                 let id = if let Some(&existing) = func_ids.get(&f.name) {
                     existing
                 } else {
-                    let id = register_fn(
-                        &f.name,
-                        false,
-                        &f.params,
-                        &f.return_type,
-                        &mut cgx.module,
-                    );
+                    let id =
+                        register_fn(&f.name, false, &f.params, &f.return_type, &mut cgx.module);
                     func_ids.insert(f.name.clone(), id);
                     id
                 };
-                let params = f.params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect();
+                let params = f
+                    .params
+                    .iter()
+                    .map(|p| (p.name.clone(), p.ty.clone()))
+                    .collect();
                 fn_jobs.push(FnJob {
                     name: f.name.clone(),
                     func_id: id,
@@ -158,8 +162,11 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                     func_ids.insert(method.name.clone(), id);
                     func_ids.insert(qualified.clone(), id);
                     layouts.register_vtable_entry(&method.name, type_id, id);
-                    let params =
-                        method.params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect();
+                    let params = method
+                        .params
+                        .iter()
+                        .map(|p| (p.name.clone(), p.ty.clone()))
+                        .collect();
                     fn_jobs.push(FnJob {
                         name: qualified,
                         func_id: id,
@@ -185,8 +192,11 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                     // (e.g. "int_to_str" after mono T=int) resolves to this FuncId.
                     func_ids.insert(format!("{}_{}", type_name, method_key), id);
                     layouts.register_vtable_entry(&method_key, type_id, id);
-                    let params =
-                        hook.params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect();
+                    let params = hook
+                        .params
+                        .iter()
+                        .map(|p| (p.name.clone(), p.ty.clone()))
+                        .collect();
                     fn_jobs.push(FnJob {
                         name: func_name,
                         func_id: id,
@@ -274,7 +284,13 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
             return_clif_type,
             defined_thunks: &mut defined_thunks,
         };
-        lower_typed_block(&job.body, &mut builder, &mut vars, &mut loops, &mut lower_ctx);
+        lower_typed_block(
+            &job.body,
+            &mut builder,
+            &mut vars,
+            &mut loops,
+            &mut lower_ctx,
+        );
 
         if block_needs_term(&builder) {
             if has_return_val {

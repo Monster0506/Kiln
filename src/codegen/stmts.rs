@@ -1,6 +1,8 @@
 use crate::analyzer::ty::Ty;
 use crate::analyzer::typed_ast::{TypedBlock, TypedExpr, TypedExprKind, TypedStmt};
-use crate::codegen::exprs::{call_fn_by_name, coerce_to, coerce_to_i64, lower_typed_expr_loops, LowerCtx, VarEnv};
+use crate::codegen::exprs::{
+    call_fn_by_name, coerce_to, coerce_to_i64, lower_typed_expr_loops, LowerCtx, VarEnv,
+};
 use crate::codegen::memory::store_field;
 use crate::codegen::types::clif_type;
 use cranelift_codegen::ir::condcodes::IntCC;
@@ -59,7 +61,9 @@ fn lower_typed_stmt(
     ctx: &mut LowerCtx,
 ) {
     match stmt {
-        TypedStmt::VarDecl { name, ty, value, .. } => {
+        TypedStmt::VarDecl {
+            name, ty, value, ..
+        } => {
             let clif_ty = clif_type(ty).unwrap_or(types::I64);
             let var = vars.declare(name, clif_ty, builder);
             let raw = lower_typed_expr_loops(value, builder, vars, loops, ctx);
@@ -115,7 +119,11 @@ fn lower_typed_stmt(
             lower_typed_expr_loops(expr, builder, vars, loops, ctx);
         }
 
-        TypedStmt::If { branches, else_branch, .. } => {
+        TypedStmt::If {
+            branches,
+            else_branch,
+            ..
+        } => {
             lower_if(branches, else_branch.as_ref(), builder, vars, loops, ctx);
         }
 
@@ -127,7 +135,12 @@ fn lower_typed_stmt(
             lower_do_while(body, cond, builder, vars, loops, ctx);
         }
 
-        TypedStmt::For { binding, iterable, body, .. } => {
+        TypedStmt::For {
+            binding,
+            iterable,
+            body,
+            ..
+        } => {
             lower_for(binding, iterable, body, builder, vars, loops, ctx);
         }
 
@@ -153,7 +166,12 @@ fn lower_typed_stmt(
             crate::codegen::exceptions::emit_raise(exc_val, ctx.module, builder);
         }
 
-        TypedStmt::TryCatch { body, handlers, finally, .. } => {
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            ..
+        } => {
             let handlers_clone = handlers.clone();
             let finally_clone = finally.clone();
             let mut inner_vars = vars.clone();
@@ -166,7 +184,8 @@ fn lower_typed_stmt(
                 };
                 let exit_sig = ctx.module.make_signature();
 
-                let enter_id = ctx.module
+                let enter_id = ctx
+                    .module
                     .declare_function("__kiln_try_enter", Linkage::Import, &enter_sig)
                     .unwrap_or_else(|_| {
                         if let Some(cranelift_module::FuncOrDataId::Func(id)) =
@@ -177,7 +196,8 @@ fn lower_typed_stmt(
                             panic!("__kiln_try_enter not found")
                         }
                     });
-                let exit_id = ctx.module
+                let exit_id = ctx
+                    .module
                     .declare_function("__kiln_try_exit", Linkage::Import, &exit_sig)
                     .unwrap_or_else(|_| {
                         if let Some(cranelift_module::FuncOrDataId::Func(id)) =
@@ -309,7 +329,10 @@ fn lower_while(
     builder.switch_to_block(body_bb);
     builder.seal_block(body_bb);
 
-    loops.push(LoopCtx { header: header_bb, exit: exit_bb });
+    loops.push(LoopCtx {
+        header: header_bb,
+        exit: exit_bb,
+    });
     lower_typed_block(body, builder, vars, loops, ctx);
     loops.pop();
 
@@ -336,7 +359,10 @@ fn lower_do_while(
     builder.ins().jump(body_bb, &[]);
     builder.switch_to_block(body_bb);
 
-    loops.push(LoopCtx { header: body_bb, exit: exit_bb });
+    loops.push(LoopCtx {
+        header: body_bb,
+        exit: exit_bb,
+    });
     lower_typed_block(body, builder, vars, loops, ctx);
     loops.pop();
 
@@ -408,7 +434,10 @@ fn lower_for(
         builder.def_var(bind_var, idx_now);
     }
 
-    loops.push(LoopCtx { header: header_bb, exit: exit_bb });
+    loops.push(LoopCtx {
+        header: header_bb,
+        exit: exit_bb,
+    });
     lower_typed_block(body, builder, vars, loops, ctx);
     loops.pop();
 
@@ -446,4 +475,3 @@ fn call_get_current_exc(
     let call = builder.ins().call(func_ref, &[]);
     builder.inst_results(call)[0]
 }
-

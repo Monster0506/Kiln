@@ -1,5 +1,5 @@
-use crate::analyzer::typed_ast::{TypedEnumDef, TypedStructDef};
 use crate::analyzer::ty::Ty;
+use crate::analyzer::typed_ast::{TypedEnumDef, TypedStructDef};
 use crate::parser::ast::{EnumDef, EnumVariant, StructDef, TypeExpr};
 use cranelift_module::FuncId;
 use std::collections::HashMap;
@@ -96,7 +96,8 @@ impl StructLayouts {
             offset += size;
         }
         let size = align_up(offset, 8);
-        self.structs.insert(st.name.clone(), StructInfo { fields, size });
+        self.structs
+            .insert(st.name.clone(), StructInfo { fields, size });
     }
 
     pub fn register_typed_enum(&mut self, en: &TypedEnumDef) {
@@ -122,16 +123,25 @@ impl StructLayouts {
                 fields_layout.push((f.name.clone(), field_offset));
                 field_offset += ty_size(&f.ty);
             }
-            variants.insert(v.name.clone(), EnumVariantLayout { discriminant: disc, fields: fields_layout });
+            variants.insert(
+                v.name.clone(),
+                EnumVariantLayout {
+                    discriminant: disc,
+                    fields: fields_layout,
+                },
+            );
         }
         let size = align_up(payload_offset + max_payload, 8);
-        self.enums.insert(en.name.clone(), EnumInfo {
-            variants,
-            discriminant_size,
-            payload_offset,
-            max_payload_size: max_payload,
-            size,
-        });
+        self.enums.insert(
+            en.name.clone(),
+            EnumInfo {
+                variants,
+                discriminant_size,
+                payload_offset,
+                max_payload_size: max_payload,
+                size,
+            },
+        );
     }
 
     pub fn register_struct(&mut self, st: &StructDef) {
@@ -150,7 +160,8 @@ impl StructLayouts {
             offset += size;
         }
         let size = align_up(offset, 8);
-        self.structs.insert(st.name.clone(), StructInfo { fields, size });
+        self.structs
+            .insert(st.name.clone(), StructInfo { fields, size });
     }
 
     pub fn register_enum(&mut self, en: &EnumDef) {
@@ -180,7 +191,13 @@ impl StructLayouts {
                 fields_layout.push((f.name.clone(), field_offset));
                 field_offset += type_expr_size(&f.ty);
             }
-            variants.insert(v.name.clone(), EnumVariantLayout { discriminant: disc, fields: fields_layout });
+            variants.insert(
+                v.name.clone(),
+                EnumVariantLayout {
+                    discriminant: disc,
+                    fields: fields_layout,
+                },
+            );
         }
 
         let size = align_up(payload_offset + max_payload, 8);

@@ -85,7 +85,10 @@ mod tests {
     #[test]
     fn pointer_types_lower_to_i64() {
         assert_eq!(clif_type(&Ty::Shared(Box::new(Ty::Int))), Some(types::I64));
-        assert_eq!(clif_type(&Ty::Ref(Box::new(Ty::Int), false)), Some(types::I64));
+        assert_eq!(
+            clif_type(&Ty::Ref(Box::new(Ty::Int), false)),
+            Some(types::I64)
+        );
         assert_eq!(clif_type(&Ty::Vec(Box::new(Ty::Int))), Some(types::I64));
     }
 }

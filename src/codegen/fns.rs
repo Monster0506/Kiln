@@ -57,12 +57,23 @@ mod tests {
             name: "add".into(),
             generic_params: vec![],
             params: vec![
-                Param { name: "a".into(), ty: named_ty("int"), span: s() },
-                Param { name: "b".into(), ty: named_ty("int"), span: s() },
+                Param {
+                    name: "a".into(),
+                    ty: named_ty("int"),
+                    span: s(),
+                },
+                Param {
+                    name: "b".into(),
+                    ty: named_ty("int"),
+                    span: s(),
+                },
             ],
             variadic: None,
             return_type: named_ty("int"),
-            body: Block { stmts: vec![], span: s() },
+            body: Block {
+                stmts: vec![],
+                span: s(),
+            },
             span: s(),
         };
         register_prototype(&fn_def, &mut cgx.module);
@@ -79,7 +90,10 @@ mod tests {
             params: vec![],
             variadic: None,
             return_type: named_ty("void"),
-            body: Block { stmts: vec![], span: s() },
+            body: Block {
+                stmts: vec![],
+                span: s(),
+            },
             span: s(),
         };
         register_prototype(&fn_def, &mut cgx.module);
@@ -96,7 +110,10 @@ mod tests {
             params: vec![],
             variadic: None,
             return_type: named_ty("void"),
-            body: Block { stmts: vec![], span: s() },
+            body: Block {
+                stmts: vec![],
+                span: s(),
+            },
             span: s(),
         };
         let id1 = register_prototype(&fn_def, &mut cgx.module);

@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 use kiln_compiler::analyzer::analyze;
-use kiln_compiler::parse_prelude;
 use kiln_compiler::codegen::{compile::compile, context::CodegenContext, emit};
 use kiln_compiler::diagnostics::SourceMap;
 use kiln_compiler::lexer::Lexer;
+use kiln_compiler::parse_prelude;
 use kiln_compiler::parser::Parser as KilnParser;
 use std::fs;
 use std::path::PathBuf;
@@ -95,7 +95,10 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
         std::process::exit(1);
     });
 
-    let module_name = file.file_stem().and_then(|s| s.to_str()).unwrap_or("module");
+    let module_name = file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("module");
     let mut cgx = CodegenContext::new(module_name);
     compile(&typed_file, &mut cgx).unwrap_or_else(|e| {
         eprintln!("codegen error: {e}");
@@ -109,8 +112,10 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
 
     let exe_ext = if cfg!(windows) { "exe" } else { "" };
     let exe_path = output.unwrap_or_else(|| file.with_extension(exe_ext));
-    let tmp_obj = std::env::temp_dir()
-        .join(format!("kiln_{}.o", file.file_stem().and_then(|s| s.to_str()).unwrap_or("out")));
+    let tmp_obj = std::env::temp_dir().join(format!(
+        "kiln_{}.o",
+        file.file_stem().and_then(|s| s.to_str()).unwrap_or("out")
+    ));
     emit::link_executable(&obj_bytes, &tmp_obj, &exe_path, verbose).unwrap_or_else(|e| {
         eprintln!("link error: {e}");
         std::process::exit(1);
@@ -196,7 +201,12 @@ fn main() {
             }
         }
 
-        Command::Build { file, output, no_link, verbose } => {
+        Command::Build {
+            file,
+            output,
+            no_link,
+            verbose,
+        } => {
             if no_link {
                 let path = file.to_string_lossy().to_string();
                 let src = fs::read_to_string(&file).unwrap_or_else(|e| {
@@ -231,7 +241,10 @@ fn main() {
                     }
                     std::process::exit(1);
                 });
-                let module_name = file.file_stem().and_then(|s| s.to_str()).unwrap_or("module");
+                let module_name = file
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("module");
                 let mut cgx = CodegenContext::new(module_name);
                 compile(&typed_file, &mut cgx).unwrap_or_else(|e| {
                     eprintln!("codegen error: {e}");

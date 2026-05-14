@@ -104,7 +104,9 @@ impl AnalysisError {
             } => {
                 format!("type `{ty}` does not satisfy `{iface}`: {detail}")
             }
-            AnalysisError::BoundViolation { ty, iface, context, .. } => {
+            AnalysisError::BoundViolation {
+                ty, iface, context, ..
+            } => {
                 format!("type `{ty}` does not implement `{iface}`{context}")
             }
             AnalysisError::PrivateField { field, .. } => {

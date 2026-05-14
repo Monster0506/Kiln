@@ -68,7 +68,10 @@ fn satisfies_generic_one(
     }
     // Any one entry with all bounds satisfied is enough.
     entries.iter().any(|entry| {
-        entry.bounds.iter().all(|(_param, bound_iface)| satisfies(inner, bound_iface, registry))
+        entry
+            .bounds
+            .iter()
+            .all(|(_param, bound_iface)| satisfies(inner, bound_iface, registry))
     })
 }
 
@@ -138,12 +141,16 @@ mod tests {
         r.register_conformance(
             "Vec",
             "Display",
-            ConformanceEntry { bounds: vec![("T".into(), "Display".into())] },
+            ConformanceEntry {
+                bounds: vec![("T".into(), "Display".into())],
+            },
         );
         r.register_conformance(
             "Vec",
             "Eq",
-            ConformanceEntry { bounds: vec![("T".into(), "Eq".into())] },
+            ConformanceEntry {
+                bounds: vec![("T".into(), "Eq".into())],
+            },
         );
         r
     }

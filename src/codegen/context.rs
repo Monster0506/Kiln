@@ -20,12 +20,9 @@ impl CodegenContext {
             .finish(flags)
             .expect("failed to build ISA");
 
-        let obj_builder = ObjectBuilder::new(
-            isa,
-            module_name,
-            cranelift_module::default_libcall_names(),
-        )
-        .expect("failed to create ObjectBuilder");
+        let obj_builder =
+            ObjectBuilder::new(isa, module_name, cranelift_module::default_libcall_names())
+                .expect("failed to create ObjectBuilder");
 
         let module = ObjectModule::new(obj_builder);
         let ctx = module.make_context();

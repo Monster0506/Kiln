@@ -72,12 +72,16 @@ pub fn lower_typed_match(
                 builder.seal_block(next_bb);
             }
 
-            TypedPattern::Struct { variant, fields, .. } => {
+            TypedPattern::Struct {
+                variant, fields, ..
+            } => {
                 if let Some(layout) = ctx.layouts.get_struct(variant) {
                     let bindings: Vec<(String, u32)> = fields
                         .iter()
                         .filter_map(|(field_name, var_name)| {
-                            layout.field_offset(field_name).map(|off| (var_name.clone(), off))
+                            layout
+                                .field_offset(field_name)
+                                .map(|off| (var_name.clone(), off))
                         })
                         .collect();
                     for (var_name, offset) in bindings {
@@ -99,11 +103,13 @@ pub fn lower_typed_match(
                 } else if let Some((enum_info, variant_layout)) =
                     ctx.layouts.get_enum_variant(variant)
                 {
-                    let disc_raw =
-                        builder.ins().load(types::I32, MemFlags::new(), scrutinee, 0);
+                    let disc_raw = builder
+                        .ins()
+                        .load(types::I32, MemFlags::new(), scrutinee, 0);
                     let disc_64 = builder.ins().uextend(types::I64, disc_raw);
-                    let expected =
-                        builder.ins().iconst(types::I64, variant_layout.discriminant as i64);
+                    let expected = builder
+                        .ins()
+                        .iconst(types::I64, variant_layout.discriminant as i64);
                     let cmp = builder.ins().icmp(IntCC::Equal, disc_64, expected);
 
                     let arm_bb = builder.create_block();

@@ -140,11 +140,17 @@ impl TypeRegistry {
     }
 
     pub fn register_method(&mut self, type_name: &str, entry: MethodEntry) {
-        self.type_methods.entry(type_name.to_string()).or_default().push(entry);
+        self.type_methods
+            .entry(type_name.to_string())
+            .or_default()
+            .push(entry);
     }
 
     pub fn find_method(&self, type_name: &str, method_name: &str) -> Option<&MethodEntry> {
-        self.type_methods.get(type_name)?.iter().find(|m| m.method_name == method_name)
+        self.type_methods
+            .get(type_name)?
+            .iter()
+            .find(|m| m.method_name == method_name)
     }
 
     pub fn register(&mut self, name: String, kind: TypeKind) -> TypeId {
@@ -166,7 +172,12 @@ impl TypeRegistry {
         self.entries.get(id.0 as usize)
     }
 
-    pub fn register_conformance(&mut self, type_name: &str, iface_name: &str, entry: ConformanceEntry) {
+    pub fn register_conformance(
+        &mut self,
+        type_name: &str,
+        iface_name: &str,
+        entry: ConformanceEntry,
+    ) {
         self.conformances
             .entry((type_name.to_string(), iface_name.to_string()))
             .or_default()
@@ -181,15 +192,28 @@ impl TypeRegistry {
     }
 
     pub fn register_interface_method(&mut self, iface_name: &str, entry: MethodEntry) {
-        self.interface_methods.entry(iface_name.to_string()).or_default().push(entry);
+        self.interface_methods
+            .entry(iface_name.to_string())
+            .or_default()
+            .push(entry);
     }
 
-    pub fn get_interface_method(&self, iface_name: &str, method_name: &str) -> Option<&MethodEntry> {
-        self.interface_methods.get(iface_name)?.iter().find(|m| m.method_name == method_name)
+    pub fn get_interface_method(
+        &self,
+        iface_name: &str,
+        method_name: &str,
+    ) -> Option<&MethodEntry> {
+        self.interface_methods
+            .get(iface_name)?
+            .iter()
+            .find(|m| m.method_name == method_name)
     }
 
     pub fn list_interface_methods(&self, iface_name: &str) -> &[MethodEntry] {
-        self.interface_methods.get(iface_name).map(|v| v.as_slice()).unwrap_or(&[])
+        self.interface_methods
+            .get(iface_name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 }
 

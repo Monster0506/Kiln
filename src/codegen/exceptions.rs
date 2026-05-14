@@ -12,18 +12,26 @@ use cranelift_object::ObjectModule;
 pub fn declare_exception_runtime(module: &mut ObjectModule) {
     let mut raise_sig = module.make_signature();
     raise_sig.params.push(AbiParam::new(types::I64));
-    module.declare_function("__kiln_raise", Linkage::Import, &raise_sig).ok();
+    module
+        .declare_function("__kiln_raise", Linkage::Import, &raise_sig)
+        .ok();
 
     let mut enter_sig = module.make_signature();
     enter_sig.returns.push(AbiParam::new(types::I32));
-    module.declare_function("__kiln_try_enter", Linkage::Import, &enter_sig).ok();
+    module
+        .declare_function("__kiln_try_enter", Linkage::Import, &enter_sig)
+        .ok();
 
     let exit_sig = module.make_signature();
-    module.declare_function("__kiln_try_exit", Linkage::Import, &exit_sig).ok();
+    module
+        .declare_function("__kiln_try_exit", Linkage::Import, &exit_sig)
+        .ok();
 
     let mut cur_exc_sig = module.make_signature();
     cur_exc_sig.returns.push(AbiParam::new(types::I64));
-    module.declare_function("__kiln_current_exc", Linkage::Import, &cur_exc_sig).ok();
+    module
+        .declare_function("__kiln_current_exc", Linkage::Import, &cur_exc_sig)
+        .ok();
 }
 
 /// Emit IR for a `raise expr` statement.
@@ -40,7 +48,9 @@ pub fn emit_raise(
         s.params.push(AbiParam::new(types::I64));
         s
     };
-    let callee = module.declare_function("__kiln_raise", Linkage::Import, &sig).unwrap();
+    let callee = module
+        .declare_function("__kiln_raise", Linkage::Import, &sig)
+        .unwrap();
     let func_ref = module.declare_func_in_func(callee, builder.func);
     builder.ins().call(func_ref, &[exc_ptr]);
 }
@@ -69,8 +79,12 @@ pub fn emit_try_catch(
     };
     let exit_sig = module.make_signature();
 
-    let enter_id = module.declare_function("__kiln_try_enter", Linkage::Import, &enter_sig).unwrap();
-    let exit_id = module.declare_function("__kiln_try_exit", Linkage::Import, &exit_sig).unwrap();
+    let enter_id = module
+        .declare_function("__kiln_try_enter", Linkage::Import, &enter_sig)
+        .unwrap();
+    let exit_id = module
+        .declare_function("__kiln_try_exit", Linkage::Import, &exit_sig)
+        .unwrap();
 
     let enter_ref = module.declare_func_in_func(enter_id, builder.func);
     let exit_ref = module.declare_func_in_func(exit_id, builder.func);
@@ -82,7 +96,11 @@ pub fn emit_try_catch(
     let call = builder.ins().call(enter_ref, &[]);
     let frame = builder.inst_results(call)[0];
     let zero = builder.ins().iconst(types::I32, 0);
-    let is_exc = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::NotEqual, frame, zero);
+    let is_exc = builder.ins().icmp(
+        cranelift_codegen::ir::condcodes::IntCC::NotEqual,
+        frame,
+        zero,
+    );
     builder.ins().brif(is_exc, exc_bb, &[], try_body_bb, &[]);
 
     builder.switch_to_block(try_body_bb);
@@ -128,7 +146,11 @@ mod tests {
         let mut cgx = CodegenContext::new("test");
         declare_exception_runtime(&mut cgx.module);
         let mut fbc = FunctionBuilderContext::new();
-        cgx.ctx.func.signature.returns.push(AbiParam::new(types::I64));
+        cgx.ctx
+            .func
+            .signature
+            .returns
+            .push(AbiParam::new(types::I64));
 
         let mut builder = FunctionBuilder::new(&mut cgx.ctx.func, &mut fbc);
         let entry = builder.create_block();

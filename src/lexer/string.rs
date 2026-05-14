@@ -88,7 +88,10 @@ impl<'src> Lexer<'src> {
             None => Ok(Token::new(TokenKind::Eof, start, start)),
             Some('{') => {
                 self.advance();
-                *self.mode_stack.last_mut().unwrap() = Mode::Interp { depth: depth + 1, close };
+                *self.mode_stack.last_mut().unwrap() = Mode::Interp {
+                    depth: depth + 1,
+                    close,
+                };
                 Ok(Token::new(TokenKind::LBrace, start, self.pos))
             }
             Some('}') => {
@@ -98,7 +101,10 @@ impl<'src> Lexer<'src> {
                     self.mode_stack.push(Mode::String { close });
                     Ok(Token::new(TokenKind::InterpEnd, start, self.pos))
                 } else {
-                    *self.mode_stack.last_mut().unwrap() = Mode::Interp { depth: depth - 1, close };
+                    *self.mode_stack.last_mut().unwrap() = Mode::Interp {
+                        depth: depth - 1,
+                        close,
+                    };
                     Ok(Token::new(TokenKind::RBrace, start, self.pos))
                 }
             }

@@ -22,7 +22,10 @@ pub fn check_typed_block(
         stmts.push(check_typed_stmt(s, env, registry, return_ty, errors));
     }
     env.pop_scope();
-    TypedBlock { stmts, span: block.span }
+    TypedBlock {
+        stmts,
+        span: block.span,
+    }
 }
 
 fn check_typed_stmt(
@@ -33,7 +36,13 @@ fn check_typed_stmt(
     errors: &mut Vec<AnalysisError>,
 ) -> TypedStmt {
     match stmt {
-        Stmt::VarDecl { name, ty, value, mutable, span } => {
+        Stmt::VarDecl {
+            name,
+            ty,
+            value,
+            mutable,
+            span,
+        } => {
             let declared = resolve_type_expr(ty, env, registry, errors);
             let typed_val = infer_typed_expr(value, env, registry, errors);
             if let Ty::Interface(_, iface_name) = &declared {
@@ -51,7 +60,14 @@ fn check_typed_stmt(
             } else {
                 check_assignable(&declared, &typed_val.ty, &typed_val.span, errors);
             }
-            env.define(name, Symbol::Var { ty: declared.clone(), mutable: *mutable, span: *span });
+            env.define(
+                name,
+                Symbol::Var {
+                    ty: declared.clone(),
+                    mutable: *mutable,
+                    span: *span,
+                },
+            );
             TypedStmt::VarDecl {
                 name: name.clone(),
                 ty: declared,
@@ -61,7 +77,11 @@ fn check_typed_stmt(
             }
         }
 
-        Stmt::Assign { target, value, span } => {
+        Stmt::Assign {
+            target,
+            value,
+            span,
+        } => {
             if let Expr::Ident(name, ident_span) = target {
                 match env.lookup(name) {
                     Some(Symbol::Var { mutable: false, .. }) => {
@@ -82,7 +102,11 @@ fn check_typed_stmt(
             let typed_target = infer_typed_expr(target, env, registry, errors);
             let typed_val = infer_typed_expr(value, env, registry, errors);
             check_assignable(&typed_target.ty, &typed_val.ty, &typed_val.span, errors);
-            TypedStmt::Assign { target: typed_target, value: typed_val, span: *span }
+            TypedStmt::Assign {
+                target: typed_target,
+                value: typed_val,
+                span: *span,
+            }
         }
 
         Stmt::Return { value, span } => {
@@ -96,17 +120,29 @@ fn check_typed_stmt(
             };
             let found = typed.as_ref().map(|t| t.ty.clone()).unwrap_or(Ty::Void);
             check_assignable(return_ty, &found, &val_span, errors);
-            TypedStmt::Return { value: typed, span: *span }
+            TypedStmt::Return {
+                value: typed,
+                span: *span,
+            }
         }
 
         Stmt::Raise { value, span } => {
-            let typed = value.as_ref().map(|v| infer_typed_expr(v, env, registry, errors));
-            TypedStmt::Raise { value: typed, span: *span }
+            let typed = value
+                .as_ref()
+                .map(|v| infer_typed_expr(v, env, registry, errors));
+            TypedStmt::Raise {
+                value: typed,
+                span: *span,
+            }
         }
 
         Stmt::Expr(expr) => TypedStmt::Expr(infer_typed_expr(expr, env, registry, errors)),
 
-        Stmt::If { branches, else_branch, span } => {
+        Stmt::If {
+            branches,
+            else_branch,
+            span,
+        } => {
             let mut typed_branches = Vec::new();
             for (cond, block) in branches {
                 let tc = infer_typed_expr(cond, env, registry, errors);
@@ -123,7 +159,11 @@ fn check_typed_stmt(
             let else_typed = else_branch
                 .as_ref()
                 .map(|b| check_typed_block(b, env, registry, return_ty, errors));
-            TypedStmt::If { branches: typed_branches, else_branch: else_typed, span: *span }
+            TypedStmt::If {
+                branches: typed_branches,
+                else_branch: else_typed,
+                span: *span,
+            }
         }
 
         Stmt::While { cond, body, span } => {
@@ -136,7 +176,11 @@ fn check_typed_stmt(
                 });
             }
             let tb = check_typed_block(body, env, registry, return_ty, errors);
-            TypedStmt::While { cond: tc, body: tb, span: *span }
+            TypedStmt::While {
+                cond: tc,
+                body: tb,
+                span: *span,
+            }
         }
 
         Stmt::DoWhile { body, cond, span } => {
@@ -149,10 +193,20 @@ fn check_typed_stmt(
                     span: *span,
                 });
             }
-            TypedStmt::DoWhile { body: tb, cond: tc, span: *span }
+            TypedStmt::DoWhile {
+                body: tb,
+                cond: tc,
+                span: *span,
+            }
         }
 
-        Stmt::For { binding, binding_ty, iterable, body, span } => {
+        Stmt::For {
+            binding,
+            binding_ty,
+            iterable,
+            body,
+            span,
+        } => {
             let ti = infer_typed_expr(iterable, env, registry, errors);
             let elem_ty = match &ti.ty {
                 Ty::Vec(t) | Ty::Set(t) => *t.clone(),
@@ -167,13 +221,23 @@ fn check_typed_stmt(
                 elem_ty.clone()
             };
             env.push_scope();
-            env.define(binding, Symbol::Var { ty: elem_ty, mutable: false, span: *span });
+            env.define(
+                binding,
+                Symbol::Var {
+                    ty: elem_ty,
+                    mutable: false,
+                    span: *span,
+                },
+            );
             let mut tb_stmts = Vec::new();
             for s in &body.stmts {
                 tb_stmts.push(check_typed_stmt(s, env, registry, return_ty, errors));
             }
             env.pop_scope();
-            let typed_body = TypedBlock { stmts: tb_stmts, span: body.span };
+            let typed_body = TypedBlock {
+                stmts: tb_stmts,
+                span: body.span,
+            };
             TypedStmt::For {
                 binding: binding.clone(),
                 binding_ty: ann_ty,
@@ -183,7 +247,12 @@ fn check_typed_stmt(
             }
         }
 
-        Stmt::TryCatch { body, handlers, finally, span } => {
+        Stmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            span,
+        } => {
             let typed_body = check_typed_block(body, env, registry, return_ty, errors);
             let mut typed_handlers: Vec<TypedCatchHandler> = Vec::new();
             for h in handlers {
@@ -191,7 +260,11 @@ fn check_typed_stmt(
                 env.push_scope();
                 env.define(
                     &h.binding,
-                    Symbol::Var { ty: exc_ty.clone(), mutable: false, span: h.span },
+                    Symbol::Var {
+                        ty: exc_ty.clone(),
+                        mutable: false,
+                        span: h.span,
+                    },
                 );
                 let hb = check_typed_block(&h.body, env, registry, return_ty, errors);
                 env.pop_scope();
@@ -202,8 +275,9 @@ fn check_typed_stmt(
                     span: h.span,
                 });
             }
-            let typed_finally =
-                finally.as_ref().map(|b| check_typed_block(b, env, registry, return_ty, errors));
+            let typed_finally = finally
+                .as_ref()
+                .map(|b| check_typed_block(b, env, registry, return_ty, errors));
             TypedStmt::TryCatch {
                 body: typed_body,
                 handlers: typed_handlers,
@@ -244,13 +318,18 @@ pub fn check_fn_def(
                 .generic_params
                 .iter()
                 .flat_map(|g| {
-                    g.bounds.iter().map(move |b| crate::analyzer::env::GenericBound {
-                        param: g.name.clone(),
-                        iface: b.clone(),
-                    })
+                    g.bounds
+                        .iter()
+                        .map(move |b| crate::analyzer::env::GenericBound {
+                            param: g.name.clone(),
+                            iface: b.clone(),
+                        })
                 })
                 .collect(),
-            params: params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect(),
+            params: params
+                .iter()
+                .map(|p| (p.name.clone(), p.ty.clone()))
+                .collect(),
             ret: ret.clone(),
             span: f.span,
         },
@@ -258,7 +337,14 @@ pub fn check_fn_def(
 
     env.push_scope();
     for p in &params {
-        env.define(&p.name, Symbol::Var { ty: p.ty.clone(), mutable: false, span: p.span });
+        env.define(
+            &p.name,
+            Symbol::Var {
+                ty: p.ty.clone(),
+                mutable: false,
+                span: p.span,
+            },
+        );
     }
     let body = check_typed_block(&f.body, env, registry, &ret, errors);
     env.pop_scope();
@@ -285,10 +371,18 @@ mod tests {
         Span { start: 0, end: 0 }
     }
     fn int_ty() -> TypeExpr {
-        TypeExpr::Named { name: "int".into(), generics: vec![], span: s() }
+        TypeExpr::Named {
+            name: "int".into(),
+            generics: vec![],
+            span: s(),
+        }
     }
     fn bool_ty() -> TypeExpr {
-        TypeExpr::Named { name: "bool".into(), generics: vec![], span: s() }
+        TypeExpr::Named {
+            name: "bool".into(),
+            generics: vec![],
+            span: s(),
+        }
     }
 
     #[test]

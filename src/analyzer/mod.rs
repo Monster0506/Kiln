@@ -30,61 +30,131 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
     use ty::ConformanceEntry as CE;
     let s = Span::new(0, 0);
     let unc = || CE { bounds: vec![] }; // unconditional entry
-    let with = |param: &str, iface: &str| CE { bounds: vec![(param.into(), iface.into())] };
+    let with = |param: &str, iface: &str| CE {
+        bounds: vec![(param.into(), iface.into())],
+    };
     let with2 = |p1: &str, i1: &str, p2: &str, i2: &str| CE {
         bounds: vec![(p1.into(), i1.into()), (p2.into(), i2.into())],
     };
 
     // int
     for iface in &[
-        "Copy", "Clone", "Eq", "Hash", "Ord", "PartialEq", "PartialOrd",
-        "Debug", "Display", "Default",
-        "Zero", "One", "Negatable", "Abs", "Signum",
-        "Addable", "Subtractable", "Multiplicable", "Divisible", "Remainder",
-        "Bitwise", "Numeric", "Integral",
+        "Copy",
+        "Clone",
+        "Eq",
+        "Hash",
+        "Ord",
+        "PartialEq",
+        "PartialOrd",
+        "Debug",
+        "Display",
+        "Default",
+        "Zero",
+        "One",
+        "Negatable",
+        "Abs",
+        "Signum",
+        "Addable",
+        "Subtractable",
+        "Multiplicable",
+        "Divisible",
+        "Remainder",
+        "Bitwise",
+        "Numeric",
+        "Integral",
     ] {
         registry.register_conformance("int", iface, unc());
     }
 
     // float (not Eq, not Ord, not Remainder, not Bitwise, not Integral due to NaN / IEEE754)
     for iface in &[
-        "Copy", "Clone", "PartialEq", "PartialOrd",
-        "Debug", "Display", "Default",
-        "Zero", "One", "Negatable", "Abs", "Signum",
-        "Addable", "Subtractable", "Multiplicable", "Divisible",
-        "Fractional", "Numeric",
+        "Copy",
+        "Clone",
+        "PartialEq",
+        "PartialOrd",
+        "Debug",
+        "Display",
+        "Default",
+        "Zero",
+        "One",
+        "Negatable",
+        "Abs",
+        "Signum",
+        "Addable",
+        "Subtractable",
+        "Multiplicable",
+        "Divisible",
+        "Fractional",
+        "Numeric",
     ] {
         registry.register_conformance("float", iface, unc());
     }
 
     // bool
-    for iface in &["Copy", "Clone", "Eq", "Hash", "Ord", "PartialEq", "PartialOrd", "Debug", "Display", "Default"] {
+    for iface in &[
+        "Copy",
+        "Clone",
+        "Eq",
+        "Hash",
+        "Ord",
+        "PartialEq",
+        "PartialOrd",
+        "Debug",
+        "Display",
+        "Default",
+    ] {
         registry.register_conformance("bool", iface, unc());
     }
 
     // str
-    for iface in &["Clone", "Eq", "Hash", "Ord", "PartialEq", "PartialOrd", "Debug", "Display", "Default",
-                   "Semigroup", "Monoid", "Addable"] {
+    for iface in &[
+        "Clone",
+        "Eq",
+        "Hash",
+        "Ord",
+        "PartialEq",
+        "PartialOrd",
+        "Debug",
+        "Display",
+        "Default",
+        "Semigroup",
+        "Monoid",
+        "Addable",
+    ] {
         registry.register_conformance("str", iface, unc());
     }
     registry.register_conformance("str", "Indexable", unc());
 
     // Vec[T] -- conditional on T
     for (iface, bound) in &[
-        ("Clone", "Clone"), ("Eq", "Eq"), ("Hash", "Hash"), ("Ord", "Ord"),
-        ("PartialEq", "PartialEq"), ("PartialOrd", "PartialOrd"),
-        ("Debug", "Debug"), ("Display", "Display"),
+        ("Clone", "Clone"),
+        ("Eq", "Eq"),
+        ("Hash", "Hash"),
+        ("Ord", "Ord"),
+        ("PartialEq", "PartialEq"),
+        ("PartialOrd", "PartialOrd"),
+        ("Debug", "Debug"),
+        ("Display", "Display"),
     ] {
         registry.register_conformance("Vec", iface, with("T", bound));
     }
-    for iface in &["Default", "Semigroup", "Monoid", "Iterable", "Foldable", "Indexable"] {
+    for iface in &[
+        "Default",
+        "Semigroup",
+        "Monoid",
+        "Iterable",
+        "Foldable",
+        "Indexable",
+    ] {
         registry.register_conformance("Vec", iface, unc());
     }
 
     // Set[T: Hash]
     for (iface, bound) in &[
-        ("Clone", "Clone"), ("Eq", "Eq"),
-        ("Debug", "Debug"), ("Display", "Display"),
+        ("Clone", "Clone"),
+        ("Eq", "Eq"),
+        ("Debug", "Debug"),
+        ("Display", "Display"),
     ] {
         registry.register_conformance("Set", iface, with("T", bound));
     }
@@ -107,9 +177,14 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
 
     // Option[T]
     for (iface, bound) in &[
-        ("Clone", "Clone"), ("Eq", "Eq"), ("Hash", "Hash"), ("Ord", "Ord"),
-        ("PartialEq", "PartialEq"), ("PartialOrd", "PartialOrd"),
-        ("Debug", "Debug"), ("Display", "Display"),
+        ("Clone", "Clone"),
+        ("Eq", "Eq"),
+        ("Hash", "Hash"),
+        ("Ord", "Ord"),
+        ("PartialEq", "PartialEq"),
+        ("PartialOrd", "PartialOrd"),
+        ("Debug", "Debug"),
+        ("Display", "Display"),
     ] {
         registry.register_conformance("Option", iface, with("T", bound));
     }
@@ -121,14 +196,20 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
     registry.register_conformance("Shared", "Clone", unc());
 
     let exc_id = registry.register("Exception".into(), TypeKind::Struct);
-    env.define("Exception", Symbol::Type { id: exc_id, span: s });
+    env.define(
+        "Exception",
+        Symbol::Type {
+            id: exc_id,
+            span: s,
+        },
+    );
 
     // len, panic, assert, clock_ms: no interface requirements
     // (print/println are defined in the prelude as def print[T: Display])
     let fns: &[(&str, &[Ty], Ty)] = &[
-        ("len",      &[Ty::Unknown], Ty::Int),
-        ("panic",    &[Ty::Unknown], Ty::Void),
-        ("assert",   &[Ty::Unknown], Ty::Void),
+        ("len", &[Ty::Unknown], Ty::Int),
+        ("panic", &[Ty::Unknown], Ty::Void),
+        ("assert", &[Ty::Unknown], Ty::Void),
         ("clock_ms", &[], Ty::Int),
     ];
     for (name, params, ret) in fns {
@@ -170,7 +251,13 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
         let fns: Vec<_> = source
             .items
             .iter()
-            .filter_map(|i| if let Item::Function(f) = i { Some(f) } else { None })
+            .filter_map(|i| {
+                if let Item::Function(f) = i {
+                    Some(f)
+                } else {
+                    None
+                }
+            })
             .collect();
         for (idx, f) in fns.iter().enumerate() {
             if !fn_groups.contains_key(&f.name) {
@@ -187,14 +274,25 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 if has_generics {
                     env.push_scope();
                     for gp in &f.generic_params {
-                        env.define(&gp.name, Symbol::Type { id: TypeId(0), span: gp.span });
+                        env.define(
+                            &gp.name,
+                            Symbol::Type {
+                                id: TypeId(0),
+                                span: gp.span,
+                            },
+                        );
                     }
                 }
                 let ret = resolve_type_expr(&f.return_type, &env, &registry, &mut errors);
                 let params: Vec<(String, Ty)> = f
                     .params
                     .iter()
-                    .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &registry, &mut errors)))
+                    .map(|p| {
+                        (
+                            p.name.clone(),
+                            resolve_type_expr(&p.ty, &env, &registry, &mut errors),
+                        )
+                    })
                     .collect();
                 if has_generics {
                     env.pop_scope();
@@ -228,14 +326,25 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     if has_generics {
                         env.push_scope();
                         for gp in &f.generic_params {
-                            env.define(&gp.name, Symbol::Type { id: TypeId(0), span: gp.span });
+                            env.define(
+                                &gp.name,
+                                Symbol::Type {
+                                    id: TypeId(0),
+                                    span: gp.span,
+                                },
+                            );
                         }
                     }
                     let ret = resolve_type_expr(&f.return_type, &env, &registry, &mut errors);
                     let params: Vec<(String, Ty)> = f
                         .params
                         .iter()
-                        .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &registry, &mut errors)))
+                        .map(|p| {
+                            (
+                                p.name.clone(),
+                                resolve_type_expr(&p.ty, &env, &registry, &mut errors),
+                            )
+                        })
                         .collect();
                     if has_generics {
                         env.pop_scope();
@@ -275,14 +384,25 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 if has_generics {
                     env.push_scope();
                     for gp in &s.generic_params {
-                        env.define(&gp.name, Symbol::Type { id: TypeId(0), span: gp.span });
+                        env.define(
+                            &gp.name,
+                            Symbol::Type {
+                                id: TypeId(0),
+                                span: gp.span,
+                            },
+                        );
                     }
                 }
                 for decl in &s.decls {
                     let params: Vec<(String, Ty)> = decl
                         .params
                         .iter()
-                        .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &registry, &mut errors)))
+                        .map(|p| {
+                            (
+                                p.name.clone(),
+                                resolve_type_expr(&p.ty, &env, &registry, &mut errors),
+                            )
+                        })
                         .collect();
                     let ret = resolve_type_expr(&decl.return_type, &env, &registry, &mut errors);
                     let qualified_fn = format!("{}_{}", s.name, decl.name);
@@ -303,7 +423,12 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 let fields: Vec<(String, Ty)> = s
                     .fields
                     .iter()
-                    .map(|f| (f.name.clone(), resolve_type_expr(&f.ty, &env, &registry, &mut errors)))
+                    .map(|f| {
+                        (
+                            f.name.clone(),
+                            resolve_type_expr(&f.ty, &env, &registry, &mut errors),
+                        )
+                    })
                     .collect();
                 registry.register_struct_fields(&s.name, fields);
             }
@@ -327,9 +452,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 let bounds: Vec<(String, String)> = impl_block
                     .generic_params
                     .iter()
-                    .flat_map(|gp| {
-                        gp.bounds.iter().map(move |b| (gp.name.clone(), b.clone()))
-                    })
+                    .flat_map(|gp| gp.bounds.iter().map(move |b| (gp.name.clone(), b.clone())))
                     .collect();
                 registry.register_conformance(
                     &type_name,
@@ -341,13 +464,21 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             // Push scope for generic params. Prefer explicit impl-level params; fall
             // back to extracting them from the for_type generics list.
             let scope_params: Vec<String> = if !impl_block.generic_params.is_empty() {
-                impl_block.generic_params.iter().map(|g| g.name.clone()).collect()
+                impl_block
+                    .generic_params
+                    .iter()
+                    .map(|g| g.name.clone())
+                    .collect()
             } else {
                 match &impl_block.for_type {
                     TypeExpr::Named { generics, .. } => generics
                         .iter()
                         .filter_map(|g| {
-                            if let TypeExpr::Named { name, .. } = g { Some(name.clone()) } else { None }
+                            if let TypeExpr::Named { name, .. } = g {
+                                Some(name.clone())
+                            } else {
+                                None
+                            }
                         })
                         .collect(),
                     _ => vec![],
@@ -358,7 +489,13 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 env.push_scope();
                 let dummy_span = impl_block.span;
                 for gname in &scope_params {
-                    env.define(gname, Symbol::Type { id: TypeId(0), span: dummy_span });
+                    env.define(
+                        gname,
+                        Symbol::Type {
+                            id: TypeId(0),
+                            span: dummy_span,
+                        },
+                    );
                 }
             }
             for method in &impl_block.methods {
@@ -366,14 +503,22 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     .params
                     .iter()
                     .map(|p| {
-                        (p.name.clone(), resolve_type_expr(&p.ty, &env, &registry, &mut errors))
+                        (
+                            p.name.clone(),
+                            resolve_type_expr(&p.ty, &env, &registry, &mut errors),
+                        )
                     })
                     .collect();
                 let ret = resolve_type_expr(&method.return_type, &env, &registry, &mut errors);
                 let qualified_fn = format!("{}_{}", type_name, method.name);
                 registry.register_method(
                     &type_name,
-                    MethodEntry { method_name: method.name.clone(), qualified_fn, params, ret },
+                    MethodEntry {
+                        method_name: method.name.clone(),
+                        qualified_fn,
+                        params,
+                        ret,
+                    },
                 );
             }
             for hook in &impl_block.hooks {
@@ -385,7 +530,10 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     .params
                     .iter()
                     .map(|p| {
-                        (p.name.clone(), resolve_type_expr(&p.ty, &env, &registry, &mut errors))
+                        (
+                            p.name.clone(),
+                            resolve_type_expr(&p.ty, &env, &registry, &mut errors),
+                        )
                     })
                     .collect();
                 let ret = hook
@@ -396,7 +544,12 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 let qualified_fn = format!("{}__hook__{}", type_name, hook_name);
                 registry.register_method(
                     &type_name,
-                    MethodEntry { method_name: hook_name, qualified_fn, params, ret },
+                    MethodEntry {
+                        method_name: hook_name,
+                        qualified_fn,
+                        params,
+                        ret,
+                    },
                 );
             }
             if has_generics {
@@ -408,7 +561,13 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
     let interfaces: Vec<_> = source
         .items
         .iter()
-        .filter_map(|i| if let Item::Interface(iface) = i { Some(iface.clone()) } else { None })
+        .filter_map(|i| {
+            if let Item::Interface(iface) = i {
+                Some(iface.clone())
+            } else {
+                None
+            }
+        })
         .collect();
 
     // Pass 1e: register interface method/hook signatures for use by infer.rs.
@@ -421,9 +580,15 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         let params: Vec<(String, Ty)> = method
                             .params
                             .iter()
-                            .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &registry, &mut errors)))
+                            .map(|p| {
+                                (
+                                    p.name.clone(),
+                                    resolve_type_expr(&p.ty, &env, &registry, &mut errors),
+                                )
+                            })
                             .collect();
-                        let ret = resolve_type_expr(&method.return_type, &env, &registry, &mut errors);
+                        let ret =
+                            resolve_type_expr(&method.return_type, &env, &registry, &mut errors);
                         registry.register_interface_method(
                             &iface.name,
                             MethodEntry {
@@ -434,14 +599,24 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             },
                         );
                     }
-                    InterfaceItemKind::Hook { name, params, return_type, .. } => {
+                    InterfaceItemKind::Hook {
+                        name,
+                        params,
+                        return_type,
+                        ..
+                    } => {
                         let hook_name = match name {
                             HookName::Named(n) => n.clone(),
                             HookName::Op(op) => op.clone(),
                         };
                         let resolved_params: Vec<(String, Ty)> = params
                             .iter()
-                            .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &registry, &mut errors)))
+                            .map(|p| {
+                                (
+                                    p.name.clone(),
+                                    resolve_type_expr(&p.ty, &env, &registry, &mut errors),
+                                )
+                            })
                             .collect();
                         let ret = return_type
                             .as_ref()
@@ -483,7 +658,13 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 if has_generics {
                     env.push_scope();
                     for gp in &f.generic_params {
-                        env.define(&gp.name, Symbol::Type { id: TypeId(0), span: gp.span });
+                        env.define(
+                            &gp.name,
+                            Symbol::Type {
+                                id: TypeId(0),
+                                span: gp.span,
+                            },
+                        );
                     }
                 }
                 let ret = resolve_type_expr(&f.return_type, &env, &registry, &mut errors);
@@ -493,9 +674,17 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     let pty = resolve_type_expr(&p.ty, &env, &registry, &mut errors);
                     env.define(
                         &p.name,
-                        Symbol::Var { ty: pty.clone(), mutable: false, span: p.span },
+                        Symbol::Var {
+                            ty: pty.clone(),
+                            mutable: false,
+                            span: p.span,
+                        },
                     );
-                    params.push(TypedParam { name: p.name.clone(), ty: pty, span: p.span });
+                    params.push(TypedParam {
+                        name: p.name.clone(),
+                        ty: pty,
+                        span: p.span,
+                    });
                 }
                 let body =
                     check::check_typed_block(&f.body, &mut env, &registry, &ret, &mut errors);
@@ -503,9 +692,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 if has_generics {
                     env.pop_scope();
                 }
-                if ret != Ty::Void
-                    && !f.body.stmts.is_empty()
-                    && !returns::always_returns(&f.body)
+                if ret != Ty::Void && !f.body.stmts.is_empty() && !returns::always_returns(&f.body)
                 {
                     errors.push(AnalysisError::MissingReturn {
                         name: f.name.clone(),
@@ -583,13 +770,21 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 };
 
                 let scope_params: Vec<String> = if !impl_block.generic_params.is_empty() {
-                    impl_block.generic_params.iter().map(|g| g.name.clone()).collect()
+                    impl_block
+                        .generic_params
+                        .iter()
+                        .map(|g| g.name.clone())
+                        .collect()
                 } else {
                     match &impl_block.for_type {
                         TypeExpr::Named { generics, .. } => generics
                             .iter()
                             .filter_map(|g| {
-                                if let TypeExpr::Named { name, .. } = g { Some(name.clone()) } else { None }
+                                if let TypeExpr::Named { name, .. } = g {
+                                    Some(name.clone())
+                                } else {
+                                    None
+                                }
                             })
                             .collect(),
                         _ => vec![],
@@ -600,7 +795,13 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     env.push_scope();
                     let dummy_span = impl_block.span;
                     for gname in &scope_params {
-                        env.define(gname, Symbol::Type { id: TypeId(0), span: dummy_span });
+                        env.define(
+                            gname,
+                            Symbol::Type {
+                                id: TypeId(0),
+                                span: dummy_span,
+                            },
+                        );
                     }
                 }
 
@@ -611,7 +812,11 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     env.push_scope();
                     env.define(
                         "self",
-                        Symbol::Var { ty: self_ty.clone(), mutable: false, span: impl_block.span },
+                        Symbol::Var {
+                            ty: self_ty.clone(),
+                            mutable: false,
+                            span: impl_block.span,
+                        },
                     );
                     let ret = resolve_type_expr(&method.return_type, &env, &registry, &mut errors);
                     let mut params: Vec<TypedParam> = Vec::new();
@@ -619,9 +824,17 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         let pty = resolve_type_expr(&p.ty, &env, &registry, &mut errors);
                         env.define(
                             &p.name,
-                            Symbol::Var { ty: pty.clone(), mutable: false, span: p.span },
+                            Symbol::Var {
+                                ty: pty.clone(),
+                                mutable: false,
+                                span: p.span,
+                            },
                         );
-                        params.push(TypedParam { name: p.name.clone(), ty: pty, span: p.span });
+                        params.push(TypedParam {
+                            name: p.name.clone(),
+                            ty: pty,
+                            span: p.span,
+                        });
                     }
                     let body = check::check_typed_block(
                         &method.body,
@@ -646,7 +859,11 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     env.push_scope();
                     env.define(
                         "self",
-                        Symbol::Var { ty: self_ty.clone(), mutable: false, span: impl_block.span },
+                        Symbol::Var {
+                            ty: self_ty.clone(),
+                            mutable: false,
+                            span: impl_block.span,
+                        },
                     );
                     let ret = hook
                         .return_type
@@ -658,9 +875,17 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         let pty = resolve_type_expr(&p.ty, &env, &registry, &mut errors);
                         env.define(
                             &p.name,
-                            Symbol::Var { ty: pty.clone(), mutable: false, span: p.span },
+                            Symbol::Var {
+                                ty: pty.clone(),
+                                mutable: false,
+                                span: p.span,
+                            },
                         );
-                        params.push(TypedParam { name: p.name.clone(), ty: pty, span: p.span });
+                        params.push(TypedParam {
+                            name: p.name.clone(),
+                            ty: pty,
+                            span: p.span,
+                        });
                     }
                     let body = check::check_typed_block(
                         &hook.body,
@@ -731,7 +956,10 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
         }
     }
 
-    let typed_file = TypedFile { items: typed_items, span: source.span };
+    let typed_file = TypedFile {
+        items: typed_items,
+        span: source.span,
+    };
 
     // Pass 3: constraint collection + solving (interface bound checks).
     let constraints = constrain::collect_constraints(&typed_file);

@@ -38,7 +38,11 @@ pub struct VarEnv {
 
 impl VarEnv {
     pub fn new() -> Self {
-        Self { vars: HashMap::new(), var_types: HashMap::new(), str_vars: HashSet::new() }
+        Self {
+            vars: HashMap::new(),
+            var_types: HashMap::new(),
+            str_vars: HashSet::new(),
+        }
     }
 
     pub fn declare(&mut self, name: &str, ty: Type, builder: &mut FunctionBuilder) -> Variable {
@@ -155,7 +159,8 @@ fn lower_typed_expr_inner(
                             _ => unreachable!(),
                         }
                     } else {
-                        let tid = ctx.module
+                        let tid = ctx
+                            .module
                             .declare_function(&thunk_name, Linkage::Local, &thunk_sig)
                             .unwrap_or_else(|_| match ctx.module.get_name(&thunk_name) {
                                 Some(FuncOrDataId::Func(id)) => id,
@@ -263,8 +268,10 @@ fn lower_typed_expr_inner(
         }
 
         TypedExprKind::Call { callee, args, .. } => {
-            let arg_vals: Vec<Value> =
-                args.iter().map(|a| lower_typed_expr(a, builder, vars, ctx)).collect();
+            let arg_vals: Vec<Value> = args
+                .iter()
+                .map(|a| lower_typed_expr(a, builder, vars, ctx))
+                .collect();
             match &callee.kind {
                 TypedExprKind::Ident(name) => call_fn_by_name(name, &arg_vals, builder, ctx),
                 _ => {
@@ -274,10 +281,16 @@ fn lower_typed_expr_inner(
             }
         }
 
-        TypedExprKind::MethodCall { object, method_fn, args } => {
+        TypedExprKind::MethodCall {
+            object,
+            method_fn,
+            args,
+        } => {
             let obj = lower_typed_expr(object, builder, vars, ctx);
-            let extra_args: Vec<Value> =
-                args.iter().map(|a| lower_typed_expr(a, builder, vars, ctx)).collect();
+            let extra_args: Vec<Value> = args
+                .iter()
+                .map(|a| lower_typed_expr(a, builder, vars, ctx))
+                .collect();
             if matches!(object.ty, crate::analyzer::ty::Ty::Interface(_, _)) {
                 let impls: Vec<(u32, FuncId)> =
                     ctx.layouts.all_impls_for_method(method_fn).to_vec();
@@ -290,22 +303,27 @@ fn lower_typed_expr_inner(
         }
 
         TypedExprKind::StaticCall { method_fn, args } => {
-            let arg_vals: Vec<Value> =
-                args.iter().map(|a| lower_typed_expr(a, builder, vars, ctx)).collect();
+            let arg_vals: Vec<Value> = args
+                .iter()
+                .map(|a| lower_typed_expr(a, builder, vars, ctx))
+                .collect();
             call_fn_by_name(method_fn, &arg_vals, builder, ctx)
         }
 
         TypedExprKind::IndirectCall { fat_ptr, args } => {
             let fat_ptr_val = lower_typed_expr(fat_ptr, builder, vars, ctx);
-            let arg_vals: Vec<Value> =
-                args.iter().map(|a| lower_typed_expr(a, builder, vars, ctx)).collect();
+            let arg_vals: Vec<Value> = args
+                .iter()
+                .map(|a| lower_typed_expr(a, builder, vars, ctx))
+                .collect();
             indirect_call(fat_ptr_val, &arg_vals, builder, ctx)
         }
 
         TypedExprKind::Field { object, field } => {
             let ptr = lower_typed_expr(object, builder, vars, ctx);
             let offset = if let Some(type_name) = type_name_of(&object.ty) {
-                ctx.layouts.field_offset_for_type(&type_name, field)
+                ctx.layouts
+                    .field_offset_for_type(&type_name, field)
                     .or_else(|| ctx.layouts.find_field_offset(field))
             } else {
                 ctx.layouts.find_field_offset(field)
@@ -337,7 +355,11 @@ fn lower_typed_expr_inner(
             let ty = builder.func.dfg.value_type(v);
             match op {
                 UnOp::Neg => {
-                    if ty.is_float() { builder.ins().fneg(v) } else { builder.ins().ineg(v) }
+                    if ty.is_float() {
+                        builder.ins().fneg(v)
+                    } else {
+                        builder.ins().ineg(v)
+                    }
                 }
                 UnOp::Not => {
                     let one = builder.ins().iconst(ty, 1);
@@ -367,11 +389,15 @@ fn lower_typed_expr_inner(
             }
             sig.returns.push(AbiParam::new(types::I64));
 
-            let func_id = ctx.module
+            let func_id = ctx
+                .module
                 .declare_function(&name, Linkage::Local, &sig)
                 .unwrap_or_else(|_| {
-                    if let Some(FuncOrDataId::Func(id)) = ctx.module.get_name(&name) { id }
-                    else { panic!("closure declaration failed for {}", name) }
+                    if let Some(FuncOrDataId::Func(id)) = ctx.module.get_name(&name) {
+                        id
+                    } else {
+                        panic!("closure declaration failed for {}", name)
+                    }
                 });
 
             {
@@ -411,11 +437,20 @@ fn lower_typed_expr_inner(
                 };
 
                 let result = match body {
-                    TypedClosureBody::Expr(e) => {
-                        Some(lower_typed_expr(e, &mut fn_builder, &mut inner_vars, &mut inner_ctx))
-                    }
+                    TypedClosureBody::Expr(e) => Some(lower_typed_expr(
+                        e,
+                        &mut fn_builder,
+                        &mut inner_vars,
+                        &mut inner_ctx,
+                    )),
                     TypedClosureBody::Block(b) => {
-                        lower_typed_block(b, &mut fn_builder, &mut inner_vars, &mut inner_loops, &mut inner_ctx);
+                        lower_typed_block(
+                            b,
+                            &mut fn_builder,
+                            &mut inner_vars,
+                            &mut inner_loops,
+                            &mut inner_ctx,
+                        );
                         None
                     }
                 };
@@ -456,7 +491,11 @@ fn lower_typed_expr_inner(
 
         TypedExprKind::Ref { expr, .. } => {
             let val = lower_typed_expr(expr, builder, vars, ctx);
-            let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 0));
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                8,
+                0,
+            ));
             builder.ins().stack_store(val, slot, 0);
             builder.ins().stack_addr(types::I64, slot, 0)
         }
@@ -524,7 +563,11 @@ fn indirect_call(
         call_args.push(coerce_to_i64(a, builder));
     }
     let call = builder.ins().call_indirect(sig_ref, fn_ptr, &call_args);
-    builder.inst_results(call).first().copied().unwrap_or_else(|| builder.ins().iconst(types::I64, 0))
+    builder
+        .inst_results(call)
+        .first()
+        .copied()
+        .unwrap_or_else(|| builder.ins().iconst(types::I64, 0))
 }
 
 /// Call a function by name. If not in func_ids, declare as import with an all-I64 signature.
@@ -548,7 +591,10 @@ pub fn call_fn_by_name(
             None
         };
         if let Some(dispatch) = dispatch_name {
-            let val = args.first().copied().unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
+            let val = args
+                .first()
+                .copied()
+                .unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
             return call_dispatch(dispatch, val, ctx.module, builder);
         }
 
@@ -568,7 +614,11 @@ pub fn call_fn_by_name(
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
     let coerced = coerce_for_call(args, func_ref, builder);
     let call = builder.ins().call(func_ref, &coerced);
-    builder.inst_results(call).first().copied().unwrap_or_else(|| builder.ins().iconst(types::I64, 0))
+    builder
+        .inst_results(call)
+        .first()
+        .copied()
+        .unwrap_or_else(|| builder.ins().iconst(types::I64, 0))
 }
 
 fn coerce_for_call(
@@ -594,7 +644,9 @@ fn coerce_for_call(
 
 fn coerce_value(val: Value, target: Type, builder: &mut FunctionBuilder) -> Value {
     let src = builder.func.dfg.value_type(val);
-    if src == target { return val; }
+    if src == target {
+        return val;
+    }
     match (src, target) {
         (types::I8, types::I64) | (types::I32, types::I64) => builder.ins().uextend(target, val),
         (types::I64, types::I8) | (types::I64, types::I32) => builder.ins().ireduce(target, val),
@@ -634,8 +686,11 @@ fn call_int_to_str(val: Value, module: &mut ObjectModule, builder: &mut Function
     let id = module
         .declare_function("__kiln_int_to_str", Linkage::Import, &sig)
         .unwrap_or_else(|_| {
-            if let Some(FuncOrDataId::Func(id)) = module.get_name("__kiln_int_to_str") { id }
-            else { panic!("__kiln_int_to_str not found") }
+            if let Some(FuncOrDataId::Func(id)) = module.get_name("__kiln_int_to_str") {
+                id
+            } else {
+                panic!("__kiln_int_to_str not found")
+            }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);
     let coerced = coerce_to_i64(val, builder);
@@ -644,15 +699,23 @@ fn call_int_to_str(val: Value, module: &mut ObjectModule, builder: &mut Function
 }
 
 /// Call a single-argument runtime dispatch function (e.g. `__kiln_to_str_dispatch`).
-fn call_dispatch(name: &str, val: Value, module: &mut ObjectModule, builder: &mut FunctionBuilder) -> Value {
+fn call_dispatch(
+    name: &str,
+    val: Value,
+    module: &mut ObjectModule,
+    builder: &mut FunctionBuilder,
+) -> Value {
     let mut sig = module.make_signature();
     sig.params.push(AbiParam::new(types::I64));
     sig.returns.push(AbiParam::new(types::I64));
     let id = module
         .declare_function(name, Linkage::Import, &sig)
         .unwrap_or_else(|_| {
-            if let Some(FuncOrDataId::Func(id)) = module.get_name(name) { id }
-            else { panic!("{name} not found") }
+            if let Some(FuncOrDataId::Func(id)) = module.get_name(name) {
+                id
+            } else {
+                panic!("{name} not found")
+            }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);
     let coerced = coerce_to_i64(val, builder);
@@ -660,7 +723,12 @@ fn call_dispatch(name: &str, val: Value, module: &mut ObjectModule, builder: &mu
     builder.inst_results(call)[0]
 }
 
-fn call_str_concat(a: Value, b: Value, module: &mut ObjectModule, builder: &mut FunctionBuilder) -> Value {
+fn call_str_concat(
+    a: Value,
+    b: Value,
+    module: &mut ObjectModule,
+    builder: &mut FunctionBuilder,
+) -> Value {
     let mut sig = module.make_signature();
     sig.params.push(AbiParam::new(types::I64));
     sig.params.push(AbiParam::new(types::I64));
@@ -668,15 +736,23 @@ fn call_str_concat(a: Value, b: Value, module: &mut ObjectModule, builder: &mut 
     let id = module
         .declare_function("__kiln_str_concat", Linkage::Import, &sig)
         .unwrap_or_else(|_| {
-            if let Some(FuncOrDataId::Func(id)) = module.get_name("__kiln_str_concat") { id }
-            else { panic!("__kiln_str_concat not found") }
+            if let Some(FuncOrDataId::Func(id)) = module.get_name("__kiln_str_concat") {
+                id
+            } else {
+                panic!("__kiln_str_concat not found")
+            }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);
     let call = builder.ins().call(func_ref, &[a, b]);
     builder.inst_results(call)[0]
 }
 
-fn call_spawn(fn_ptr: Value, env_ptr: Value, module: &mut ObjectModule, builder: &mut FunctionBuilder) -> Value {
+fn call_spawn(
+    fn_ptr: Value,
+    env_ptr: Value,
+    module: &mut ObjectModule,
+    builder: &mut FunctionBuilder,
+) -> Value {
     let mut sig = module.make_signature();
     sig.params.push(AbiParam::new(types::I64));
     sig.params.push(AbiParam::new(types::I64));
@@ -684,15 +760,23 @@ fn call_spawn(fn_ptr: Value, env_ptr: Value, module: &mut ObjectModule, builder:
     let id = module
         .declare_function("__kiln_spawn", Linkage::Import, &sig)
         .unwrap_or_else(|_| {
-            if let Some(FuncOrDataId::Func(id)) = module.get_name("__kiln_spawn") { id }
-            else { panic!("__kiln_spawn not found") }
+            if let Some(FuncOrDataId::Func(id)) = module.get_name("__kiln_spawn") {
+                id
+            } else {
+                panic!("__kiln_spawn not found")
+            }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);
     let call = builder.ins().call(func_ref, &[fn_ptr, env_ptr]);
     builder.inst_results(call)[0]
 }
 
-fn emit_fmod(lv: Value, rv: Value, module: &mut ObjectModule, builder: &mut FunctionBuilder) -> Value {
+fn emit_fmod(
+    lv: Value,
+    rv: Value,
+    module: &mut ObjectModule,
+    builder: &mut FunctionBuilder,
+) -> Value {
     let mut sig = module.make_signature();
     sig.params.push(AbiParam::new(types::F64));
     sig.params.push(AbiParam::new(types::F64));
@@ -700,8 +784,11 @@ fn emit_fmod(lv: Value, rv: Value, module: &mut ObjectModule, builder: &mut Func
     let id = module
         .declare_function("fmod", Linkage::Import, &sig)
         .unwrap_or_else(|_| {
-            if let Some(FuncOrDataId::Func(id)) = module.get_name("fmod") { id }
-            else { panic!("fmod not found") }
+            if let Some(FuncOrDataId::Func(id)) = module.get_name("fmod") {
+                id
+            } else {
+                panic!("fmod not found")
+            }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);
     let call = builder.ins().call(func_ref, &[lv, rv]);
@@ -724,9 +811,13 @@ pub fn coerce_to_i64(val: Value, builder: &mut FunctionBuilder) -> Value {
 
 pub fn coerce_to(val: Value, target: Type, builder: &mut FunctionBuilder) -> Value {
     let src = builder.func.dfg.value_type(val);
-    if src == target { return val; }
+    if src == target {
+        return val;
+    }
     match (src, target) {
-        (types::I8, types::I64) | (types::I32, types::I64) => builder.ins().uextend(types::I64, val),
+        (types::I8, types::I64) | (types::I32, types::I64) => {
+            builder.ins().uextend(types::I64, val)
+        }
         (types::I64, types::I8) => builder.ins().ireduce(types::I8, val),
         (types::I64, types::F64) => builder.ins().fcvt_from_sint(types::F64, val),
         (types::F64, types::I64) => builder.ins().bitcast(types::I64, MemFlags::new(), val),
@@ -748,8 +839,16 @@ fn coerce_binop_operands(lv: Value, rv: Value, builder: &mut FunctionBuilder) ->
         return (coerce_to(lv, types::F64, builder), rv);
     }
     if lt == types::I8 || rt == types::I8 {
-        let lv = if lt == types::I8 { builder.ins().uextend(types::I64, lv) } else { lv };
-        let rv = if rt == types::I8 { builder.ins().uextend(types::I64, rv) } else { rv };
+        let lv = if lt == types::I8 {
+            builder.ins().uextend(types::I64, lv)
+        } else {
+            lv
+        };
+        let rv = if rt == types::I8 {
+            builder.ins().uextend(types::I64, rv)
+        } else {
+            rv
+        };
         return (lv, rv);
     }
     (lv, rv)
@@ -759,33 +858,93 @@ fn coerce_binop_operands(lv: Value, rv: Value, builder: &mut FunctionBuilder) ->
 // Binop lowering
 // ---------------------------------------------------------------------------
 
-fn lower_binop(op: &BinOp, lv: Value, rv: Value, builder: &mut FunctionBuilder, module: &mut ObjectModule) -> Value {
+fn lower_binop(
+    op: &BinOp,
+    lv: Value,
+    rv: Value,
+    builder: &mut FunctionBuilder,
+    module: &mut ObjectModule,
+) -> Value {
     let ty = builder.func.dfg.value_type(lv);
     let is_float = ty.is_float();
     match op {
-        BinOp::Add => if is_float { builder.ins().fadd(lv, rv) } else { builder.ins().iadd(lv, rv) },
-        BinOp::Sub => if is_float { builder.ins().fsub(lv, rv) } else { builder.ins().isub(lv, rv) },
-        BinOp::Mul => if is_float { builder.ins().fmul(lv, rv) } else { builder.ins().imul(lv, rv) },
-        BinOp::Div => if is_float { builder.ins().fdiv(lv, rv) } else { builder.ins().sdiv(lv, rv) },
-        BinOp::Mod => if is_float { emit_fmod(lv, rv, module, builder) } else { builder.ins().srem(lv, rv) },
-        BinOp::Eq => if is_float {
-            builder.ins().fcmp(FloatCC::Equal, lv, rv)
-        } else {
-            builder.ins().icmp(IntCC::Equal, lv, rv)
-        },
-        BinOp::Ne => if is_float {
-            builder.ins().fcmp(FloatCC::NotEqual, lv, rv)
-        } else {
-            builder.ins().icmp(IntCC::NotEqual, lv, rv)
-        },
-        BinOp::Lt => if is_float { builder.ins().fcmp(FloatCC::LessThan, lv, rv) }
-            else { builder.ins().icmp(IntCC::SignedLessThan, lv, rv) },
-        BinOp::Gt => if is_float { builder.ins().fcmp(FloatCC::GreaterThan, lv, rv) }
-            else { builder.ins().icmp(IntCC::SignedGreaterThan, lv, rv) },
-        BinOp::LtEq => if is_float { builder.ins().fcmp(FloatCC::LessThanOrEqual, lv, rv) }
-            else { builder.ins().icmp(IntCC::SignedLessThanOrEqual, lv, rv) },
-        BinOp::GtEq => if is_float { builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lv, rv) }
-            else { builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lv, rv) },
+        BinOp::Add => {
+            if is_float {
+                builder.ins().fadd(lv, rv)
+            } else {
+                builder.ins().iadd(lv, rv)
+            }
+        }
+        BinOp::Sub => {
+            if is_float {
+                builder.ins().fsub(lv, rv)
+            } else {
+                builder.ins().isub(lv, rv)
+            }
+        }
+        BinOp::Mul => {
+            if is_float {
+                builder.ins().fmul(lv, rv)
+            } else {
+                builder.ins().imul(lv, rv)
+            }
+        }
+        BinOp::Div => {
+            if is_float {
+                builder.ins().fdiv(lv, rv)
+            } else {
+                builder.ins().sdiv(lv, rv)
+            }
+        }
+        BinOp::Mod => {
+            if is_float {
+                emit_fmod(lv, rv, module, builder)
+            } else {
+                builder.ins().srem(lv, rv)
+            }
+        }
+        BinOp::Eq => {
+            if is_float {
+                builder.ins().fcmp(FloatCC::Equal, lv, rv)
+            } else {
+                builder.ins().icmp(IntCC::Equal, lv, rv)
+            }
+        }
+        BinOp::Ne => {
+            if is_float {
+                builder.ins().fcmp(FloatCC::NotEqual, lv, rv)
+            } else {
+                builder.ins().icmp(IntCC::NotEqual, lv, rv)
+            }
+        }
+        BinOp::Lt => {
+            if is_float {
+                builder.ins().fcmp(FloatCC::LessThan, lv, rv)
+            } else {
+                builder.ins().icmp(IntCC::SignedLessThan, lv, rv)
+            }
+        }
+        BinOp::Gt => {
+            if is_float {
+                builder.ins().fcmp(FloatCC::GreaterThan, lv, rv)
+            } else {
+                builder.ins().icmp(IntCC::SignedGreaterThan, lv, rv)
+            }
+        }
+        BinOp::LtEq => {
+            if is_float {
+                builder.ins().fcmp(FloatCC::LessThanOrEqual, lv, rv)
+            } else {
+                builder.ins().icmp(IntCC::SignedLessThanOrEqual, lv, rv)
+            }
+        }
+        BinOp::GtEq => {
+            if is_float {
+                builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lv, rv)
+            } else {
+                builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lv, rv)
+            }
+        }
         BinOp::And => builder.ins().band(lv, rv),
         BinOp::Or => builder.ins().bor(lv, rv),
         BinOp::Spaceship => {
@@ -834,8 +993,10 @@ pub fn lower_vtable_dispatch(
     let default_bb = builder.create_block();
 
     let type_tag = builder.ins().load(types::I64, MemFlags::new(), obj, 0);
-    let case_blocks: Vec<(u32, FuncId, ClifBlock)> =
-        impls.iter().map(|&(tid, fid)| (tid, fid, builder.create_block())).collect();
+    let case_blocks: Vec<(u32, FuncId, ClifBlock)> = impls
+        .iter()
+        .map(|&(tid, fid)| (tid, fid, builder.create_block()))
+        .collect();
 
     let mut sw = Switch::new();
     for &(type_id, _, bb) in &case_blocks {
@@ -880,7 +1041,11 @@ mod tests {
     }
 
     fn mk(kind: TypedExprKind, ty: Ty) -> TypedExpr {
-        TypedExpr { kind, ty, span: s() }
+        TypedExpr {
+            kind,
+            ty,
+            span: s(),
+        }
     }
 
     fn with_builder<F: FnOnce(&mut FunctionBuilder, &mut VarEnv, &mut LowerCtx) -> Value>(

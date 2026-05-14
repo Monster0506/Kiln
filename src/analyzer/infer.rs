@@ -38,15 +38,19 @@ pub fn infer_typed_expr(
         Expr::Ident(name, _) => {
             let ty = match env.lookup(name) {
                 Some(Symbol::Var { ty, .. }) => ty.clone(),
-                Some(Symbol::Fn { params, ret, .. }) => {
-                    Ty::Callable(params.iter().map(|(_, t)| t.clone()).collect(), Box::new(ret.clone()))
-                }
+                Some(Symbol::Fn { params, ret, .. }) => Ty::Callable(
+                    params.iter().map(|(_, t)| t.clone()).collect(),
+                    Box::new(ret.clone()),
+                ),
                 Some(Symbol::FnOverloadSet { .. }) => {
                     // Overloaded function used as first-class value — ambiguous without a call.
                     Ty::Unknown
                 }
                 _ => {
-                    errors.push(AnalysisError::UndefinedName { name: name.clone(), span });
+                    errors.push(AnalysisError::UndefinedName {
+                        name: name.clone(),
+                        span,
+                    });
                     Ty::Unknown
                 }
             };
@@ -54,20 +58,39 @@ pub fn infer_typed_expr(
         }
 
         Expr::Tuple(elems, _) => {
-            let typed: Vec<TypedExpr> =
-                elems.iter().map(|e| infer_typed_expr(e, env, registry, errors)).collect();
+            let typed: Vec<TypedExpr> = elems
+                .iter()
+                .map(|e| infer_typed_expr(e, env, registry, errors))
+                .collect();
             let ty = Ty::Tuple(typed.iter().map(|e| e.ty.clone()).collect());
             mk(TypedExprKind::Tuple(typed), ty, span)
         }
 
-        Expr::BinOp { op, left, right, span: s } => {
+        Expr::BinOp {
+            op,
+            left,
+            right,
+            span: s,
+        } => {
             let tl = infer_typed_expr(left, env, registry, errors);
             let tr = infer_typed_expr(right, env, registry, errors);
             let ty = infer_binop(op.clone(), tl.ty.clone(), tr.ty.clone(), s, errors);
-            mk(TypedExprKind::BinOp { op: op.clone(), left: Box::new(tl), right: Box::new(tr) }, ty, span)
+            mk(
+                TypedExprKind::BinOp {
+                    op: op.clone(),
+                    left: Box::new(tl),
+                    right: Box::new(tr),
+                },
+                ty,
+                span,
+            )
         }
 
-        Expr::UnOp { op, operand, span: s } => {
+        Expr::UnOp {
+            op,
+            operand,
+            span: s,
+        } => {
             let to = infer_typed_expr(operand, env, registry, errors);
             let ty = match op {
                 UnOp::Neg => {
@@ -93,13 +116,27 @@ pub fn infer_typed_expr(
                     Ty::Bool
                 }
             };
-            mk(TypedExprKind::UnOp { op: op.clone(), operand: Box::new(to) }, ty, span)
+            mk(
+                TypedExprKind::UnOp {
+                    op: op.clone(),
+                    operand: Box::new(to),
+                },
+                ty,
+                span,
+            )
         }
 
         Expr::As { expr, ty, .. } => {
             let te = infer_typed_expr(expr, env, registry, errors);
             let target = resolve_type_expr(ty, env, registry, errors);
-            mk(TypedExprKind::As { expr: Box::new(te), ty: target.clone() }, target, span)
+            mk(
+                TypedExprKind::As {
+                    expr: Box::new(te),
+                    ty: target.clone(),
+                },
+                target,
+                span,
+            )
         }
 
         Expr::Unwrap(inner, s) => {
@@ -119,9 +156,15 @@ pub fn infer_typed_expr(
             mk(TypedExprKind::Unwrap(Box::new(ti)), ty, span)
         }
 
-        Expr::Call { callee, args, span: s } => {
-            let typed_args: Vec<TypedExpr> =
-                args.iter().map(|a| infer_typed_expr(a, env, registry, errors)).collect();
+        Expr::Call {
+            callee,
+            args,
+            span: s,
+        } => {
+            let typed_args: Vec<TypedExpr> = args
+                .iter()
+                .map(|a| infer_typed_expr(a, env, registry, errors))
+                .collect();
 
             match callee.as_ref() {
                 Expr::Field { object, field, .. } => {
@@ -136,7 +179,14 @@ pub fn infer_typed_expr(
                         Ty::Callable(_, r) => *r.clone(),
                         _ => Ty::Unknown,
                     };
-                    mk(TypedExprKind::IndirectCall { fat_ptr: Box::new(tc), args: typed_args }, ret, span)
+                    mk(
+                        TypedExprKind::IndirectCall {
+                            fat_ptr: Box::new(tc),
+                            args: typed_args,
+                        },
+                        ret,
+                        span,
+                    )
                 }
             }
         }
@@ -144,7 +194,14 @@ pub fn infer_typed_expr(
         Expr::Field { object, field, .. } => {
             let to = infer_typed_expr(object, env, registry, errors);
             let field_ty = resolve_field_ty(&to.ty, field, registry);
-            mk(TypedExprKind::Field { object: Box::new(to), field: field.clone() }, field_ty, span)
+            mk(
+                TypedExprKind::Field {
+                    object: Box::new(to),
+                    field: field.clone(),
+                },
+                field_ty,
+                span,
+            )
         }
 
         Expr::Index { object, index, .. } => {
@@ -155,14 +212,28 @@ pub fn infer_typed_expr(
                 Ty::Map(_, v) => *v.clone(),
                 _ => Ty::Unknown,
             };
-            mk(TypedExprKind::Index { object: Box::new(to), index: Box::new(ti) }, elem_ty, span)
+            mk(
+                TypedExprKind::Index {
+                    object: Box::new(to),
+                    index: Box::new(ti),
+                },
+                elem_ty,
+                span,
+            )
         }
 
-        Expr::StructLiteral { ty, fields, span: s } => {
+        Expr::StructLiteral {
+            ty,
+            fields,
+            span: s,
+        } => {
             let struct_ty = match env.lookup(ty) {
                 Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), ty.clone()),
                 _ => {
-                    errors.push(AnalysisError::UndefinedName { name: ty.clone(), span: *s });
+                    errors.push(AnalysisError::UndefinedName {
+                        name: ty.clone(),
+                        span: *s,
+                    });
                     Ty::Unknown
                 }
             };
@@ -170,16 +241,28 @@ pub fn infer_typed_expr(
                 .iter()
                 .map(|(name, expr)| (name.clone(), infer_typed_expr(expr, env, registry, errors)))
                 .collect();
-            mk(TypedExprKind::StructLiteral { ty_name: ty.clone(), fields: typed_fields }, struct_ty, span)
+            mk(
+                TypedExprKind::StructLiteral {
+                    ty_name: ty.clone(),
+                    fields: typed_fields,
+                },
+                struct_ty,
+                span,
+            )
         }
 
-        Expr::Match { scrutinee, arms, .. } => {
+        Expr::Match {
+            scrutinee, arms, ..
+        } => {
             let ts = infer_typed_expr(scrutinee, env, registry, errors);
             let typed_arms: Vec<TypedMatchArm> = arms
                 .iter()
                 .map(|arm| {
                     let body = infer_typed_expr(&arm.body, env, registry, errors);
-                    let guard = arm.guard.as_ref().map(|g| infer_typed_expr(g, env, registry, errors));
+                    let guard = arm
+                        .guard
+                        .as_ref()
+                        .map(|g| infer_typed_expr(g, env, registry, errors));
                     TypedMatchArm {
                         pattern: lower_pattern(&arm.pattern, env, registry, errors),
                         guard,
@@ -193,7 +276,14 @@ pub fn infer_typed_expr(
                 .map(|a| a.body.ty.clone())
                 .find(|t| *t != Ty::Unknown)
                 .unwrap_or(Ty::Unknown);
-            mk(TypedExprKind::Match { scrutinee: Box::new(ts), arms: typed_arms }, ty, span)
+            mk(
+                TypedExprKind::Match {
+                    scrutinee: Box::new(ts),
+                    arms: typed_arms,
+                },
+                ty,
+                span,
+            )
         }
 
         Expr::Closure { params, body, .. } => {
@@ -213,7 +303,11 @@ pub fn infer_typed_expr(
                     for p in &typed_params {
                         closure_env.define(
                             &p.name,
-                            Symbol::Var { ty: p.ty.clone(), mutable: false, span: p.span },
+                            Symbol::Var {
+                                ty: p.ty.clone(),
+                                mutable: false,
+                                span: p.span,
+                            },
                         );
                     }
                     let te = infer_typed_expr(e, &mut closure_env, registry, errors);
@@ -226,7 +320,11 @@ pub fn infer_typed_expr(
                     for p in &typed_params {
                         closure_env.define(
                             &p.name,
-                            Symbol::Var { ty: p.ty.clone(), mutable: false, span: p.span },
+                            Symbol::Var {
+                                ty: p.ty.clone(),
+                                mutable: false,
+                                span: p.span,
+                            },
                         );
                     }
                     let typed_stmts: Vec<_> = b
@@ -234,12 +332,22 @@ pub fn infer_typed_expr(
                         .iter()
                         .map(|s| lower_stmt_shallow(s, &closure_env, registry, errors))
                         .collect();
-                    let tb = crate::analyzer::typed_ast::TypedBlock { stmts: typed_stmts, span: b.span };
+                    let tb = crate::analyzer::typed_ast::TypedBlock {
+                        stmts: typed_stmts,
+                        span: b.span,
+                    };
                     (TypedClosureBody::Block(tb), Ty::Unknown)
                 }
             };
             let ty = Ty::Callable(param_tys, Box::new(ret_ty));
-            mk(TypedExprKind::Closure { params: typed_params, body: typed_body }, ty, span)
+            mk(
+                TypedExprKind::Closure {
+                    params: typed_params,
+                    body: typed_body,
+                },
+                ty,
+                span,
+            )
         }
 
         Expr::Spawn(inner, _) => {
@@ -251,7 +359,14 @@ pub fn infer_typed_expr(
             let te = infer_typed_expr(expr, env, registry, errors);
             let inner = te.ty.clone();
             let ty = Ty::Ref(Box::new(inner), *mutable);
-            mk(TypedExprKind::Ref { mutable: *mutable, expr: Box::new(te) }, ty, span)
+            mk(
+                TypedExprKind::Ref {
+                    mutable: *mutable,
+                    expr: Box::new(te),
+                },
+                ty,
+                span,
+            )
         }
 
         Expr::Gen { body, .. } => {
@@ -260,7 +375,10 @@ pub fn infer_typed_expr(
                 .iter()
                 .map(|s| lower_stmt_shallow(s, env, registry, errors))
                 .collect();
-            let tb = crate::analyzer::typed_ast::TypedBlock { stmts: typed_stmts, span: body.span };
+            let tb = crate::analyzer::typed_ast::TypedBlock {
+                stmts: typed_stmts,
+                span: body.span,
+            };
             mk(TypedExprKind::Gen { body: tb }, Ty::Unknown, span)
         }
 
@@ -297,7 +415,14 @@ fn infer_call_field(
                 .find_method(type_name, field)
                 .map(|m| m.ret.clone())
                 .unwrap_or(Ty::Unknown);
-            return mk(TypedExprKind::StaticCall { method_fn, args: typed_args }, ret, span);
+            return mk(
+                TypedExprKind::StaticCall {
+                    method_fn,
+                    args: typed_args,
+                },
+                ret,
+                span,
+            );
         }
     }
 
@@ -314,12 +439,18 @@ fn infer_call_field(
             if let Some(Ty::Callable(_, ret_box)) = field_ty {
                 let ret_ty = *ret_box;
                 let fat_ptr = mk(
-                    TypedExprKind::Field { object: Box::new(to), field: field.to_string() },
+                    TypedExprKind::Field {
+                        object: Box::new(to),
+                        field: field.to_string(),
+                    },
                     Ty::Callable(vec![], Box::new(ret_ty.clone())),
                     span,
                 );
                 return mk(
-                    TypedExprKind::IndirectCall { fat_ptr: Box::new(fat_ptr), args: typed_args },
+                    TypedExprKind::IndirectCall {
+                        fat_ptr: Box::new(fat_ptr),
+                        args: typed_args,
+                    },
                     ret_ty,
                     span,
                 );
@@ -339,20 +470,30 @@ fn infer_call_field(
         if let (Some(method), Some(elem)) = (registry.find_method(tname, field), &elem_ty) {
             // Check each argument against the substituted parameter type.
             // method.params does NOT include self — it matches typed_args 1:1.
-            let expected_params: Vec<Ty> =
-                method.params.iter().map(|(_, pt)| substitute_t(pt, elem)).collect();
+            let expected_params: Vec<Ty> = method
+                .params
+                .iter()
+                .map(|(_, pt)| substitute_t(pt, elem))
+                .collect();
             for (arg, expected) in typed_args.iter().zip(expected_params.iter()) {
                 check_assignable(expected, &arg.ty, &arg.span, errors);
             }
             let ret = substitute_t(&method.ret, elem);
             return mk(
-                TypedExprKind::MethodCall { object: Box::new(to), method_fn: qfn, args: typed_args },
+                TypedExprKind::MethodCall {
+                    object: Box::new(to),
+                    method_fn: qfn,
+                    args: typed_args,
+                },
                 ret,
                 span,
             );
         }
 
-        let r = registry.find_method(tname, field).map(|m| m.ret.clone()).unwrap_or(Ty::Unknown);
+        let r = registry
+            .find_method(tname, field)
+            .map(|m| m.ret.clone())
+            .unwrap_or(Ty::Unknown);
         (qfn, r)
     } else if let Ty::Interface(_, iface_name) = &to.ty {
         // Interface dispatch: method_fn is the unqualified name; codegen emits
@@ -365,7 +506,15 @@ fn infer_call_field(
     } else {
         (field.to_string(), Ty::Unknown)
     };
-    mk(TypedExprKind::MethodCall { object: Box::new(to), method_fn, args: typed_args }, ret, span)
+    mk(
+        TypedExprKind::MethodCall {
+            object: Box::new(to),
+            method_fn,
+            args: typed_args,
+        },
+        ret,
+        span,
+    )
 }
 
 fn infer_call_ident(
@@ -377,19 +526,33 @@ fn infer_call_ident(
     span: Span,
 ) -> TypedExpr {
     match env.lookup(name) {
-        Some(Symbol::Var { ty: Ty::Callable(_, ret), .. }) => {
+        Some(Symbol::Var {
+            ty: Ty::Callable(_, ret),
+            ..
+        }) => {
             let ret_ty = *ret.clone();
             let callee = mk(
                 TypedExprKind::Ident(name.to_string()),
                 Ty::Callable(vec![], Box::new(ret_ty.clone())),
                 span,
             );
-            mk(TypedExprKind::IndirectCall { fat_ptr: Box::new(callee), args: typed_args }, ret_ty, span)
+            mk(
+                TypedExprKind::IndirectCall {
+                    fat_ptr: Box::new(callee),
+                    args: typed_args,
+                },
+                ret_ty,
+                span,
+            )
         }
-        Some(Symbol::Fn { params, ret, generic_params: gparams, generic_bounds: gbounds, .. }) => {
-            if params.len() != typed_args.len()
-                && !params.iter().any(|(_, t)| *t == Ty::Unknown)
-            {
+        Some(Symbol::Fn {
+            params,
+            ret,
+            generic_params: gparams,
+            generic_bounds: gbounds,
+            ..
+        }) => {
+            if params.len() != typed_args.len() && !params.iter().any(|(_, t)| *t == Ty::Unknown) {
                 errors.push(AnalysisError::TypeMismatch {
                     expected: format!("{} argument(s)", params.len()),
                     found: format!("{} argument(s)", typed_args.len()),
@@ -422,7 +585,11 @@ fn infer_call_ident(
                         overload.params.iter().map(|(_, t)| t.clone()).collect(),
                         Box::new(ret_ty.clone()),
                     );
-                    let callee = mk(TypedExprKind::Ident(overload.mangled_name.clone()), callee_ty, span);
+                    let callee = mk(
+                        TypedExprKind::Ident(overload.mangled_name.clone()),
+                        callee_ty,
+                        span,
+                    );
                     mk(
                         TypedExprKind::Call {
                             callee: Box::new(callee),
@@ -435,7 +602,10 @@ fn infer_call_ident(
                     )
                 }
                 None => {
-                    errors.push(AnalysisError::NoMatchingOverload { name: name.to_string(), span });
+                    errors.push(AnalysisError::NoMatchingOverload {
+                        name: name.to_string(),
+                        span,
+                    });
                     let callee = mk(TypedExprKind::Ident(name.to_string()), Ty::Unknown, span);
                     mk(
                         TypedExprKind::Call {
@@ -452,8 +622,16 @@ fn infer_call_ident(
         }
         Some(Symbol::Var { .. }) => {
             // Callable variable whose type wasn't Callable above — indirect.
-            let callee = infer_typed_expr(&Expr::Ident(name.to_string(), span), env, registry, errors);
-            mk(TypedExprKind::IndirectCall { fat_ptr: Box::new(callee), args: typed_args }, Ty::Unknown, span)
+            let callee =
+                infer_typed_expr(&Expr::Ident(name.to_string(), span), env, registry, errors);
+            mk(
+                TypedExprKind::IndirectCall {
+                    fat_ptr: Box::new(callee),
+                    args: typed_args,
+                },
+                Ty::Unknown,
+                span,
+            )
         }
         _ => {
             // Unknown name or type — emit as a plain Call with Unknown type.
@@ -472,15 +650,20 @@ fn infer_call_ident(
     }
 }
 
-fn find_best_overload<'a>(overloads: &'a [FnOverload], args: &[TypedExpr]) -> Option<&'a FnOverload> {
+fn find_best_overload<'a>(
+    overloads: &'a [FnOverload],
+    args: &[TypedExpr],
+) -> Option<&'a FnOverload> {
     // Exact match: all param types equal arg types (Ty::Unknown is a wildcard).
     for o in overloads {
         if o.params.len() != args.len() {
             continue;
         }
-        let matches = o.params.iter().zip(args.iter()).all(|((_, pt), arg)| {
-            *pt == Ty::Unknown || pt == &arg.ty
-        });
+        let matches = o
+            .params
+            .iter()
+            .zip(args.iter())
+            .all(|((_, pt), arg)| *pt == Ty::Unknown || pt == &arg.ty);
         if matches {
             return Some(o);
         }
@@ -490,9 +673,11 @@ fn find_best_overload<'a>(overloads: &'a [FnOverload], args: &[TypedExpr]) -> Op
         if o.params.len() != args.len() {
             continue;
         }
-        let matches = o.params.iter().zip(args.iter()).all(|((_, pt), arg)| {
-            *pt == Ty::Unknown || arg.ty == Ty::Unknown || pt == &arg.ty
-        });
+        let matches = o
+            .params
+            .iter()
+            .zip(args.iter())
+            .all(|((_, pt), arg)| *pt == Ty::Unknown || arg.ty == Ty::Unknown || pt == &arg.ty);
         if matches {
             return Some(o);
         }
@@ -545,17 +730,33 @@ fn lower_pattern(
     match pat {
         Pattern::Wildcard(s) => TypedPattern::Wildcard(*s),
         Pattern::Literal(e) => TypedPattern::Literal(infer_typed_expr(e, env, registry, errors)),
-        Pattern::TypeBinding { ty, name, span } => {
-            TypedPattern::TypeBinding { ty: ty.clone(), name: name.clone(), span: *span }
-        }
-        Pattern::InterfaceGuard { interface, name, span } => {
-            TypedPattern::InterfaceGuard { interface: interface.clone(), name: name.clone(), span: *span }
-        }
-        Pattern::Struct { variant, fields, span } => {
-            TypedPattern::Struct { variant: variant.clone(), fields: fields.clone(), span: *span }
-        }
+        Pattern::TypeBinding { ty, name, span } => TypedPattern::TypeBinding {
+            ty: ty.clone(),
+            name: name.clone(),
+            span: *span,
+        },
+        Pattern::InterfaceGuard {
+            interface,
+            name,
+            span,
+        } => TypedPattern::InterfaceGuard {
+            interface: interface.clone(),
+            name: name.clone(),
+            span: *span,
+        },
+        Pattern::Struct {
+            variant,
+            fields,
+            span,
+        } => TypedPattern::Struct {
+            variant: variant.clone(),
+            fields: fields.clone(),
+            span: *span,
+        },
         Pattern::Tuple(pats, s) => TypedPattern::Tuple(
-            pats.iter().map(|p| lower_pattern(p, env, registry, errors)).collect(),
+            pats.iter()
+                .map(|p| lower_pattern(p, env, registry, errors))
+                .collect(),
             *s,
         ),
     }
@@ -576,26 +777,50 @@ fn lower_stmt_shallow(
     match stmt {
         Stmt::Expr(e) => TypedStmt::Expr(infer_typed_expr(e, env, registry, errors)),
         Stmt::Return { value, span } => TypedStmt::Return {
-            value: value.as_ref().map(|v| infer_typed_expr(v, env, registry, errors)),
+            value: value
+                .as_ref()
+                .map(|v| infer_typed_expr(v, env, registry, errors)),
             span: *span,
         },
         Stmt::Break(s) => TypedStmt::Break(*s),
         Stmt::Continue(s) => TypedStmt::Continue(*s),
         Stmt::Raise { value, span } => TypedStmt::Raise {
-            value: value.as_ref().map(|v| infer_typed_expr(v, env, registry, errors)),
+            value: value
+                .as_ref()
+                .map(|v| infer_typed_expr(v, env, registry, errors)),
             span: *span,
         },
-        Stmt::VarDecl { name, ty, value, mutable, span } => {
+        Stmt::VarDecl {
+            name,
+            ty,
+            value,
+            mutable,
+            span,
+        } => {
             let declared = resolve_type_expr(ty, env, registry, errors);
             let typed_val = infer_typed_expr(value, env, registry, errors);
-            TypedStmt::VarDecl { name: name.clone(), ty: declared, value: typed_val, mutable: *mutable, span: *span }
+            TypedStmt::VarDecl {
+                name: name.clone(),
+                ty: declared,
+                value: typed_val,
+                mutable: *mutable,
+                span: *span,
+            }
         }
-        Stmt::Assign { target, value, span } => TypedStmt::Assign {
+        Stmt::Assign {
+            target,
+            value,
+            span,
+        } => TypedStmt::Assign {
             target: infer_typed_expr(target, env, registry, errors),
             value: infer_typed_expr(value, env, registry, errors),
             span: *span,
         },
-        Stmt::If { branches, else_branch, span } => {
+        Stmt::If {
+            branches,
+            else_branch,
+            span,
+        } => {
             let typed_branches = branches
                 .iter()
                 .map(|(cond, block)| {
@@ -604,8 +829,14 @@ fn lower_stmt_shallow(
                     (tc, tb)
                 })
                 .collect();
-            let else_typed = else_branch.as_ref().map(|b| shallow_block(b, env, registry, errors));
-            TypedStmt::If { branches: typed_branches, else_branch: else_typed, span: *span }
+            let else_typed = else_branch
+                .as_ref()
+                .map(|b| shallow_block(b, env, registry, errors));
+            TypedStmt::If {
+                branches: typed_branches,
+                else_branch: else_typed,
+                span: *span,
+            }
         }
         Stmt::While { cond, body, span } => TypedStmt::While {
             cond: infer_typed_expr(cond, env, registry, errors),
@@ -617,7 +848,13 @@ fn lower_stmt_shallow(
             cond: infer_typed_expr(cond, env, registry, errors),
             span: *span,
         },
-        Stmt::For { binding, binding_ty, iterable, body, span } => {
+        Stmt::For {
+            binding,
+            binding_ty,
+            iterable,
+            body,
+            span,
+        } => {
             let bt = binding_ty
                 .as_ref()
                 .map(|t| resolve_type_expr(t, env, registry, errors))
@@ -630,7 +867,12 @@ fn lower_stmt_shallow(
                 span: *span,
             }
         }
-        Stmt::TryCatch { body, handlers, finally, span } => {
+        Stmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            span,
+        } => {
             use crate::analyzer::typed_ast::TypedCatchHandler;
             TypedStmt::TryCatch {
                 body: shallow_block(body, env, registry, errors),
@@ -643,7 +885,9 @@ fn lower_stmt_shallow(
                         span: h.span,
                     })
                     .collect(),
-                finally: finally.as_ref().map(|b| shallow_block(b, env, registry, errors)),
+                finally: finally
+                    .as_ref()
+                    .map(|b| shallow_block(b, env, registry, errors)),
                 span: *span,
             }
         }
@@ -679,7 +923,11 @@ fn shallow_block(
     errors: &mut Vec<AnalysisError>,
 ) -> crate::analyzer::typed_ast::TypedBlock {
     crate::analyzer::typed_ast::TypedBlock {
-        stmts: block.stmts.iter().map(|s| lower_stmt_shallow(s, env, registry, errors)).collect(),
+        stmts: block
+            .stmts
+            .iter()
+            .map(|s| lower_stmt_shallow(s, env, registry, errors))
+            .collect(),
         span: block.span,
     }
 }
@@ -734,9 +982,10 @@ fn substitute_t(ty: &Ty, concrete: &Ty) -> Ty {
         Ty::Set(inner) => Ty::Set(Box::new(substitute_t(inner, concrete))),
         Ty::Option(inner) => Ty::Option(Box::new(substitute_t(inner, concrete))),
         Ty::Shared(inner) => Ty::Shared(Box::new(substitute_t(inner, concrete))),
-        Ty::Map(k, v) => {
-            Ty::Map(Box::new(substitute_t(k, concrete)), Box::new(substitute_t(v, concrete)))
-        }
+        Ty::Map(k, v) => Ty::Map(
+            Box::new(substitute_t(k, concrete)),
+            Box::new(substitute_t(v, concrete)),
+        ),
         Ty::Callable(params, ret) => Ty::Callable(
             params.iter().map(|p| substitute_t(p, concrete)).collect(),
             Box::new(substitute_t(ret, concrete)),
@@ -786,16 +1035,21 @@ pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
         (Ty::Set(e), Ty::Set(f)) => types_compatible(e, f),
         (Ty::Option(e), Ty::Option(f)) => types_compatible(e, f),
         (Ty::Shared(e), Ty::Shared(f)) => types_compatible(e, f),
-        (Ty::Map(ek, ev), Ty::Map(fk, fv)) => {
-            types_compatible(ek, fk) && types_compatible(ev, fv)
-        }
+        (Ty::Map(ek, ev), Ty::Map(fk, fv)) => types_compatible(ek, fk) && types_compatible(ev, fv),
         (Ty::Callable(ep, er), Ty::Callable(fp, fr)) => {
             ep.len() == fp.len()
-                && ep.iter().zip(fp.iter()).all(|(e, f)| types_compatible(e, f))
+                && ep
+                    .iter()
+                    .zip(fp.iter())
+                    .all(|(e, f)| types_compatible(e, f))
                 && types_compatible(er, fr)
         }
         (Ty::Tuple(es), Ty::Tuple(fs)) => {
-            es.len() == fs.len() && es.iter().zip(fs.iter()).all(|(e, f)| types_compatible(e, f))
+            es.len() == fs.len()
+                && es
+                    .iter()
+                    .zip(fs.iter())
+                    .all(|(e, f)| types_compatible(e, f))
         }
         _ => expected == found,
     }

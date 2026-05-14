@@ -477,7 +477,10 @@ impl Parser {
         let return_type = self.parse_type()?;
         let body_span = self.peek_span();
         let body = if is_builtin && self.peek() != &TokenKind::LBrace {
-            Block { stmts: vec![], span: body_span }
+            Block {
+                stmts: vec![],
+                span: body_span,
+            }
         } else {
             self.parse_block()?
         };
@@ -635,14 +638,23 @@ impl Parser {
             self.expect(TokenKind::Colon)?;
             let ty = self.parse_type()?;
             let end = self.peek_span();
-            params.push(Param { name: pname, ty, span: Span::new(ps.start, end.start) });
+            params.push(Param {
+                name: pname,
+                ty,
+                span: Span::new(ps.start, end.start),
+            });
             self.eat(&TokenKind::Comma);
         }
         self.expect(TokenKind::RParen)?;
         self.expect(TokenKind::Arrow)?;
         let return_type = self.parse_type()?;
         let end = self.peek_span().start;
-        Ok(FnDecl { name, params, return_type, span: Span::new(start, end) })
+        Ok(FnDecl {
+            name,
+            params,
+            return_type,
+            span: Span::new(start, end),
+        })
     }
 
     fn is_annotated_def(&self) -> bool {

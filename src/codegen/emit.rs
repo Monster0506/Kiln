@@ -21,7 +21,12 @@ pub fn emit_object(cgx: CodegenContext) -> Result<Vec<u8>, String> {
 ///
 /// The Kiln runtime (pre-compiled from kiln_rt.c at cargo build time) is
 /// written to a temporary object file and linked automatically.
-pub fn link_executable(obj_bytes: &[u8], obj_path: &Path, output: &Path, verbose: bool) -> Result<(), String> {
+pub fn link_executable(
+    obj_bytes: &[u8],
+    obj_path: &Path,
+    output: &Path,
+    verbose: bool,
+) -> Result<(), String> {
     std::fs::write(obj_path, obj_bytes).map_err(|e| format!("write .o: {e}"))?;
 
     let tmp_dir = obj_path.parent().unwrap_or(Path::new("."));
@@ -43,13 +48,29 @@ pub fn link_executable(obj_bytes: &[u8], obj_path: &Path, output: &Path, verbose
 
     let linker_specs: &[LinkerSpec] = if cfg!(windows) {
         &[
-            LinkerSpec { name: "link",     is_msvc_style: true,  trailing_libs: &[] },
-            LinkerSpec { name: "lld-link", is_msvc_style: true,  trailing_libs: &[] },
+            LinkerSpec {
+                name: "link",
+                is_msvc_style: true,
+                trailing_libs: &[],
+            },
+            LinkerSpec {
+                name: "lld-link",
+                is_msvc_style: true,
+                trailing_libs: &[],
+            },
             // MinGW gcc: -lmingw32 supplies mainCRTStartup and the MinGW CRT
-            LinkerSpec { name: "gcc",      is_msvc_style: false, trailing_libs: &["-lmingw32"] },
+            LinkerSpec {
+                name: "gcc",
+                is_msvc_style: false,
+                trailing_libs: &["-lmingw32"],
+            },
         ]
     } else {
-        &[LinkerSpec { name: "cc", is_msvc_style: false, trailing_libs: &[] }]
+        &[LinkerSpec {
+            name: "cc",
+            is_msvc_style: false,
+            trailing_libs: &[],
+        }]
     };
 
     let mut last_err = String::from("no linker found");
@@ -78,7 +99,11 @@ pub fn link_executable(obj_bytes: &[u8], obj_path: &Path, output: &Path, verbose
             }
         }
 
-        let stderr = if verbose { Stdio::inherit() } else { Stdio::null() };
+        let stderr = if verbose {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        };
         let result = cmd.stderr(stderr).status();
         match result {
             Ok(status) if status.success() => return Ok(()),

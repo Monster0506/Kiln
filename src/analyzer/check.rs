@@ -36,7 +36,21 @@ fn check_typed_stmt(
         Stmt::VarDecl { name, ty, value, mutable, span } => {
             let declared = resolve_type_expr(ty, env, registry, errors);
             let typed_val = infer_typed_expr(value, env, registry, errors);
-            check_assignable(&declared, &typed_val.ty, &typed_val.span, errors);
+            if let Ty::Interface(_, iface_name) = &declared {
+                // Verify the assigned type implements the interface. Unknown is
+                // allowed to avoid double-reporting after earlier errors.
+                if let Some(type_name) = crate::analyzer::infer::type_name_of(&typed_val.ty) {
+                    if registry.get_conformances(&type_name, iface_name).is_empty() {
+                        errors.push(AnalysisError::TypeMismatch {
+                            expected: iface_name.clone(),
+                            found: type_name,
+                            span: typed_val.span,
+                        });
+                    }
+                }
+            } else {
+                check_assignable(&declared, &typed_val.ty, &typed_val.span, errors);
+            }
             env.define(name, Symbol::Var { ty: declared.clone(), mutable: *mutable, span: *span });
             TypedStmt::VarDecl {
                 name: name.clone(),

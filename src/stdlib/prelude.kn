@@ -12,9 +12,56 @@ struct Vec[T] {
     def clear() -> void
 }
 
+interface Display {
+    hook to_str() -> str
+}
 
 @builtin
-def print[T: Display](item: T) -> void
+def __kiln_print(s: str) -> void
+
+@builtin
+def __kiln_println(s: str) -> void
+
+@builtin
+def __kiln_int_to_str(n: int) -> str
+
+@builtin
+def __kiln_float_to_str(f: float) -> str
+
+@builtin
+def __kiln_bool_to_str(b: bool) -> str
+
+impl Display for int {
+    hook to_str() -> str {
+        return __kiln_int_to_str(self)
+    }
+}
+
+impl Display for float {
+    hook to_str() -> str {
+        return __kiln_float_to_str(self)
+    }
+}
+
+impl Display for bool {
+    hook to_str() -> str {
+        return __kiln_bool_to_str(self)
+    }
+}
+
+impl Display for str {
+    hook to_str() -> str {
+        return self
+    }
+}
+
+def print[T: Display](item: T) -> void {
+    __kiln_print(item.to_str())
+}
+
+def println[T: Display](item: T) -> void {
+    __kiln_println(item.to_str())
+}
 
 
 impl[T: Display] Display for Vec[T] {
@@ -28,7 +75,7 @@ impl[T: Display] Display for Vec[T] {
             res = res + item.to_str()
             i=i+1
         }
-        
+
         return res + "]"
     }
 }
@@ -37,13 +84,13 @@ impl VecMethods for Vec[T] {
     def pop() -> T {
         return self.remove(self.len() - 1)
     }
-    
-    
+
+
     def contains(item: T) -> bool {
         for i <- self {
             if (item == i) { return true }
         }
-        
+
         return false
     }
 
@@ -80,7 +127,3 @@ def range(start: float, stop: float, step: float) -> Vec[float] {
     }
     return result
 }
-
-
-@builtin
-def println[T: Display](item: T) -> void

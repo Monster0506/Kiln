@@ -21,7 +21,7 @@ use crate::analyzer::resolve::resolve_type_expr;
 use crate::analyzer::ty::{MethodEntry, TypeKind};
 use crate::analyzer::typed_ast::{
     TypedEnumDef, TypedEnumVariant, TypedField, TypedFnDef, TypedHookDef, TypedImplBlock,
-    TypedItem, TypedParam, TypedStructDef,
+    TypedInterfaceDef, TypedInterfaceMethod, TypedItem, TypedParam, TypedStructDef,
 };
 use crate::diagnostics::Span;
 use crate::parser::ast::{HookName, Item, SourceFile, TypeExpr};
@@ -124,7 +124,7 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
     env.define("Exception", Symbol::Type { id: exc_id, span: s });
 
     // len, panic, assert, clock_ms: no interface requirements
-    // (print is declared in the prelude as @builtin)
+    // (print/println are defined in the prelude as def print[T: Display])
     let fns: &[(&str, &[Ty], Ty)] = &[
         ("len",      &[Ty::Unknown], Ty::Int),
         ("panic",    &[Ty::Unknown], Ty::Void),
@@ -411,6 +411,58 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
         .filter_map(|i| if let Item::Interface(iface) = i { Some(iface.clone()) } else { None })
         .collect();
 
+    // Pass 1e: register interface method/hook signatures for use by infer.rs.
+    for item in &source.items {
+        if let Item::Interface(iface) = item {
+            use crate::parser::ast::InterfaceItemKind;
+            for iitem in &iface.items {
+                match &iitem.kind {
+                    InterfaceItemKind::Method(method) => {
+                        let params: Vec<(String, Ty)> = method
+                            .params
+                            .iter()
+                            .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &registry, &mut errors)))
+                            .collect();
+                        let ret = resolve_type_expr(&method.return_type, &env, &registry, &mut errors);
+                        registry.register_interface_method(
+                            &iface.name,
+                            MethodEntry {
+                                method_name: method.name.clone(),
+                                qualified_fn: method.name.clone(),
+                                params,
+                                ret,
+                            },
+                        );
+                    }
+                    InterfaceItemKind::Hook { name, params, return_type, .. } => {
+                        let hook_name = match name {
+                            HookName::Named(n) => n.clone(),
+                            HookName::Op(op) => op.clone(),
+                        };
+                        let resolved_params: Vec<(String, Ty)> = params
+                            .iter()
+                            .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &registry, &mut errors)))
+                            .collect();
+                        let ret = return_type
+                            .as_ref()
+                            .map(|r| resolve_type_expr(r, &env, &registry, &mut errors))
+                            .unwrap_or(Ty::Void);
+                        registry.register_interface_method(
+                            &iface.name,
+                            MethodEntry {
+                                method_name: hook_name.clone(),
+                                qualified_fn: hook_name,
+                                params: resolved_params,
+                                ret,
+                            },
+                        );
+                    }
+                    InterfaceItemKind::Field { .. } => {}
+                }
+            }
+        }
+    }
+
     // Pass 2: check each item and produce typed items.
     let mut typed_items: Vec<TypedItem> = Vec::new();
     for item in &source.items {
@@ -451,7 +503,10 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 if has_generics {
                     env.pop_scope();
                 }
-                if ret != Ty::Void && !returns::always_returns(&f.body) {
+                if ret != Ty::Void
+                    && !f.body.stmts.is_empty()
+                    && !returns::always_returns(&f.body)
+                {
                     errors.push(AnalysisError::MissingReturn {
                         name: f.name.clone(),
                         span: f.span,
@@ -633,6 +688,42 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     methods: typed_methods,
                     hooks: typed_hooks,
                     span: impl_block.span,
+                }));
+            }
+
+            Item::Interface(iface) => {
+                use crate::parser::ast::InterfaceItemKind;
+                let typed_methods: Vec<TypedInterfaceMethod> = iface
+                    .items
+                    .iter()
+                    .filter_map(|iitem| {
+                        if let InterfaceItemKind::Method(m) = &iitem.kind {
+                            let params: Vec<TypedParam> = m
+                                .params
+                                .iter()
+                                .map(|p| TypedParam {
+                                    name: p.name.clone(),
+                                    ty: resolve_type_expr(&p.ty, &env, &registry, &mut errors),
+                                    span: p.span,
+                                })
+                                .collect();
+                            let return_type =
+                                resolve_type_expr(&m.return_type, &env, &registry, &mut errors);
+                            Some(TypedInterfaceMethod {
+                                name: m.name.clone(),
+                                params,
+                                return_type,
+                                span: m.span,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                typed_items.push(TypedItem::Interface(TypedInterfaceDef {
+                    name: iface.name.clone(),
+                    methods: typed_methods,
+                    span: iface.span,
                 }));
             }
 

@@ -173,20 +173,6 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
 
         TypedExprKind::Call { callee, args, generic_bounds, generic_params } => {
             if let TypedExprKind::Ident(name) = &callee.kind {
-                // print/println: emit Display constraint for each argument.
-                if name == "print" || name == "println" {
-                    for arg in args {
-                        out.push(Constraint {
-                            ty: arg.ty.clone(),
-                            iface: "Display".into(),
-                            span: arg.span,
-                            reason: ConstraintReason::FunctionBound {
-                                fn_name: name.clone(),
-                                bound: "Display".into(),
-                            },
-                        });
-                    }
-                }
                 // Generic bounds declared on the called function.
                 if !generic_bounds.is_empty() {
                     let arg_tys: Vec<(Ty, Span)> =

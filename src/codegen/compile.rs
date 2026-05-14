@@ -84,9 +84,11 @@ struct FnJob {
 }
 
 /// Compile a typed Kiln source file into `cgx.module`.
-pub fn compile(typed_file: &TypedFile, cgx: &mut CodegenContext) -> Result<(), String> {
+pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<(), String> {
+    let mono_file = crate::codegen::mono::monomorphize(typed_file_in.clone());
+    let typed_file = &mono_file;
     declare_alloc_fns(&mut cgx.module);
-    declare_str_runtime(&mut cgx.module);
+    let runtime_ids = declare_str_runtime(&mut cgx.module);
     declare_exception_runtime(&mut cgx.module);
 
     {
@@ -108,20 +110,27 @@ pub fn compile(typed_file: &TypedFile, cgx: &mut CodegenContext) -> Result<(), S
     }
 
     // Pass 1: register all function prototypes.
-    let mut func_ids: HashMap<String, FuncId> = HashMap::new();
+    // Pre-seed func_ids with C runtime imports so Kiln code can call them by name.
+    let mut func_ids: HashMap<String, FuncId> = runtime_ids.clone();
     let mut fn_jobs: Vec<FnJob> = Vec::new();
 
     for item in &typed_file.items {
         match item {
             TypedItem::Function(f) => {
-                let id = register_fn(
-                    &f.name,
-                    false,
-                    &f.params,
-                    &f.return_type,
-                    &mut cgx.module,
-                );
-                func_ids.insert(f.name.clone(), id);
+                // If already pre-seeded as a runtime import, skip re-declaration.
+                let id = if let Some(&existing) = func_ids.get(&f.name) {
+                    existing
+                } else {
+                    let id = register_fn(
+                        &f.name,
+                        false,
+                        &f.params,
+                        &f.return_type,
+                        &mut cgx.module,
+                    );
+                    func_ids.insert(f.name.clone(), id);
+                    id
+                };
                 let params = f.params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect();
                 fn_jobs.push(FnJob {
                     name: f.name.clone(),
@@ -172,6 +181,9 @@ pub fn compile(typed_file: &TypedFile, cgx: &mut CodegenContext) -> Result<(), S
                         &mut cgx.module,
                     );
                     func_ids.insert(func_name.clone(), id);
+                    // Also register under "TypeName_methodname" so generic dispatch
+                    // (e.g. "int_to_str" after mono T=int) resolves to this FuncId.
+                    func_ids.insert(format!("{}_{}", type_name, method_key), id);
                     layouts.register_vtable_entry(&method_key, type_id, id);
                     let params =
                         hook.params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect();
@@ -192,7 +204,8 @@ pub fn compile(typed_file: &TypedFile, cgx: &mut CodegenContext) -> Result<(), S
 
     // Pass 2: compile each function body.
     let mut fbc = FunctionBuilderContext::new();
-    let mut defined_ids: HashSet<FuncId> = HashSet::new();
+    // Pre-seed defined_ids so @builtin wrappers for runtime imports are never compiled.
+    let mut defined_ids: HashSet<FuncId> = runtime_ids.values().copied().collect();
     let mut defined_thunks: HashSet<String> = HashSet::new();
 
     for job in fn_jobs {

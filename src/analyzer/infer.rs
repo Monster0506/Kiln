@@ -354,6 +354,14 @@ fn infer_call_field(
 
         let r = registry.find_method(tname, field).map(|m| m.ret.clone()).unwrap_or(Ty::Unknown);
         (qfn, r)
+    } else if let Ty::Interface(_, iface_name) = &to.ty {
+        // Interface dispatch: method_fn is the unqualified name; codegen emits
+        // a vtable switch. Return type comes from the interface method signature.
+        let ret = registry
+            .get_interface_method(iface_name, field)
+            .map(|m| m.ret.clone())
+            .unwrap_or(Ty::Unknown);
+        (field.to_string(), ret)
     } else {
         (field.to_string(), Ty::Unknown)
     };
@@ -510,6 +518,10 @@ fn resolve_field_ty(obj_ty: &Ty, field: &str, registry: &TypeRegistry) -> Ty {
 
 pub fn type_name_of(ty: &Ty) -> Option<String> {
     match ty {
+        Ty::Int => Some("int".into()),
+        Ty::Float => Some("float".into()),
+        Ty::Bool => Some("bool".into()),
+        Ty::Str => Some("str".into()),
         Ty::Named(_, name) => Some(name.clone()),
         Ty::Vec(_) => Some("Vec".into()),
         Ty::Map(_, _) => Some("Map".into()),
@@ -765,6 +777,11 @@ pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
         return true;
     }
     match (expected, found) {
+        // An interface type is a supertype of any concrete type; runtime dispatch
+        // checks actual conformance.
+        (Ty::Interface(_, _), _) => true,
+        (_, Ty::Interface(_, _)) => true,
+
         (Ty::Vec(e), Ty::Vec(f)) => types_compatible(e, f),
         (Ty::Set(e), Ty::Set(f)) => types_compatible(e, f),
         (Ty::Option(e), Ty::Option(f)) => types_compatible(e, f),

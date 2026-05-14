@@ -227,6 +227,12 @@ def main() -> void {
 #[test]
 fn print_struct_without_display_fails() {
     let errs = run(r#"
+interface Display {
+    hook to_str() -> str
+}
+
+def print[T: Display](item: T) -> void {}
+
 struct Point { x: int, y: int }
 
 def main() -> void {
@@ -240,6 +246,12 @@ def main() -> void {
 #[test]
 fn print_struct_with_display_impl_passes() {
     let errs = run(r#"
+interface Display {
+    hook to_str() -> str
+}
+
+def print[T: Display](item: T) -> void {}
+
 struct Point { x: int, y: int }
 
 impl Display for Point {

@@ -45,6 +45,8 @@ pub enum Ty {
     Ref(Box<Ty>, bool),
     Union(Vec<Ty>),
     Named(TypeId, String),
+    /// An interface name used as a type. Dispatches via type-tag vtable at runtime.
+    Interface(InterfaceId, String),
     GenericParam(String),
     Unknown,
 }
@@ -65,6 +67,7 @@ impl fmt::Display for Ty {
             Ty::Ref(t, true) => write!(f, "&mut {t}"),
             Ty::Ref(t, false) => write!(f, "&{t}"),
             Ty::Named(_, name) => write!(f, "{name}"),
+            Ty::Interface(_, name) => write!(f, "{name}"),
             Ty::GenericParam(n) => write!(f, "{n}"),
             Ty::Unknown => write!(f, "<unknown>"),
             Ty::Tuple(ts) => {
@@ -119,6 +122,8 @@ pub struct TypeRegistry {
     type_methods: HashMap<String, Vec<MethodEntry>>,
     /// (type_name, iface_name) -> list of conformance entries (any one suffices)
     conformances: HashMap<(String, String), Vec<ConformanceEntry>>,
+    /// iface_name -> method signatures declared in that interface
+    interface_methods: HashMap<String, Vec<MethodEntry>>,
 }
 
 impl TypeRegistry {
@@ -173,6 +178,18 @@ impl TypeRegistry {
             .get(&(type_name.to_string(), iface_name.to_string()))
             .map(|v| v.as_slice())
             .unwrap_or(&[])
+    }
+
+    pub fn register_interface_method(&mut self, iface_name: &str, entry: MethodEntry) {
+        self.interface_methods.entry(iface_name.to_string()).or_default().push(entry);
+    }
+
+    pub fn get_interface_method(&self, iface_name: &str, method_name: &str) -> Option<&MethodEntry> {
+        self.interface_methods.get(iface_name)?.iter().find(|m| m.method_name == method_name)
+    }
+
+    pub fn list_interface_methods(&self, iface_name: &str) -> &[MethodEntry] {
+        self.interface_methods.get(iface_name).map(|v| v.as_slice()).unwrap_or(&[])
     }
 }
 

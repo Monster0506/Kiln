@@ -1,0 +1,19 @@
+def identity[T](x: T) -> T {
+    return x
+}
+
+def double_int(n: int) -> int {
+    return n + n
+}
+
+def main() -> int {
+    a: int = identity(42)
+    b: str = identity("hello")
+    c: bool = identity(true)
+
+    println(a)
+    println(b)
+    println(c)
+
+    return 0
+}

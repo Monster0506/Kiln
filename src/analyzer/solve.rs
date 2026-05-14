@@ -46,6 +46,10 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
             true
         }
 
+        // Interface types satisfy all constraints — runtime dispatch handles
+        // actual conformance, so we cannot reject statically.
+        Ty::Interface(_, _) => true,
+
         // Compound / structural types with no registered conformance.
         Ty::Tuple(_) | Ty::Callable(_, _) | Ty::Ref(_, _) | Ty::Union(_) => false,
     }

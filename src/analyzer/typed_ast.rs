@@ -16,6 +16,7 @@ pub enum TypedItem {
     Struct(TypedStructDef),
     Enum(TypedEnumDef),
     ImplBlock(TypedImplBlock),
+    Interface(TypedInterfaceDef),
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +73,21 @@ pub struct TypedImplBlock {
     pub for_type: String,
     pub methods: Vec<TypedFnDef>,
     pub hooks: Vec<TypedHookDef>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedInterfaceDef {
+    pub name: String,
+    pub methods: Vec<TypedInterfaceMethod>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedInterfaceMethod {
+    pub name: String,
+    pub params: Vec<TypedParam>,
+    pub return_type: Ty,
     pub span: Span,
 }
 

@@ -36,8 +36,8 @@ pub fn resolve_type_expr(
                 "Shared" => Ty::Shared(Box::new(nth(&resolved_generics, 0))),
                 other => match env.lookup(other) {
                     Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), other.to_string()),
-                    Some(Symbol::Iface { .. }) => {
-                        Ty::Named(crate::analyzer::ty::TypeId(u32::MAX), other.to_string())
+                    Some(Symbol::Iface { id, .. }) => {
+                        Ty::Interface(id.clone(), other.to_string())
                     }
                     _ => {
                         errors.push(AnalysisError::UndefinedName {

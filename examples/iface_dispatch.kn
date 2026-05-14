@@ -1,0 +1,63 @@
+interface Shape {
+    hook area() -> float
+    hook name() -> str
+}
+
+struct Circle {
+    radius: float
+}
+
+struct Rectangle {
+    width: float
+    height: float
+}
+
+impl Shape for Circle {
+    hook area() -> float {
+        return self.radius * self.radius * 3.14159
+    }
+    hook name() -> str {
+        return "circle"
+    }
+}
+
+impl Shape for Rectangle {
+    hook area() -> float {
+        return self.width * self.height
+    }
+    hook name() -> str {
+        return "rectangle"
+    }
+}
+
+def print_shape(s: Shape) -> void {
+    println(s.name())
+}
+
+def main() -> int {
+    c: Circle = Circle { radius: 5.0 }
+    r: Rectangle = Rectangle { width: 3.0, height: 4.0 }
+    print_shape(c)
+    print_shape(r)
+    println("\n")
+    println("\n")
+
+    s: Shape = c
+    print_shape(s)
+
+    s2: Shape = r
+    print_shape(s2)
+
+    println("\n")
+    println("\n")
+
+    a: Vec[Shape] = Vec.new()
+    a.add(c)
+    a.add(r)
+    
+    for i<-a {
+        print_shape(i)
+    }
+
+    return 0
+}

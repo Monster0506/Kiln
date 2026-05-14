@@ -28,6 +28,7 @@ pub fn clif_type(ty: &Ty) -> Option<Type> {
         | Ty::Tuple(_)
         | Ty::Callable(_, _)
         | Ty::Named(_, _)
+        | Ty::Interface(_, _)
         | Ty::Union(_)
         | Ty::GenericParam(_)
         | Ty::Unknown => Some(types::I64),

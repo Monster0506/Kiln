@@ -127,6 +127,11 @@ fn lower_typed_expr_inner(
         }
 
         TypedExprKind::Ident(name) => {
+            if name == "self" {
+                if let Some(self_var) = vars.get("__self") {
+                    return builder.use_var(self_var);
+                }
+            }
             if let Some(var) = vars.get(name) {
                 return builder.use_var(var);
             }
@@ -258,20 +263,8 @@ fn lower_typed_expr_inner(
         }
 
         TypedExprKind::Call { callee, args, .. } => {
-            let is_print = matches!(
-                &callee.kind,
-                TypedExprKind::Ident(n) if n == "print" || n == "println"
-            );
-            let arg_vals: Vec<Value> = if is_print {
-                args.iter()
-                    .map(|a| {
-                        let v = lower_typed_expr(a, builder, vars, ctx);
-                        coerce_to_print_str(v, &a.ty, ctx.module, builder)
-                    })
-                    .collect()
-            } else {
-                args.iter().map(|a| lower_typed_expr(a, builder, vars, ctx)).collect()
-            };
+            let arg_vals: Vec<Value> =
+                args.iter().map(|a| lower_typed_expr(a, builder, vars, ctx)).collect();
             match &callee.kind {
                 TypedExprKind::Ident(name) => call_fn_by_name(name, &arg_vals, builder, ctx),
                 _ => {
@@ -283,11 +276,17 @@ fn lower_typed_expr_inner(
 
         TypedExprKind::MethodCall { object, method_fn, args } => {
             let obj = lower_typed_expr(object, builder, vars, ctx);
-            let mut arg_vals = vec![obj];
-            for a in args {
-                arg_vals.push(lower_typed_expr(a, builder, vars, ctx));
+            let extra_args: Vec<Value> =
+                args.iter().map(|a| lower_typed_expr(a, builder, vars, ctx)).collect();
+            if matches!(object.ty, crate::analyzer::ty::Ty::Interface(_, _)) {
+                let impls: Vec<(u32, FuncId)> =
+                    ctx.layouts.all_impls_for_method(method_fn).to_vec();
+                lower_vtable_dispatch(obj, method_fn, &extra_args, &impls, builder, ctx)
+            } else {
+                let mut arg_vals = vec![obj];
+                arg_vals.extend(extra_args);
+                call_fn_by_name(method_fn, &arg_vals, builder, ctx)
             }
-            call_fn_by_name(method_fn, &arg_vals, builder, ctx)
         }
 
         TypedExprKind::StaticCall { method_fn, args } => {
@@ -505,36 +504,6 @@ fn lower_typed_stmt_kind(stmt: &crate::analyzer::typed_ast::TypedStmt) -> TypedS
 // Call helpers
 // ---------------------------------------------------------------------------
 
-/// Convert a value to a fat-pointer string for passing to `println`/`print`.
-/// Strings pass through unchanged; other types call the appropriate runtime converter.
-fn coerce_to_print_str(
-    val: Value,
-    ty: &Ty,
-    module: &mut ObjectModule,
-    builder: &mut FunctionBuilder,
-) -> Value {
-    let conv = match ty {
-        Ty::Str => return val,
-        Ty::Bool => "__kiln_bool_to_str",
-        Ty::Float => "__kiln_float_to_str",
-        _ => "__kiln_int_to_str",
-    };
-    let mut sig = module.make_signature();
-    sig.params.push(AbiParam::new(types::I64));
-    sig.returns.push(AbiParam::new(types::I64));
-    let id = match module.declare_function(conv, Linkage::Import, &sig) {
-        Ok(id) => id,
-        Err(_) => match module.get_name(conv) {
-            Some(cranelift_module::FuncOrDataId::Func(id)) => id,
-            _ => return val,
-        },
-    };
-    let coerced = coerce_to_i64(val, builder);
-    let func_ref = module.declare_func_in_func(id, builder.func);
-    let call = builder.ins().call(func_ref, &[coerced]);
-    builder.inst_results(call).first().copied().unwrap_or(val)
-}
-
 fn indirect_call(
     fat_ptr: Value,
     args: &[Value],
@@ -565,11 +534,7 @@ pub fn call_fn_by_name(
     builder: &mut FunctionBuilder,
     ctx: &mut LowerCtx,
 ) -> Value {
-    let name = match name {
-        "print" => "__kiln_print",
-        "println" => "__kiln_println",
-        _ => name,
-    };
+    let name = name;
     let func_id = if let Some(&id) = ctx.func_ids.get(name) {
         id
     } else {

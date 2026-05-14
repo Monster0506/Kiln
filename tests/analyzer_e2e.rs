@@ -158,7 +158,10 @@ def main() -> void {
     z: int = y - 1
 }
 "#);
-    assert!(errs.is_empty(), "int arithmetic should not produce bound violations: {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "int arithmetic should not produce bound violations: {errs:?}"
+    );
 }
 
 #[test]
@@ -180,7 +183,10 @@ def main() -> void {
     y: bool = x < 2.0
 }
 "#);
-    assert!(errs.is_empty(), "float < should be allowed via PartialOrd: {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "float < should be allowed via PartialOrd: {errs:?}"
+    );
 }
 
 #[test]
@@ -201,7 +207,10 @@ def main() -> void {
     s: str = "{x}"
 }
 "#);
-    assert!(errs.is_empty(), "int in string interpolation should pass (int: Display): {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "int in string interpolation should pass (int: Display): {errs:?}"
+    );
 }
 
 #[test]
@@ -240,7 +249,10 @@ def main() -> void {
     print(p)
 }
 "#);
-    assert!(has_bound_violation(&errs), "print(Point) without Display impl should fail: {errs:?}");
+    assert!(
+        has_bound_violation(&errs),
+        "print(Point) without Display impl should fail: {errs:?}"
+    );
 }
 
 #[test]
@@ -263,7 +275,10 @@ def main() -> void {
     print(p)
 }
 "#);
-    assert!(errs.is_empty(), "print(Point) with Display impl should pass: {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "print(Point) with Display impl should pass: {errs:?}"
+    );
 }
 
 #[test]
@@ -276,7 +291,10 @@ def main() -> void {
     s: str = "{f}"
 }
 "#);
-    assert!(has_bound_violation(&errs), "struct without Display in interpolation should fail: {errs:?}");
+    assert!(
+        has_bound_violation(&errs),
+        "struct without Display in interpolation should fail: {errs:?}"
+    );
 }
 
 #[test]
@@ -287,7 +305,10 @@ def main() -> void {
     print(v)
 }
 "#);
-    assert!(errs.is_empty(), "print(Vec[int]) should pass (Vec[int]: Display): {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "print(Vec[int]) should pass (Vec[int]: Display): {errs:?}"
+    );
 }
 
 #[test]
@@ -301,7 +322,10 @@ def main() -> void {
     double_print(42)
 }
 "#);
-    assert!(errs.is_empty(), "generic fn called with int should pass: {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "generic fn called with int should pass: {errs:?}"
+    );
 }
 
 #[test]
@@ -318,5 +342,8 @@ def main() -> void {
     s: str = "{w}"
 }
 "#);
-    assert!(errs.is_empty(), "Wrapper with Display impl should allow interpolation: {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "Wrapper with Display impl should allow interpolation: {errs:?}"
+    );
 }

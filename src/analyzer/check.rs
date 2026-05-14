@@ -43,7 +43,7 @@ fn check_typed_stmt(
             mutable,
             span,
         } => {
-            let declared = resolve_type_expr(ty, env, registry, errors);
+            let declared = resolve_type_expr(ty, env, errors);
             let typed_val = infer_typed_expr(value, env, registry, errors);
             if let Ty::Interface(_, iface_name) = &declared {
                 // Verify the assigned type implements the interface. Unknown is
@@ -214,7 +214,7 @@ fn check_typed_stmt(
                 _ => Ty::Unknown,
             };
             let ann_ty = if let Some(ann) = binding_ty {
-                let at = resolve_type_expr(ann, env, registry, errors);
+                let at = resolve_type_expr(ann, env, errors);
                 check_assignable(&at, &elem_ty, span, errors);
                 at
             } else {
@@ -256,7 +256,7 @@ fn check_typed_stmt(
             let typed_body = check_typed_block(body, env, registry, return_ty, errors);
             let mut typed_handlers: Vec<TypedCatchHandler> = Vec::new();
             for h in handlers {
-                let exc_ty = resolve_type_expr(&h.ty, env, registry, errors);
+                let exc_ty = resolve_type_expr(&h.ty, env, errors);
                 env.push_scope();
                 env.define(
                     &h.binding,
@@ -300,12 +300,12 @@ pub fn check_fn_def(
     registry: &TypeRegistry,
     errors: &mut Vec<AnalysisError>,
 ) -> TypedFnDef {
-    let ret = resolve_type_expr(&f.return_type, env, registry, errors);
+    let ret = resolve_type_expr(&f.return_type, env, errors);
     let mut params: Vec<TypedParam> = Vec::new();
     for p in &f.params {
         params.push(TypedParam {
             name: p.name.clone(),
-            ty: resolve_type_expr(&p.ty, env, registry, errors),
+            ty: resolve_type_expr(&p.ty, env, errors),
             span: p.span,
         });
     }

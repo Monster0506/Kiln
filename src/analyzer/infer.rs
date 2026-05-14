@@ -128,7 +128,7 @@ pub fn infer_typed_expr(
 
         Expr::As { expr, ty, .. } => {
             let te = infer_typed_expr(expr, env, registry, errors);
-            let target = resolve_type_expr(ty, env, registry, errors);
+            let target = resolve_type_expr(ty, env, errors);
             mk(
                 TypedExprKind::As {
                     expr: Box::new(te),
@@ -291,7 +291,7 @@ pub fn infer_typed_expr(
                 .iter()
                 .map(|p| TypedParam {
                     name: p.name.clone(),
-                    ty: resolve_type_expr(&p.ty, env, registry, errors),
+                    ty: resolve_type_expr(&p.ty, env, errors),
                     span: p.span,
                 })
                 .collect();
@@ -310,7 +310,7 @@ pub fn infer_typed_expr(
                             },
                         );
                     }
-                    let te = infer_typed_expr(e, &mut closure_env, registry, errors);
+                    let te = infer_typed_expr(e, &closure_env, registry, errors);
                     let r = te.ty.clone();
                     (TypedClosureBody::Expr(Box::new(te)), r)
                 }
@@ -797,7 +797,7 @@ fn lower_stmt_shallow(
             mutable,
             span,
         } => {
-            let declared = resolve_type_expr(ty, env, registry, errors);
+            let declared = resolve_type_expr(ty, env, errors);
             let typed_val = infer_typed_expr(value, env, registry, errors);
             TypedStmt::VarDecl {
                 name: name.clone(),
@@ -857,7 +857,7 @@ fn lower_stmt_shallow(
         } => {
             let bt = binding_ty
                 .as_ref()
-                .map(|t| resolve_type_expr(t, env, registry, errors))
+                .map(|t| resolve_type_expr(t, env, errors))
                 .unwrap_or(Ty::Unknown);
             TypedStmt::For {
                 binding: binding.clone(),
@@ -879,7 +879,7 @@ fn lower_stmt_shallow(
                 handlers: handlers
                     .iter()
                     .map(|h| TypedCatchHandler {
-                        ty: resolve_type_expr(&h.ty, env, registry, errors),
+                        ty: resolve_type_expr(&h.ty, env, errors),
                         binding: h.binding.clone(),
                         body: shallow_block(&h.body, env, registry, errors),
                         span: h.span,
@@ -893,13 +893,13 @@ fn lower_stmt_shallow(
         }
         Stmt::FnDef(f) => {
             // Nested fn in closure: produce a minimal typed def
-            let ret = resolve_type_expr(&f.return_type, env, registry, errors);
+            let ret = resolve_type_expr(&f.return_type, env, errors);
             let params: Vec<TypedParam> = f
                 .params
                 .iter()
                 .map(|p| TypedParam {
                     name: p.name.clone(),
-                    ty: resolve_type_expr(&p.ty, env, registry, errors),
+                    ty: resolve_type_expr(&p.ty, env, errors),
                     span: p.span,
                 })
                 .collect();

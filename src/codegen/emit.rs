@@ -82,9 +82,9 @@ pub fn link_executable(
             let out_flag = format!("/out:{}", output.display());
             cmd.arg(obj_path).arg(&out_flag);
             if spec.name == "link" {
-                cmd.args(&["/nologo", "/subsystem:console", "/defaultlib:libcmt"]);
+                cmd.args(["/nologo", "/subsystem:console", "/defaultlib:libcmt"]);
             } else {
-                cmd.args(&["/nologo", "/subsystem:console"]);
+                cmd.args(["/nologo", "/subsystem:console"]);
             }
             if let Some(ref rt) = runtime_path {
                 cmd.arg(rt);

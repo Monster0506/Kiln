@@ -273,9 +273,7 @@ fn lower_if(
 
     for (i, (cond, then_block)) in branches.iter().enumerate() {
         let then_bb = builder.create_block();
-        let false_bb = if i + 1 < n {
-            builder.create_block()
-        } else if else_branch.is_some() {
+        let false_bb = if (i + 1 < n) || else_branch.is_some() {
             builder.create_block()
         } else {
             merge_bb

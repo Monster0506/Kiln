@@ -71,6 +71,12 @@ pub struct StructLayouts {
     vtable_entries: HashMap<String, Vec<(u32, FuncId)>>,
 }
 
+impl Default for StructLayouts {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StructLayouts {
     pub fn new() -> Self {
         Self {
@@ -175,7 +181,7 @@ impl StructLayouts {
         let max_payload = en
             .variants
             .iter()
-            .map(|v| variant_payload_size(v))
+            .map(variant_payload_size)
             .max()
             .unwrap_or(0);
 

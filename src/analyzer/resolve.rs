@@ -1,12 +1,12 @@
 use crate::analyzer::env::{Env, Symbol};
 use crate::analyzer::error::AnalysisError;
-use crate::analyzer::ty::{Ty, TypeRegistry};
+use crate::analyzer::ty::Ty;
 use crate::parser::ast::TypeExpr;
 
 pub fn resolve_type_expr(
     expr: &TypeExpr,
     env: &Env,
-    registry: &TypeRegistry,
+//    registry: &TypeRegistry,
     errors: &mut Vec<AnalysisError>,
 ) -> Ty {
     match expr {
@@ -17,7 +17,7 @@ pub fn resolve_type_expr(
         } => {
             let resolved_generics: Vec<Ty> = generics
                 .iter()
-                .map(|g| resolve_type_expr(g, env, registry, errors))
+                .map(|g| resolve_type_expr(g, env, errors))
                 .collect();
 
             match name.as_str() {
@@ -50,25 +50,25 @@ pub fn resolve_type_expr(
         TypeExpr::Tuple(elems, _) => Ty::Tuple(
             elems
                 .iter()
-                .map(|e| resolve_type_expr(e, env, registry, errors))
+                .map(|e| resolve_type_expr(e, env, errors))
                 .collect(),
         ),
         TypeExpr::Callable { params, ret, .. } => {
             let ptys = params
                 .iter()
-                .map(|p| resolve_type_expr(p, env, registry, errors))
+                .map(|p| resolve_type_expr(p, env, errors))
                 .collect();
-            let rty = resolve_type_expr(ret, env, registry, errors);
+            let rty = resolve_type_expr(ret, env, errors);
             Ty::Callable(ptys, Box::new(rty))
         }
         TypeExpr::Union(variants, _) => Ty::Union(
             variants
                 .iter()
-                .map(|v| resolve_type_expr(v, env, registry, errors))
+                .map(|v| resolve_type_expr(v, env, errors))
                 .collect(),
         ),
         TypeExpr::Ref { inner, mutable, .. } => Ty::Ref(
-            Box::new(resolve_type_expr(inner, env, registry, errors)),
+            Box::new(resolve_type_expr(inner, env, errors)),
             *mutable,
         ),
         TypeExpr::GenSplice(_, span) => {
@@ -89,7 +89,7 @@ fn nth(tys: &[Ty], i: usize) -> Ty {
 mod tests {
     use super::*;
     use crate::analyzer::env::Env;
-    use crate::analyzer::ty::{Ty, TypeRegistry};
+    use crate::analyzer::ty::Ty;
     use crate::diagnostics::Span;
     use crate::parser::ast::TypeExpr;
     fn s() -> Span {
@@ -98,7 +98,6 @@ mod tests {
 
     fn check(name: &str, expected: Ty) {
         let env = Env::new();
-        let reg = TypeRegistry::new();
         let mut errs = vec![];
         let ty = resolve_type_expr(
             &TypeExpr::Named {
@@ -107,7 +106,6 @@ mod tests {
                 span: s(),
             },
             &env,
-            &reg,
             &mut errs,
         );
         assert_eq!(ty, expected);
@@ -134,7 +132,6 @@ mod tests {
     #[test]
     fn resolves_option_int() {
         let env = Env::new();
-        let reg = TypeRegistry::new();
         let mut errs = vec![];
         let ty = resolve_type_expr(
             &TypeExpr::Named {
@@ -147,7 +144,6 @@ mod tests {
                 span: s(),
             },
             &env,
-            &reg,
             &mut errs,
         );
         assert_eq!(ty, Ty::Option(Box::new(Ty::Int)));
@@ -156,7 +152,6 @@ mod tests {
     #[test]
     fn unknown_type_emits_error() {
         let env = Env::new();
-        let reg = TypeRegistry::new();
         let mut errs = vec![];
         let ty = resolve_type_expr(
             &TypeExpr::Named {
@@ -165,7 +160,6 @@ mod tests {
                 span: s(),
             },
             &env,
-            &reg,
             &mut errs,
         );
         assert_eq!(ty, Ty::Unknown);

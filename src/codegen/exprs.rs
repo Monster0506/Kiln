@@ -36,6 +36,12 @@ pub struct VarEnv {
     str_vars: HashSet<String>,
 }
 
+impl Default for VarEnv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VarEnv {
     pub fn new() -> Self {
         Self {
@@ -457,7 +463,7 @@ fn lower_typed_expr_inner(
 
                 ctx.closure_counter = inner_ctx.closure_counter;
 
-                let needs_term = fn_builder.current_block().map_or(false, |bb| {
+                let needs_term = fn_builder.current_block().is_some_and(|bb| {
                     match fn_builder.func.layout.last_inst(bb) {
                         None => true,
                         Some(inst) => !fn_builder.func.dfg.insts[inst].opcode().is_terminator(),
@@ -508,7 +514,7 @@ fn lower_typed_expr_inner(
             use crate::codegen::stmts::lower_typed_stmt_pub;
             for stmt in &body.stmts {
                 if let TypedStmtKind::Expr(e) = lower_typed_stmt_kind(stmt) {
-                    let val = lower_typed_expr(&e, builder, vars, ctx);
+                    let val = lower_typed_expr(e, builder, vars, ctx);
                     let coerced = coerce_to_i64(val, builder);
                     builder.def_var(result_var, coerced);
                 } else {
@@ -577,7 +583,6 @@ pub fn call_fn_by_name(
     builder: &mut FunctionBuilder,
     ctx: &mut LowerCtx,
 ) -> Value {
-    let name = name;
     let func_id = if let Some(&id) = ctx.func_ids.get(name) {
         id
     } else {

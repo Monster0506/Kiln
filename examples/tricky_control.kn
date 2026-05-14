@@ -1,0 +1,113 @@
+# tricky_control.kn -- nested control flow edge cases
+
+def process(n: int) -> bool { return n > 0 }
+
+def demo_nested_while(matrix: Vec[Vec[int]]) -> int {
+    mut total: int = 0
+    mut i: int = 0
+    while i < matrix.length() {
+        row: Vec[int] = matrix[i]
+        mut j: int = 0
+        while j < row.length() {
+            val: int = row[j]
+            if val < 0 {
+                j = j + 1
+                continue
+            }
+            if val > 1000 {
+                break
+            }
+            total = total + val
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+def demo_for_in_while(buckets: Vec[Vec[int]]) -> Vec[int] {
+    result: Vec[int] = Vec.new()
+    mut i: int = 0
+    while i < buckets.length() {
+        bucket: Vec[int] = buckets[i]
+        for item <- bucket {
+            if item > 0 {
+                result.add(item)
+            }
+        }
+        i = i + 1
+    }
+    return result
+}
+
+def demo_while_in_for(tasks: Vec[int]) -> int {
+    mut completed: int = 0
+    for task <- tasks {
+        mut retries: int = 0
+        mut success: bool = false
+        while retries < 3 {
+            if process(task) {
+                success = true
+                break
+            }
+            retries = retries + 1
+        }
+        if success {
+            completed = completed + 1
+        }
+    }
+    return completed
+}
+
+def demo_do_while() -> void {
+    mut i: int = 0
+    do {
+        i = i + 1
+    } while i < 10
+
+    mut count: int = 0
+    limit: int = 100
+    do {
+        count = count * 2 + 1
+    } while count < limit && count > 0
+
+    mut x: int = 0
+    do {
+        x = x + 1
+        if x == 5 {
+            break
+        }
+    } while x < 100
+}
+
+def double(x: int) -> int { return x * 2 }
+def square(x: int) -> int { return x * x }
+def add(a: int, b: int) -> int { return a + b }
+
+struct Point {
+    x: float
+    y: float
+}
+
+def demo_multiline_expr(items: Vec[int], threshold: int) -> int {
+    result: bool = items.length() > 0
+        && items.length() < 1000
+        && threshold > 0
+        && threshold < items.length()
+    r: int = add(
+        double(square(2)),
+        add(double(3), square(4))
+    )
+    p: Point = Point {
+        x: 1.0,
+        y: 2.0
+    }
+    if result {
+        return r
+    }
+    return 0
+}
+
+def main() -> void {
+    demo_do_while()
+}

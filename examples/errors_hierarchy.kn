@@ -1,0 +1,194 @@
+# errors_hierarchy.kn -- exception hierarchies via interface extension
+
+# ---- Exception interface (built-in) -----------------------------------------
+#
+# interface Exception {
+#   message: str
+# }
+
+# ---- First-level exception interfaces ----------------------------------------
+
+interface IoError: Exception {
+}
+
+interface NetworkError: Exception {
+}
+
+interface DbError: Exception {
+}
+
+interface SecurityError: Exception {
+}
+
+# ---- Second-level refinements ------------------------------------------------
+
+interface FsError: IoError {
+}
+
+interface HttpError: NetworkError {
+}
+
+interface SqlError: DbError {
+}
+
+# ---- Concrete exception structs ----------------------------------------------
+
+# IoError hierarchy
+struct FileNotFoundError: FsError {
+    message: str
+    path: str
+}
+
+struct PermissionDeniedError: FsError {
+    message: str
+    path: str
+    required: str
+}
+
+struct DiskFullError: IoError {
+    message: str
+    needed_bytes: int
+    free_bytes: int
+}
+
+struct ReadError: FsError {
+    message: str
+    path: str
+    offset: int
+}
+
+# NetworkError hierarchy
+struct ConnectionRefusedError: HttpError {
+    message: str
+    host: str
+    port: int
+}
+
+struct HttpTimeoutError: HttpError {
+    message: str
+    url: str
+    seconds: float
+}
+
+struct HttpStatusError: HttpError {
+    message: str
+    url: str
+    status: int
+}
+
+struct DnsError: NetworkError {
+    message: str
+    hostname: str
+}
+
+# DbError hierarchy
+struct QueryError: SqlError {
+    message: str
+    query: str
+}
+
+struct ConnectionPoolError: DbError {
+    message: str
+    pool_size: int
+}
+
+# SecurityError hierarchy
+struct AuthenticationError: SecurityError {
+    message: str
+    user: str
+}
+
+struct AuthorizationError: SecurityError {
+    message: str
+    user: str
+    resource: str
+}
+
+# ---- Catching by hierarchy level --------------------------------------------
+#
+# `except IoError as e` catches FileNotFoundError, PermissionDeniedError,
+# DiskFullError, ReadError -- any type implementing IoError.
+#
+# `except FsError as e` catches only the file-system subset.
+
+def read_file(path: str) -> str {
+    if path.length() == 0 {
+        raise FileNotFoundError { message: "empty path", path: "" }
+    }
+    return "content"
+}
+
+def demo_catch_by_interface(path: str) -> str {
+    try {
+        return read_file(path)
+    } except FileNotFoundError as e {
+        print("not found: {e.path}")
+    } except PermissionDeniedError as e {
+        print("permission denied: {e.required}")
+    } except FsError as e {
+        print("filesystem error: {e.message}")
+    } except IoError as e {
+        print("io error: {e.message}")
+    } except Exception as e {
+        print("unknown: {e.message}")
+    }
+    return ""
+}
+
+def demo_catch_broad(url: str) -> str {
+    try {
+        return fetch(url)
+    } except HttpError as e {
+        print("http error: {e.message}")
+    } except NetworkError as e {
+        print("network error: {e.message}")
+    } except Exception as e {
+        print("other: {e.message}")
+    }
+    return ""
+}
+
+def fetch(url: str) -> str {
+    if url.length() == 0 {
+        raise HttpStatusError { message: "bad url", url: url, status: 400 }
+    }
+    return "response"
+}
+
+# ---- Option[T] for legitimate absence (not an error) ------------------------
+
+def find_user(id: int) -> Option[str] {
+    if id == 0 {
+        return None
+    }
+    return Some { value: "user_{id}" }
+}
+
+def demo_option_vs_exception(id: int) -> str {
+    user: Option[str] = find_user(id)
+    return match user {
+        Some { value: name } => "found: {name}",
+        None => "no user with id {id}"
+    }
+}
+
+def demo_option_with_default(id: int) -> str {
+    user: Option[str] = find_user(id)
+    return match user {
+        Some { value: name } => name,
+        None => "anonymous"
+    }
+}
+
+def chain_options(a: Option[int], b: Option[int]) -> Option[int] {
+    has_a: bool = match a { Some { value: _ } => true, None => false }
+    if !has_a { return None }
+    av: int = match a { Some { value: v } => v, None => 0 }
+    has_b: bool = match b { Some { value: _ } => true, None => false }
+    if !has_b { return None }
+    bv: int = match b { Some { value: v } => v, None => 0 }
+    return Some { value: av + bv }
+}
+
+def main() -> void {
+}

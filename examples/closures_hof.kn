@@ -1,0 +1,122 @@
+# closures_hof.kn -- higher-order functions, storing and returning closures
+
+# ---- Returning closures ------------------------------------------------------
+
+def make_adder(n: int) -> Callable[(int), int] {
+    return (x: int) -> x + n
+}
+
+def make_multiplier(factor: int) -> Callable[(int), int] {
+    return (x: int) -> x * factor
+}
+
+def make_predicate(threshold: int) -> Callable[(int), bool] {
+    return (x: int) -> x > threshold
+}
+
+def make_formatter(prefix: str) -> Callable[(int), str] {
+    return (n: int) -> "{prefix}{n}"
+}
+
+def make_clamper(lo: int, hi: int) -> Callable[(int), int] {
+    return (x: int) -> {
+        if x < lo { return lo }
+        if x > hi { return hi }
+        return x
+    }
+}
+
+# ---- Closures in collections -------------------------------------------------
+
+def demo_closure_vec() -> void {
+    transforms: Vec[Callable[(int), int]] = Vec.new()
+    transforms.add((x: int) -> x + 1)
+    transforms.add((x: int) -> x * 2)
+    transforms.add((x: int) -> x - 3)
+
+    mut input: int = 5
+    for f <- transforms {
+        input = f(input)
+    }
+}
+
+def build_pipeline(fns: Vec[Callable[(int), int]]) -> Callable[(int), int] {
+    return (x: int) -> {
+        mut result: int = x
+        for f <- fns {
+            result = f(result)
+        }
+        return result
+    }
+}
+
+# ---- Closures stored in structs ----------------------------------------------
+
+struct Button {
+    label: str
+    on_click: Callable[(), void]
+    on_hover: Callable[(int, int), bool]
+}
+
+def demo_struct_closures() -> void {
+    b: Button = Button {
+        label: "click me",
+        on_click: () -> { print("clicked") },
+        on_hover: (x: int, y: int) -> x > 0 && y > 0
+    }
+    b.on_click()
+    hovered: bool = b.on_hover(10, 20)
+}
+
+# ---- Composition -------------------------------------------------------------
+
+def compose(f: Callable[(int), int], g: Callable[(int), int]) -> Callable[(int), int] {
+    return (x: int) -> f(g(x))
+}
+
+def demo_compose() -> void {
+    add1: Callable[(int), int] = (x: int) -> x + 1
+    double: Callable[(int), int] = (x: int) -> x * 2
+    add1_then_double: Callable[(int), int] = compose(double, add1)
+    result: int = add1_then_double(3)   # double(add1(3)) = double(4) = 8
+}
+
+# ---- Iterator-style HOFs -----------------------------------------------------
+
+def map_vec[T, U](items: Vec[T], f: Callable[(T), U]) -> Vec[U] {
+    out: Vec[U] = Vec.new()
+    for item <- items {
+        out.add(f(item))
+    }
+    return out
+}
+
+def filter_vec[T](items: Vec[T], pred: Callable[(T), bool]) -> Vec[T] {
+    out: Vec[T] = Vec.new()
+    for item <- items {
+        if pred(item) {
+            out.add(item)
+        }
+    }
+    return out
+}
+
+def reduce_vec[T](items: Vec[T], init: T, f: Callable[(T, T), T]) -> T {
+    mut acc: T = init
+    for item <- items {
+        acc = f(acc, item)
+    }
+    return acc
+}
+
+def demo_hof_usage(nums: Vec[int]) -> void {
+    doubled: Vec[int] = map_vec(nums, (x: int) -> x * 2)
+    pos: Vec[int] = filter_vec(nums, (x: int) -> x > 0)
+    total: int = reduce_vec(nums, 0, (acc: int, x: int) -> acc + x)
+}
+
+def main() -> void {
+    demo_closure_vec()
+    demo_struct_closures()
+    demo_compose()
+}

@@ -1,0 +1,106 @@
+# mem_lifetimes.kn -- lifetime annotations for borrowed references
+
+# ---- Elided lifetimes (most common case) -------------------------------------
+#
+# The compiler infers the output lifetime automatically:
+#   - single reference input: output matches input
+#   - &self method: output matches self
+
+def first_char(s: &str) -> &str {
+    return s.slice(0, 1)
+}
+
+def str_len(s: &str) -> int {
+    return s.length()
+}
+
+def compare_lengths(a: &str, b: &str) -> bool {
+    return a.length() == b.length()
+}
+
+struct Buffer {
+    priv data: Vec[int]
+
+    def contents() -> &Vec[int] {
+        return data
+    }
+
+    def first() -> Option[int] {
+        if data.length() == 0 {
+            return None
+        }
+        return Some { value: data[0] }
+    }
+}
+
+# ---- Explicit lifetime params -------------------------------------------------
+#
+# Required when there are multiple reference inputs and a reference output --
+# the compiler cannot infer which input the output derives from.
+
+def longest[scope a](x: &a str, y: &a str) -> &a str {
+    if x.length() >= y.length() {
+        return x
+    }
+    return y
+}
+
+def first_of[scope a](x: &a str, y: &a str) -> &a str {
+    return x
+}
+
+def get_or[T, scope a](items: &a Vec[T], index: int, fallback: &a T) -> &a T {
+    if index < items.length() {
+        return items[index]
+    }
+    return fallback
+}
+
+# Mutable reference with explicit lifetime
+def fill[scope a](buf: &a mut Vec[int], value: int, count: int) -> void {
+    mut i: int = 0
+    while i < count {
+        buf.add(value)
+        i = i + 1
+    }
+}
+
+# Mixed type and lifetime parameters
+def max_ref[T: Comparable, scope a](x: &a T, y: &a T) -> &a T {
+    if (x <=> y) >= 0 {
+        return x
+    }
+    return y
+}
+
+# ---- Outlives bounds ----------------------------------------------------------
+#
+# scope b: a means b's scope is at least as long as a's.
+# Used when the output derives from one input but the other must outlive it.
+
+def pick_from_longer[scope a, scope b: a](short: &a str, long: &b str) -> &a str {
+    if long.length() > short.length() {
+        return short
+    }
+    return short
+}
+
+# ---- Static lifetime ----------------------------------------------------------
+#
+# &static means the data lives for the entire program -- string literals,
+# global constants.
+
+def language_name() -> &static str {
+    return "Kiln"
+}
+
+def version_string() -> &static str {
+    return "0.1.0"
+}
+
+def default_prompt() -> &static str {
+    return "> "
+}
+
+def main() -> void {
+}

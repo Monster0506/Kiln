@@ -1,0 +1,114 @@
+# concurrency_rwlock.kn -- RwLock[T] for concurrent reads, exclusive writes
+
+# ---- Basic RwLock usage ------------------------------------------------------
+
+def demo_basic_rwlock() -> void {
+    cache: RwLock[Map[str, int]] = RwLock.new(Map.new())
+
+    # Exclusive write
+    writer: RwLockWriteGuard[Map[str, int]] = cache.write()
+    writer.value.set("key", 99)
+    # write lock released here
+
+    # Concurrent read
+    reader: RwLockReadGuard[Map[str, int]] = cache.read()
+    val: Option[int] = reader.value.get("key")
+    print("val = {val?}")
+}
+
+# ---- Multiple readers --------------------------------------------------------
+
+def read_worker(lock: RwLock[Vec[int]], idx: int) -> int {
+    reader: RwLockReadGuard[Vec[int]] = lock.read()
+    return reader.value[idx]
+}
+
+def demo_multiple_readers() -> void {
+    data: RwLock[Vec[int]] = RwLock.new(Vec.new())
+
+    # Populate under write lock
+    writer: RwLockWriteGuard[Vec[int]] = data.write()
+    writer.value.add(10)
+    writer.value.add(20)
+    writer.value.add(30)
+
+    # Spawn multiple readers
+    t1: Task[int] = spawn read_worker(data, 0)
+    t2: Task[int] = spawn read_worker(data, 1)
+    t3: Task[int] = spawn read_worker(data, 2)
+
+    r1: int = t1.join()
+    r2: int = t2.join()
+    r3: int = t3.join()
+    print("{r1} {r2} {r3}")
+}
+
+# ---- Read-heavy cache pattern ------------------------------------------------
+
+def lookup(cache: RwLock[Map[str, str]], key: str) -> Option[str] {
+    reader: RwLockReadGuard[Map[str, str]] = cache.read()
+    return reader.value.get(key)
+}
+
+def insert(cache: RwLock[Map[str, str]], key: str, val: str) -> void {
+    writer: RwLockWriteGuard[Map[str, str]] = cache.write()
+    writer.value.set(key, val)
+}
+
+def demo_cache() -> void {
+    cache: RwLock[Map[str, str]] = RwLock.new(Map.new())
+
+    # Writers
+    tw1: Task[void] = spawn insert(cache, "a", "alpha")
+    tw2: Task[void] = spawn insert(cache, "b", "beta")
+    tw1.join()
+    tw2.join()
+
+    # Concurrent readers
+    tr1: Task[Option[str]] = spawn lookup(cache, "a")
+    tr2: Task[Option[str]] = spawn lookup(cache, "b")
+    tr3: Task[Option[str]] = spawn lookup(cache, "c")
+
+    va: Option[str] = tr1.join()
+    vb: Option[str] = tr2.join()
+    vc: Option[str] = tr3.join()
+    print("a={va?} b={vb?}")
+}
+
+# ---- RwLock[Vec[int]] stats counter ------------------------------------------
+
+def add_stat(lock: RwLock[Vec[int]], v: int) -> void {
+    writer: RwLockWriteGuard[Vec[int]] = lock.write()
+    writer.value.add(v)
+}
+
+def read_stats(lock: RwLock[Vec[int]]) -> int {
+    reader: RwLockReadGuard[Vec[int]] = lock.read()
+    mut total: int = 0
+    for x <- reader.value {
+        total = total + x
+    }
+    return total
+}
+
+def demo_stats() -> void {
+    stats: RwLock[Vec[int]] = RwLock.new(Vec.new())
+
+    t1: Task[void] = spawn add_stat(stats, 5)
+    t2: Task[void] = spawn add_stat(stats, 10)
+    t3: Task[void] = spawn add_stat(stats, 15)
+
+    t1.join()
+    t2.join()
+    t3.join()
+
+    total: int = read_stats(stats)
+    print("total = {total}")
+}
+
+def main() -> void {
+    demo_basic_rwlock()
+    demo_multiple_readers()
+    demo_cache()
+    demo_stats()
+}

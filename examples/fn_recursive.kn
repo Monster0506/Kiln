@@ -1,0 +1,86 @@
+# fn_recursive.kn -- recursive functions
+
+def factorial(n: int) -> int {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+def fib(n: int) -> int {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+def gcd(a: int, b: int) -> int {
+    if b == 0 {
+        return a
+    }
+    return gcd(b, a - a / b * b)
+}
+
+def power(base: int, exp: int) -> int {
+    if exp == 0 {
+        return 1
+    }
+    if exp == exp / 2 * 2 {
+        half: int = power(base, exp / 2)
+        return half * half
+    }
+    return base * power(base, exp - 1)
+}
+
+def sum_digits(n: int) -> int {
+    if n < 10 {
+        return n
+    }
+    return n - n / 10 * 10 + sum_digits(n / 10)
+}
+
+def reverse_list(items: Vec[int]) -> Vec[int] {
+    if items.length() == 0 {
+        return Vec.new()
+    }
+    n: int = items.length()
+    last: int = items[n - 1]
+    rest: Vec[int] = items.slice(0, n - 1)
+    reversed: Vec[int] = reverse_list(rest)
+    result: Vec[int] = Vec.new()
+    result.add(last)
+    for x <- reversed {
+        result.add(x)
+    }
+    return result
+}
+
+def count_down_rec(n: int) -> void {
+    if n <= 0 {
+        return
+    }
+    print("{n}")
+    count_down_rec(n - 1)
+}
+
+def flatten(lists: Vec[Vec[int]]) -> Vec[int] {
+    if lists.length() == 0 {
+        return Vec.new()
+    }
+    result: Vec[int] = Vec.new()
+    for item <- lists[0] {
+        result.add(item)
+    }
+    rest: Vec[Vec[int]] = lists.slice(1, lists.length())
+    tail: Vec[int] = flatten(rest)
+    for item <- tail {
+        result.add(item)
+    }
+    return result
+}
+
+def main() -> void {
+    factorial(5)
+    fib(10)
+    count_down_rec(5)
+}

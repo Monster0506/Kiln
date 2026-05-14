@@ -2,6 +2,24 @@ use crate::analyzer::ty::{InterfaceId, Ty, TypeId};
 use crate::diagnostics::Span;
 use std::collections::HashMap;
 
+/// A single interface bound on a generic parameter, e.g. `T: Addable`.
+#[derive(Debug, Clone)]
+pub struct GenericBound {
+    pub param: String,
+    pub iface: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct FnOverload {
+    pub generic_params: Vec<String>,
+    pub generic_bounds: Vec<GenericBound>,
+    pub params: Vec<(String, Ty)>,
+    pub ret: Ty,
+    /// The symbol name used in codegen, e.g. "foo__0" for the first overload of "foo".
+    pub mangled_name: String,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone)]
 pub enum Symbol {
     Var {
@@ -9,15 +27,16 @@ pub enum Symbol {
         mutable: bool,
         span: Span,
     },
-    Const {
-        ty: Ty,
-        span: Span,
-    },
     Fn {
         generic_params: Vec<String>,
+        generic_bounds: Vec<GenericBound>,
         params: Vec<(String, Ty)>,
         ret: Ty,
         span: Span,
+    },
+    /// Multiple definitions of the same function name (overloads).
+    FnOverloadSet {
+        overloads: Vec<FnOverload>,
     },
     Type {
         id: TypeId,
@@ -29,7 +48,7 @@ pub enum Symbol {
     },
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Env {
     scopes: Vec<HashMap<String, Symbol>>,
 }
@@ -69,6 +88,11 @@ impl Env {
     /// (shadowing is allowed in Kiln).
     pub fn would_shadow(&self, name: &str) -> bool {
         self.lookup(name).is_some()
+    }
+
+    /// Look up `name` only in the innermost (current) scope.
+    pub fn lookup_in_current_scope(&self, name: &str) -> Option<&Symbol> {
+        self.scopes.last()?.get(name)
     }
 }
 

@@ -1,0 +1,86 @@
+# Kiln standard library prelude.
+# Types marked @builtin have compiler-internal implementations; the declarations
+# here are the source of truth for their interfaces and source locations.
+@builtin
+struct Vec[T] {
+    def new() -> Vec[T]
+    def add(item: T) -> void
+    def len() -> int
+    def get(index: int) -> T
+    def set(index: int, item: T) -> void
+    def remove(index: int) -> T
+    def clear() -> void
+}
+
+
+@builtin
+def print[T: Display](item: T) -> void
+
+
+impl[T: Display] Display for Vec[T] {
+    hook to_str() -> str {
+        mut res: str = "["
+        mut i: int = 0
+        n: int = self.len()
+        while i < n {
+            item: T = self.get(i)
+            if i > 0 { res = res + ", " }
+            res = res + item.to_str()
+            i=i+1
+        }
+        
+        return res + "]"
+    }
+}
+
+impl VecMethods for Vec[T] {
+    def pop() -> T {
+        return self.remove(self.len() - 1)
+    }
+    
+    
+    def contains(item: T) -> bool {
+        for i <- self {
+            if (item == i) { return true }
+        }
+        
+        return false
+    }
+
+    def is_empty() -> bool {
+        return self.len() == 0
+    }
+
+    def first() -> T {
+        return self.get(0)
+    }
+
+    def last() -> T {
+        return self.get(self.len() - 1)
+    }
+}
+
+def range(start: int, stop: int) -> Vec[int] {
+    mut result: Vec[int] = Vec.new()
+    mut i: int = start
+    while i < stop {
+        result.add(i)
+        i = i + 1
+    }
+    return result
+}
+
+
+def range(start: float, stop: float, step: float) -> Vec[float] {
+    mut result: Vec[float] = Vec.new()
+    mut i: float= start
+    while i < stop {
+        result.add(i)
+        i = i + step
+    }
+    return result
+}
+
+
+@builtin
+def println[T: Display](item: T) -> void

@@ -1,0 +1,155 @@
+# concurrency_tasks.kn -- Task[T], spawn, join, join_timeout, cancel, is_done
+
+# ---- Helper functions to spawn -----------------------------------------------
+
+def compute_sum(n: int) -> int {
+    mut total: int = 0
+    mut i: int = 0
+    while i < n {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+def compute_fib(n: int) -> int {
+    if n <= 1 {
+        return n
+    }
+    return compute_fib(n - 1) + compute_fib(n - 2)
+}
+
+def fetch_data(url: str) -> str {
+    return "data from {url}"
+}
+
+def process_batch(items: Vec[int]) -> int {
+    mut total: int = 0
+    for x <- items {
+        total = total + x
+    }
+    return total
+}
+
+# ---- Basic spawn and join ----------------------------------------------------
+
+def demo_basic_task() -> int {
+    task: Task[int] = spawn compute_sum(1000)
+    result: int = task.join()
+    return result
+}
+
+def demo_two_tasks() -> int {
+    t1: Task[int] = spawn compute_sum(100)
+    t2: Task[int] = spawn compute_sum(200)
+    r1: int = t1.join()
+    r2: int = t2.join()
+    return r1 + r2
+}
+
+# ---- Spawn then do other work ------------------------------------------------
+
+def demo_background() -> int {
+    task: Task[int] = spawn compute_fib(30)
+
+    mut local_sum: int = 0
+    mut i: int = 0
+    while i < 1000 {
+        local_sum = local_sum + i
+        i = i + 1
+    }
+
+    result: int = task.join()
+    return result + local_sum
+}
+
+# ---- join_timeout ------------------------------------------------------------
+
+def demo_join_timeout() -> void {
+    task: Task[int] = spawn compute_fib(35)
+
+    maybe: Option[int] = task.join_timeout(10)
+    has_result: bool = match maybe { Some { value: _ } => true, None => false }
+    if !has_result {
+        task.cancel()
+        return
+    }
+    result: int = match maybe { Some { value: v } => v, None => 0 }
+    print("got: {result}")
+}
+
+def demo_timeout_success() -> int {
+    task: Task[int] = spawn compute_sum(10)
+    maybe: Option[int] = task.join_timeout(5000)
+    return match maybe {
+        Some { value: v } => v,
+        None => -1
+    }
+}
+
+# ---- is_done ----------------------------------------------------------------
+
+def demo_is_done() -> void {
+    task: Task[int] = spawn compute_fib(40)
+    done_early: bool = task.is_done()
+    result: int = task.join()
+    done_after: bool = task.is_done()
+    print("early={done_early} result={result} after={done_after}")
+}
+
+# ---- cancel ------------------------------------------------------------------
+
+def demo_cancel() -> void {
+    task: Task[int] = spawn compute_fib(45)
+    task.cancel()
+}
+
+# ---- Multiple tasks, collect results ----------------------------------------
+
+def demo_parallel_fetch(urls: Vec[str]) -> Vec[str] {
+    tasks: Vec[Task[str]] = Vec.new()
+    for url <- urls {
+        t: Task[str] = spawn fetch_data(url)
+        tasks.add(t)
+    }
+    results: Vec[str] = Vec.new()
+    for t <- tasks {
+        r: str = t.join()
+        results.add(r)
+    }
+    return results
+}
+
+def demo_fan_out(inputs: Vec[Vec[int]]) -> Vec[int] {
+    tasks: Vec[Task[int]] = Vec.new()
+    for batch <- inputs {
+        t: Task[int] = spawn process_batch(batch)
+        tasks.add(t)
+    }
+    results: Vec[int] = Vec.new()
+    for t <- tasks {
+        results.add(t.join())
+    }
+    return results
+}
+
+# ---- Task returning void -----------------------------------------------------
+
+def do_work() -> void {
+    mut i: int = 0
+    while i < 100 {
+        i = i + 1
+    }
+}
+
+def demo_void_task() -> void {
+    t: Task[void] = spawn do_work()
+    t.join()
+}
+
+def main() -> void {
+    demo_basic_task()
+    demo_two_tasks()
+    demo_background()
+    demo_void_task()
+}

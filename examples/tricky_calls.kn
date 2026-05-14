@@ -1,0 +1,48 @@
+# tricky_calls.kn -- call expression forms, pipe operator, as cast
+
+def double(x: int) -> int { return x * 2 }
+def square(x: int) -> int { return x * x }
+def add(a: int, b: int) -> int { return a + b }
+def abs_val(x: int) -> int { if x < 0 { return -x } return x }
+def to_str(x: int) -> str { return "{x}" }
+
+def demo_nested_calls() -> void {
+    r1: int = double(square(3))
+    r2: int = add(double(2), square(3))
+}
+
+def demo_closure_arg() -> void {
+    fns: Vec[Callable[(int), int]] = Vec.new()
+    fns.add(double)
+    fns.add(square)
+    f: Callable[(int), int] = fns[0]
+    r: int = f(5)
+}
+
+def demo_call_in_arith() -> void {
+    r1: int = double(3) + square(4) * 2
+    r2: bool = double(5) == square(0) + 10
+}
+
+def demo_as_cast() -> void {
+    a: float = 5 as float
+    b: int = 3.14 as int
+    c: float = int(9.9) as float
+    d: int = 2 + 3 as int
+}
+
+def demo_multiline_call() -> int {
+    r: int = add(
+        double(square(2)),
+        add(double(3), square(4))
+    )
+    return r
+}
+
+def main() -> void {
+    demo_nested_calls()
+    demo_closure_arg()
+    demo_call_in_arith()
+    demo_as_cast()
+    demo_multiline_call()
+}

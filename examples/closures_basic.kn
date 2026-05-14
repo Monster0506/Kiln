@@ -1,0 +1,73 @@
+# closures_basic.kn -- closure syntax, typed params, block bodies
+
+# ---- Expression-body closures ------------------------------------------------
+
+def demo_expr_closures() -> void {
+    double: Callable[(int), int] = (x: int) -> x * 2
+    add: Callable[(int, int), int] = (a: int, b: int) -> a + b
+    negate: Callable[(bool), bool] = (b: bool) -> !b
+    square: Callable[(float), float] = (x: float) -> x * x
+    to_str: Callable[(int), str] = (x: int) -> "{x}"
+    is_pos: Callable[(int), bool] = (x: int) -> x > 0
+    sum3: Callable[(int, int, int), int] = (a: int, b: int, c: int) -> a + b + c
+}
+
+# ---- Block-body closures -----------------------------------------------------
+
+def demo_block_closures() -> void {
+    block: Callable[(int), int] = (x: int) -> {
+        y: int = x * 2
+        return y + 1
+    }
+
+    max_cl: Callable[(int, int), int] = (a: int, b: int) -> {
+        if a > b {
+            return a
+        } else {
+            return b
+        }
+    }
+
+    classify: Callable[(int), str] = (n: int) -> {
+        if n < 0 {
+            return "negative"
+        } elif n == 0 {
+            return "zero"
+        } else {
+            return "positive"
+        }
+    }
+}
+
+# ---- Zero-arg closures -------------------------------------------------------
+
+def demo_thunks() -> void {
+    thunk: Callable[(), int] = () -> 42
+    greet: Callable[(), str] = () -> "hello"
+    side_effect: Callable[(), void] = () -> { print("called") }
+    val: int = thunk()
+    msg: str = greet()
+    side_effect()
+}
+
+# ---- Closures passed directly to functions -----------------------------------
+
+def apply(f: Callable[(int), int], x: int) -> int { return f(x) }
+def apply_pred(f: Callable[(int), bool], x: int) -> bool { return f(x) }
+
+def demo_inline_closures() -> void {
+    r1: int = apply((x: int) -> x + 1, 5)
+    r2: int = apply((x: int) -> x * x, 4)
+    r3: int = apply((x: int) -> {
+        y: int = x * 2
+        return y - 1
+    }, 3)
+    ok: bool = apply_pred((n: int) -> n > 0, 5)
+}
+
+def main() -> void {
+    demo_expr_closures()
+    demo_block_closures()
+    demo_thunks()
+    demo_inline_closures()
+}

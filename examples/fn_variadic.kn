@@ -1,0 +1,78 @@
+# fn_variadic.kn -- variadic functions with *name parameter
+
+def log(level: str, *messages: str) -> void {
+    for msg <- messages {
+        print("{level}: {msg}")
+    }
+}
+
+def sum_all(*nums: int) -> int {
+    mut total: int = 0
+    for n <- nums {
+        total = total + n
+    }
+    return total
+}
+
+def concat_all(sep: str, *parts: str) -> str {
+    mut result: str = ""
+    mut first: bool = true
+    for part <- parts {
+        if first {
+            result = part
+            first = false
+        } else {
+            result = "{result}{sep}{part}"
+        }
+    }
+    return result
+}
+
+def max_of_all(*nums: int) -> int {
+    mut best: int = nums[0]
+    for n <- nums {
+        if n > best {
+            best = n
+        }
+    }
+    return best
+}
+
+def min_of_all(*nums: int) -> int {
+    mut best: int = nums[0]
+    for n <- nums {
+        if n < best {
+            best = n
+        }
+    }
+    return best
+}
+
+def print_all(*items: str) -> void {
+    for item <- items {
+        print(item)
+    }
+}
+
+def count_args(*items: int) -> int {
+    return items.length()
+}
+
+def format_list(prefix: str, *items: str) -> str {
+    mut result: str = prefix
+    for item <- items {
+        result = "{result} {item}"
+    }
+    return result
+}
+
+def collect_all(*items: int) -> Vec[int] {
+    result: Vec[int] = Vec.new()
+    for item <- items {
+        result.add(item)
+    }
+    return result
+}
+
+def main() -> void {
+}

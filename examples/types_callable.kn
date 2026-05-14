@@ -1,0 +1,162 @@
+# types_callable.kn -- Callable types, reference types, collection types
+
+# ---- Callable type syntax ----------------------------------------------------
+
+def demo_callable_vars() -> void {
+    # No args, returns void
+    noop: Callable[(), void] = () -> { }
+
+    # Single arg
+    double: Callable[(int), int] = (x: int) -> x * 2
+    is_pos: Callable[(int), bool] = (x: int) -> x > 0
+    to_str: Callable[(int), str] = (x: int) -> "{x}"
+
+    # Two args
+    add: Callable[(int, int), int] = (a: int, b: int) -> a + b
+    compare: Callable[(int, int), bool] = (a: int, b: int) -> a > b
+    format_pair: Callable[(str, int), str] = (s: str, n: int) -> "{s}:{n}"
+
+    # Three args
+    clamp: Callable[(int, int, int), int] = (x: int, lo: int, hi: int) -> {
+        if x < lo { return lo }
+        if x > hi { return hi }
+        return x
+    }
+}
+
+# ---- Callable in function parameters ----------------------------------------
+
+def apply(f: Callable[(int), int], x: int) -> int {
+    return f(x)
+}
+
+def apply2(f: Callable[(int, int), int], a: int, b: int) -> int {
+    return f(a, b)
+}
+
+def call_all(fns: Vec[Callable[(int), void]], x: int) -> void {
+    for f <- fns {
+        f(x)
+    }
+}
+
+def compose(f: Callable[(int), int], g: Callable[(int), int]) -> Callable[(int), int] {
+    return (x: int) -> f(g(x))
+}
+
+def pipeline[T](item: T, steps: Vec[Callable[(T), T]]) -> T {
+    mut current: T = item
+    for step <- steps {
+        current = step(current)
+    }
+    return current
+}
+
+# ---- Callable as struct field ------------------------------------------------
+
+struct Button {
+    label: str
+    on_click: Callable[(), void]
+    enabled: bool
+}
+
+struct Transformer {
+    name: str
+    apply: Callable[(int), int]
+    predicate: Callable[(int), bool]
+}
+
+struct EventHandler {
+    on_start: Callable[(), void]
+    on_complete: Callable[(int), void]
+    on_error: Callable[(str), void]
+}
+
+# ---- Callable return type ----------------------------------------------------
+
+def make_adder(n: int) -> Callable[(int), int] {
+    return (x: int) -> x + n
+}
+
+def make_multiplier(factor: int) -> Callable[(int), int] {
+    return (x: int) -> x * factor
+}
+
+def make_predicate(threshold: int) -> Callable[(int), bool] {
+    return (x: int) -> x > threshold
+}
+
+# ---- Reference types (&T and &mut T) ----------------------------------------
+
+def len_ref(v: &Vec[int]) -> int {
+    return v.length()
+}
+
+def sum_ref(v: &Vec[int]) -> int {
+    mut total: int = 0
+    for x <- v {
+        total = total + x
+    }
+    return total
+}
+
+def clear_mut(v: &mut Vec[int]) -> void {
+    v.clear()
+}
+
+def append_mut(v: &mut Vec[int], items: Vec[int]) -> void {
+    for item <- items {
+        v.add(item)
+    }
+}
+
+def read_str(s: &str) -> int {
+    return s.length()
+}
+
+def borrow_int(n: &int) -> int {
+    return n * 2
+}
+
+# ---- Collection types --------------------------------------------------------
+
+def demo_collections() -> void {
+    # Vec
+    ints: Vec[int] = Vec.new()
+    strs: Vec[str] = Vec.new()
+    nested: Vec[Vec[int]] = Vec.new()
+
+    # Map
+    scores: Map[str, int] = Map.new()
+    index: Map[int, Vec[str]] = Map.new()
+
+    # Set
+    seen: Set[str] = Set.new()
+    ids: Set[int] = Set.new()
+
+    # Option
+    maybe_int: Option[int] = Some { value: 42 }
+    no_int: Option[int] = None
+    maybe_str: Option[str] = Some { value: "hello" }
+    maybe_vec: Option[Vec[int]] = None
+
+    # Nested types
+    deep: Map[str, Vec[Option[int]]] = Map.new()
+    vov: Vec[Map[str, int]] = Vec.new()
+}
+
+# ---- Shared[T] type ----------------------------------------------------------
+
+def demo_shared() -> void {
+    shared_vec: Shared[Vec[int]] = Shared.new(Vec.new())
+    clone_ref: Shared[Vec[int]] = shared_vec
+
+    shared_map: Shared[Map[str, int]] = Shared.new(Map.new())
+    another: Shared[Map[str, int]] = shared_map
+}
+
+def main() -> void {
+    demo_callable_vars()
+    demo_collections()
+    demo_shared()
+}

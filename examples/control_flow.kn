@@ -1,0 +1,102 @@
+# control_flow.kn -- if / elif / else
+
+def sign(x: int) -> str {
+    if x > 0 {
+        return "positive"
+    } elif x < 0 {
+        return "negative"
+    } else {
+        return "zero"
+    }
+}
+
+def classify(n: int) -> str {
+    if n < 0 {
+        return "negative"
+    } elif n == 0 {
+        return "zero"
+    } elif n < 10 {
+        return "small"
+    } elif n < 100 {
+        return "medium"
+    } else {
+        return "large"
+    }
+}
+
+def abs_val(x: int) -> int {
+    if x < 0 {
+        return -x
+    }
+    return x
+}
+
+def max2(a: int, b: int) -> int {
+    if a >= b {
+        return a
+    }
+    return b
+}
+
+def min2(a: int, b: int) -> int {
+    if a <= b {
+        return a
+    }
+    return b
+}
+
+def clamp(x: int, lo: int, hi: int) -> int {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+def fizzbuzz(n: int) -> str {
+    if n == n / 15 * 15 {
+        return "fizzbuzz"
+    } elif n == n / 3 * 3 {
+        return "fizz"
+    } elif n == n / 5 * 5 {
+        return "buzz"
+    } else {
+        return "{n}"
+    }
+}
+
+def describe_pair(a: int, b: int) -> str {
+    if a == b {
+        return "equal"
+    } elif a > b {
+        if a > 0 {
+            return "a is positive and larger"
+        } else {
+            return "a is negative but larger"
+        }
+    } else {
+        return "b is larger"
+    }
+}
+
+def grade(score: int) -> str {
+    if score >= 90 {
+        return "A"
+    } elif score >= 80 {
+        return "B"
+    } elif score >= 70 {
+        return "C"
+    } elif score >= 60 {
+        return "D"
+    } else {
+        return "F"
+    }
+}
+
+def main() -> void {
+    sign(42)
+    abs_val(-5)
+    fizzbuzz(15)
+}

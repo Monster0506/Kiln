@@ -1,0 +1,110 @@
+# enums_basic.kn -- simple enums and discriminants
+
+# ---- Simple enums (no fields) ------------------------------------------------
+
+enum Direction {
+    North
+    South
+    East
+    West
+}
+
+enum Status {
+    Pending
+    Running
+    Done
+    Failed
+}
+
+enum Weekday {
+    Monday
+    Tuesday
+    Wednesday
+    Thursday
+    Friday
+    Saturday
+    Sunday
+}
+
+enum Season {
+    Spring
+    Summer
+    Autumn
+    Winter
+}
+
+# ---- Enums with integer discriminants ----------------------------------------
+
+enum HttpStatus {
+    Ok = 200
+    Created = 201
+    Accepted = 202
+    BadRequest = 400
+    Unauthorized = 401
+    Forbidden = 403
+    NotFound = 404
+    InternalError = 500
+    ServiceUnavailable = 503
+}
+
+enum ExitCode {
+    Success = 0
+    GeneralError = 1
+    MisuseOfShell = 2
+    NotExecutable = 126
+    NotFound = 127
+}
+
+# ---- Matching on simple enums ------------------------------------------------
+
+def opposite(d: Direction) -> Direction {
+    return match d {
+        North => South,
+        South => North,
+        East => West,
+        West => East
+    }
+}
+
+def is_weekend(day: Weekday) -> bool {
+    return match day {
+        Saturday => true,
+        Sunday => true,
+        _ => false
+    }
+}
+
+def is_work_day(day: Weekday) -> bool {
+    return !is_weekend(day)
+}
+
+def status_to_str(s: Status) -> str {
+    return match s {
+        Pending => "pending",
+        Running => "running",
+        Done => "done",
+        Failed => "failed"
+    }
+}
+
+def season_months(s: Season) -> str {
+    return match s {
+        Spring => "Mar-May",
+        Summer => "Jun-Aug",
+        Autumn => "Sep-Nov",
+        Winter => "Dec-Feb"
+    }
+}
+
+def is_success(code: HttpStatus) -> bool {
+    n: int = match code {
+        Ok => 200,
+        Created => 201,
+        Accepted => 202,
+        _ => 400
+    }
+    return n < 300
+}
+
+def main() -> void {
+}

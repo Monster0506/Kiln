@@ -1,0 +1,168 @@
+# types_union.kn -- union types, tuple types, and type aliases
+
+# ---- Union types in variable declarations ------------------------------------
+
+def demo_union_vars() -> void {
+    # int | str union
+    val: int | str = 42
+    msg: int | str = "hello"
+
+    # bool | int
+    flag: bool | int = true
+    code: bool | int = 0
+
+    # Three-way union
+    data: int | float | str = 3.14
+}
+
+# ---- Union types in function signatures --------------------------------------
+
+def stringify(val: int | str | bool) -> str {
+    return match val {
+        int n => "int:{n}",
+        str s => "str:{s}",
+        bool b => "bool:{b}"
+    }
+}
+
+def process_number(val: int | float) -> float {
+    return match val {
+        int n => n as float,
+        float f => f
+    }
+}
+
+def to_int(val: int | float | str) -> int {
+    return match val {
+        int n => n,
+        float f => f as int,
+        str s => 0
+    }
+}
+
+# ---- Union in struct fields --------------------------------------------------
+
+struct Config {
+    value: int | str | bool
+    default: int | str
+}
+
+struct JsonValue {
+    inner: int | float | str | bool
+}
+
+# ---- Tuple types -------------------------------------------------------------
+
+def demo_tuple_types() -> void {
+    # Simple pair
+    pair: (int, str) = (42, "hello")
+
+    # Triple
+    triple: (float, float, float) = (1.0, 2.0, 3.0)
+
+    # Nested tuple
+    nested: ((int, int), str) = ((1, 2), "point")
+
+    # Tuple of callable
+    ops: (Callable[(int), int], Callable[(int), int]) = (
+        (x: int) -> x + 1,
+        (x: int) -> x * 2
+    )
+}
+
+# ---- Functions returning tuples ----------------------------------------------
+
+def minmax(nums: Vec[int]) -> (int, int) {
+    mut lo: int = nums[0]
+    mut hi: int = nums[0]
+    for n <- nums {
+        if n < lo { lo = n }
+        if n > hi { hi = n }
+    }
+    return (lo, hi)
+}
+
+def divmod(a: int, b: int) -> (int, int) {
+    return (a / b, a - a / b * b)
+}
+
+def stats(nums: Vec[float]) -> (float, float, float) {
+    mut sum: float = 0.0
+    mut lo: float = nums[0]
+    mut hi: float = nums[0]
+    for n <- nums {
+        sum = sum + n
+        if n < lo { lo = n }
+        if n > hi { hi = n }
+    }
+    avg: float = sum / nums.length() as float
+    return (lo, hi, avg)
+}
+
+# ---- Tuple types in generics -------------------------------------------------
+
+def zip[A, B](xs: Vec[A], ys: Vec[B]) -> Vec[(A, B)] {
+    out: Vec[(A, B)] = Vec.new()
+    mut i: int = 0
+    while i < xs.length() && i < ys.length() {
+        out.add((xs[i], ys[i]))
+        i = i + 1
+    }
+    return out
+}
+
+def unzip[A, B](pairs: Vec[(A, B)]) -> (Vec[A], Vec[B]) {
+    as_vec: Vec[A] = Vec.new()
+    bs: Vec[B] = Vec.new()
+    for pair <- pairs {
+        as_vec.add(pair.first)
+        bs.add(pair.second)
+    }
+    return (as_vec, bs)
+}
+
+# ---- Type aliases ------------------------------------------------------------
+
+type Matrix = Vec[Vec[float]]
+type Callback = Callable[(str), void]
+type IntPair = (int, int)
+type UserId = int
+type Predicate[T] = Callable[(T), bool]
+type Transform[T] = Callable[(T), T]
+
+# ---- Using type aliases ------------------------------------------------------
+
+def make_matrix(rows: int, cols: int) -> Matrix {
+    result: Matrix = Vec.new()
+    mut i: int = 0
+    while i < rows {
+        row: Vec[float] = Vec.new()
+        mut j: int = 0
+        while j < cols {
+            row.add(0.0)
+            j = j + 1
+        }
+        result.add(row)
+        i = i + 1
+    }
+    return result
+}
+
+def fire_callbacks(cbs: Vec[Callback], msg: str) -> void {
+    for cb <- cbs {
+        cb(msg)
+    }
+}
+
+def apply_to_all[T](items: Vec[T], f: Transform[T]) -> Vec[T] {
+    out: Vec[T] = Vec.new()
+    for item <- items {
+        out.add(f(item))
+    }
+    return out
+}
+
+def main() -> void {
+    demo_union_vars()
+    demo_tuple_types()
+}

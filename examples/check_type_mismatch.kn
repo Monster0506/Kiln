@@ -1,0 +1,35 @@
+# check_type_mismatch.kn -- should fail: type mismatch errors
+
+# ERROR: declared bool, assigned int
+def bad_bool() -> void {
+    flag: bool = 42
+}
+
+# ERROR: declared int, assigned float (float is NOT assignable to int; only int->float is ok)
+def bad_int() -> void {
+    n: int = 3.14
+}
+
+# OK: int is assignable to float
+def ok_float() -> void {
+    x: float = 5
+}
+
+# ERROR: return type is str but we return int
+def wrong_return() -> str {
+    return 99
+}
+
+
+def wrong_multiple_return(x: int) -> str {
+    if (x < 5) {
+        return  "abc"
+    } elif (x < 210) {
+        return 10
+    } else {
+        return 5.5
+    }
+    
+}
+def main() -> void {
+}

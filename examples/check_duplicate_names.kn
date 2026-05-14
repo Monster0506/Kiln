@@ -1,0 +1,42 @@
+# check_duplicate_names.kn -- duplicate top-level name errors
+
+# OK: first definition
+def compute(x: int) -> int {
+    return x + 1
+}
+
+# OK: same name as above, different signature
+def compute(x: int, y: int) -> int {
+    return x + y
+}
+
+# ERROR: duplicate signature and name
+def compute(x: int, y: int) -> int {
+    return x * y
+}
+
+struct Point {
+    x: float
+    y: float
+}
+
+# ERROR: Point already defined above
+struct Point {
+    x: int
+    y: int
+    z: int
+}
+
+# OK: different name
+struct Point3D {
+    x: float
+    y: float
+    z: float
+}
+
+# ERROR: name collides with the struct above
+def Point3D() -> void {
+}
+
+def main() -> void {
+}

@@ -1,60 +1,53 @@
 use crate::analyzer::env::{Env, Symbol};
 use crate::analyzer::error::AnalysisError;
-use crate::analyzer::infer::{check_assignable, infer_expr};
+use crate::analyzer::infer::{check_assignable, infer_typed_expr};
 use crate::analyzer::resolve::resolve_type_expr;
 use crate::analyzer::ty::{Ty, TypeRegistry};
-use crate::parser::ast::{Block, Expr, Stmt};
+use crate::analyzer::typed_ast::{
+    TypedBlock, TypedCatchHandler, TypedFnDef, TypedParam, TypedStmt,
+};
+use crate::parser::ast::{Block, Expr, FnDef, Stmt};
 
-/// Check all statements in `block`. Opens and closes a new scope automatically.
-pub fn check_block(
+/// Check all statements in `block` and return a typed block.
+pub fn check_typed_block(
     block: &Block,
     env: &mut Env,
     registry: &TypeRegistry,
     return_ty: &Ty,
     errors: &mut Vec<AnalysisError>,
-) {
+) -> TypedBlock {
     env.push_scope();
-    for stmt in &block.stmts {
-        check_stmt(stmt, env, registry, return_ty, errors);
+    let mut stmts: Vec<TypedStmt> = Vec::new();
+    for s in &block.stmts {
+        stmts.push(check_typed_stmt(s, env, registry, return_ty, errors));
     }
     env.pop_scope();
+    TypedBlock { stmts, span: block.span }
 }
 
-fn check_stmt(
+fn check_typed_stmt(
     stmt: &Stmt,
     env: &mut Env,
     registry: &TypeRegistry,
     return_ty: &Ty,
     errors: &mut Vec<AnalysisError>,
-) {
+) -> TypedStmt {
     match stmt {
-        Stmt::VarDecl {
-            name,
-            ty,
-            value,
-            mutable,
-            span,
-        } => {
-            // Shadowing is allowed in Kiln: redeclaring a name creates a new binding.
+        Stmt::VarDecl { name, ty, value, mutable, span } => {
             let declared = resolve_type_expr(ty, env, registry, errors);
-            let found = infer_expr(value, env, registry, errors);
-            check_assignable(&declared, &found, &value.span(), errors);
-            env.define(
-                name,
-                Symbol::Var {
-                    ty: declared,
-                    mutable: *mutable,
-                    span: *span,
-                },
-            );
+            let typed_val = infer_typed_expr(value, env, registry, errors);
+            check_assignable(&declared, &typed_val.ty, &typed_val.span, errors);
+            env.define(name, Symbol::Var { ty: declared.clone(), mutable: *mutable, span: *span });
+            TypedStmt::VarDecl {
+                name: name.clone(),
+                ty: declared,
+                value: typed_val,
+                mutable: *mutable,
+                span: *span,
+            }
         }
 
-        Stmt::Assign {
-            target,
-            value,
-            span: _,
-        } => {
-            // Check that the target binding is mutable (if it's a plain ident).
+        Stmt::Assign { target, value, span } => {
             if let Expr::Ident(name, ident_span) = target {
                 match env.lookup(name) {
                     Some(Symbol::Var { mutable: false, .. }) => {
@@ -62,182 +55,207 @@ fn check_stmt(
                             name: name.clone(),
                             span: *ident_span,
                         });
-                        return;
                     }
                     None => {
                         errors.push(AnalysisError::UndefinedName {
                             name: name.clone(),
                             span: *ident_span,
                         });
-                        return;
                     }
                     _ => {}
                 }
             }
-            let target_ty = infer_expr(target, env, registry, errors);
-            let value_ty = infer_expr(value, env, registry, errors);
-            check_assignable(&target_ty, &value_ty, &value.span(), errors);
+            let typed_target = infer_typed_expr(target, env, registry, errors);
+            let typed_val = infer_typed_expr(value, env, registry, errors);
+            check_assignable(&typed_target.ty, &typed_val.ty, &typed_val.span, errors);
+            TypedStmt::Assign { target: typed_target, value: typed_val, span: *span }
         }
 
         Stmt::Return { value, span } => {
-            let (found, value_span) = match value {
-                Some(v) => (infer_expr(v, env, registry, errors), v.span()),
-                None => (Ty::Void, *span),
+            let (typed, val_span) = match value {
+                Some(v) => {
+                    let te = infer_typed_expr(v, env, registry, errors);
+                    let s = te.span;
+                    (Some(te), s)
+                }
+                None => (None, *span),
             };
-            check_assignable(return_ty, &found, &value_span, errors);
+            let found = typed.as_ref().map(|t| t.ty.clone()).unwrap_or(Ty::Void);
+            check_assignable(return_ty, &found, &val_span, errors);
+            TypedStmt::Return { value: typed, span: *span }
         }
 
-        Stmt::Raise { value, .. } => {
-            if let Some(v) = value {
-                infer_expr(v, env, registry, errors);
-            }
+        Stmt::Raise { value, span } => {
+            let typed = value.as_ref().map(|v| infer_typed_expr(v, env, registry, errors));
+            TypedStmt::Raise { value: typed, span: *span }
         }
 
-        Stmt::Expr(expr) => {
-            infer_expr(expr, env, registry, errors);
-        }
+        Stmt::Expr(expr) => TypedStmt::Expr(infer_typed_expr(expr, env, registry, errors)),
 
-        Stmt::If {
-            branches,
-            else_branch,
-            ..
-        } => {
+        Stmt::If { branches, else_branch, span } => {
+            let mut typed_branches = Vec::new();
             for (cond, block) in branches {
-                let cond_ty = infer_expr(cond, env, registry, errors);
-                if !matches!(cond_ty, Ty::Bool | Ty::Unknown) {
+                let tc = infer_typed_expr(cond, env, registry, errors);
+                if !matches!(tc.ty, Ty::Bool | Ty::Unknown) {
                     errors.push(AnalysisError::TypeMismatch {
                         expected: "bool".into(),
-                        found: cond_ty.to_string(),
+                        found: tc.ty.to_string(),
                         span: cond.span(),
                     });
                 }
-                check_block(block, env, registry, return_ty, errors);
+                let tb = check_typed_block(block, env, registry, return_ty, errors);
+                typed_branches.push((tc, tb));
             }
-            if let Some(eb) = else_branch {
-                check_block(eb, env, registry, return_ty, errors);
-            }
+            let else_typed = else_branch
+                .as_ref()
+                .map(|b| check_typed_block(b, env, registry, return_ty, errors));
+            TypedStmt::If { branches: typed_branches, else_branch: else_typed, span: *span }
         }
 
         Stmt::While { cond, body, span } => {
-            let cond_ty = infer_expr(cond, env, registry, errors);
-            if !matches!(cond_ty, Ty::Bool | Ty::Unknown) {
+            let tc = infer_typed_expr(cond, env, registry, errors);
+            if !matches!(tc.ty, Ty::Bool | Ty::Unknown) {
                 errors.push(AnalysisError::TypeMismatch {
                     expected: "bool".into(),
-                    found: cond_ty.to_string(),
+                    found: tc.ty.to_string(),
                     span: *span,
                 });
             }
-            check_block(body, env, registry, return_ty, errors);
+            let tb = check_typed_block(body, env, registry, return_ty, errors);
+            TypedStmt::While { cond: tc, body: tb, span: *span }
         }
 
         Stmt::DoWhile { body, cond, span } => {
-            check_block(body, env, registry, return_ty, errors);
-            let cond_ty = infer_expr(cond, env, registry, errors);
-            if !matches!(cond_ty, Ty::Bool | Ty::Unknown) {
+            let tb = check_typed_block(body, env, registry, return_ty, errors);
+            let tc = infer_typed_expr(cond, env, registry, errors);
+            if !matches!(tc.ty, Ty::Bool | Ty::Unknown) {
                 errors.push(AnalysisError::TypeMismatch {
                     expected: "bool".into(),
-                    found: cond_ty.to_string(),
+                    found: tc.ty.to_string(),
                     span: *span,
                 });
             }
+            TypedStmt::DoWhile { body: tb, cond: tc, span: *span }
         }
 
-        Stmt::For {
-            binding,
-            binding_ty,
-            iterable,
-            body,
-            span,
-        } => {
-            let iter_ty = infer_expr(iterable, env, registry, errors);
-            let elem_ty = match &iter_ty {
+        Stmt::For { binding, binding_ty, iterable, body, span } => {
+            let ti = infer_typed_expr(iterable, env, registry, errors);
+            let elem_ty = match &ti.ty {
                 Ty::Vec(t) | Ty::Set(t) => *t.clone(),
                 Ty::Str => Ty::Str,
                 _ => Ty::Unknown,
             };
-            if let Some(ann) = binding_ty {
-                let ann_ty = resolve_type_expr(ann, env, registry, errors);
-                check_assignable(&ann_ty, &elem_ty, span, errors);
-            }
+            let ann_ty = if let Some(ann) = binding_ty {
+                let at = resolve_type_expr(ann, env, registry, errors);
+                check_assignable(&at, &elem_ty, span, errors);
+                at
+            } else {
+                elem_ty.clone()
+            };
             env.push_scope();
-            env.define(
-                binding,
-                Symbol::Var {
-                    ty: elem_ty,
-                    mutable: false,
-                    span: *span,
-                },
-            );
+            env.define(binding, Symbol::Var { ty: elem_ty, mutable: false, span: *span });
+            let mut tb_stmts = Vec::new();
             for s in &body.stmts {
-                check_stmt(s, env, registry, return_ty, errors);
+                tb_stmts.push(check_typed_stmt(s, env, registry, return_ty, errors));
             }
             env.pop_scope();
+            let typed_body = TypedBlock { stmts: tb_stmts, span: body.span };
+            TypedStmt::For {
+                binding: binding.clone(),
+                binding_ty: ann_ty,
+                iterable: ti,
+                body: typed_body,
+                span: *span,
+            }
         }
 
-        Stmt::TryCatch {
-            body,
-            handlers,
-            finally,
-            ..
-        } => {
-            check_block(body, env, registry, return_ty, errors);
-            for handler in handlers {
-                let exc_ty = resolve_type_expr(&handler.ty, env, registry, errors);
+        Stmt::TryCatch { body, handlers, finally, span } => {
+            let typed_body = check_typed_block(body, env, registry, return_ty, errors);
+            let mut typed_handlers: Vec<TypedCatchHandler> = Vec::new();
+            for h in handlers {
+                let exc_ty = resolve_type_expr(&h.ty, env, registry, errors);
                 env.push_scope();
                 env.define(
-                    &handler.binding,
-                    Symbol::Var {
-                        ty: exc_ty,
-                        mutable: false,
-                        span: handler.span,
-                    },
+                    &h.binding,
+                    Symbol::Var { ty: exc_ty.clone(), mutable: false, span: h.span },
                 );
-                check_block(&handler.body, env, registry, return_ty, errors);
+                let hb = check_typed_block(&h.body, env, registry, return_ty, errors);
                 env.pop_scope();
+                typed_handlers.push(TypedCatchHandler {
+                    ty: exc_ty,
+                    binding: h.binding.clone(),
+                    body: hb,
+                    span: h.span,
+                });
             }
-            if let Some(fb) = finally {
-                check_block(fb, env, registry, return_ty, errors);
+            let typed_finally =
+                finally.as_ref().map(|b| check_typed_block(b, env, registry, return_ty, errors));
+            TypedStmt::TryCatch {
+                body: typed_body,
+                handlers: typed_handlers,
+                finally: typed_finally,
+                span: *span,
             }
         }
 
-        Stmt::FnDef(f) => {
-            let ret = resolve_type_expr(&f.return_type, env, registry, errors);
-            let params: Vec<(String, Ty)> = f
-                .params
+        Stmt::FnDef(f) => TypedStmt::FnDef(check_fn_def(f, env, registry, errors)),
+
+        Stmt::Break(s) => TypedStmt::Break(*s),
+        Stmt::Continue(s) => TypedStmt::Continue(*s),
+    }
+}
+
+/// Check a function definition and produce a typed one.
+pub fn check_fn_def(
+    f: &FnDef,
+    env: &mut Env,
+    registry: &TypeRegistry,
+    errors: &mut Vec<AnalysisError>,
+) -> TypedFnDef {
+    let ret = resolve_type_expr(&f.return_type, env, registry, errors);
+    let mut params: Vec<TypedParam> = Vec::new();
+    for p in &f.params {
+        params.push(TypedParam {
+            name: p.name.clone(),
+            ty: resolve_type_expr(&p.ty, env, registry, errors),
+            span: p.span,
+        });
+    }
+
+    env.define(
+        &f.name,
+        Symbol::Fn {
+            generic_params: f.generic_params.iter().map(|g| g.name.clone()).collect(),
+            generic_bounds: f
+                .generic_params
                 .iter()
-                .map(|p| {
-                    (
-                        p.name.clone(),
-                        resolve_type_expr(&p.ty, env, registry, errors),
-                    )
+                .flat_map(|g| {
+                    g.bounds.iter().map(move |b| crate::analyzer::env::GenericBound {
+                        param: g.name.clone(),
+                        iface: b.clone(),
+                    })
                 })
-                .collect();
-            // Register in current scope so the function can recurse
-            env.define(
-                &f.name,
-                Symbol::Fn {
-                    generic_params: f.generic_params.iter().map(|g| g.name.clone()).collect(),
-                    params: params.clone(),
-                    ret: ret.clone(),
-                    span: f.span,
-                },
-            );
-            env.push_scope();
-            for (pname, pty) in &params {
-                env.define(
-                    pname,
-                    Symbol::Var {
-                        ty: pty.clone(),
-                        mutable: false,
-                        span: f.span,
-                    },
-                );
-            }
-            check_block(&f.body, env, registry, &ret, errors);
-            env.pop_scope();
-        }
+                .collect(),
+            params: params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect(),
+            ret: ret.clone(),
+            span: f.span,
+        },
+    );
 
-        Stmt::Break(_) | Stmt::Continue(_) => {}
+    env.push_scope();
+    for p in &params {
+        env.define(&p.name, Symbol::Var { ty: p.ty.clone(), mutable: false, span: p.span });
+    }
+    let body = check_typed_block(&f.body, env, registry, &ret, errors);
+    env.pop_scope();
+
+    TypedFnDef {
+        name: f.name.clone(),
+        params,
+        variadic: f.variadic.as_ref().map(|v| v.name.clone()),
+        return_type: ret,
+        body,
+        span: f.span,
     }
 }
 
@@ -248,23 +266,15 @@ mod tests {
     use crate::analyzer::ty::{Ty, TypeRegistry};
     use crate::diagnostics::Span;
     use crate::parser::ast::*;
+
     fn s() -> Span {
         Span { start: 0, end: 0 }
     }
-
-    fn int_type() -> TypeExpr {
-        TypeExpr::Named {
-            name: "int".into(),
-            generics: vec![],
-            span: s(),
-        }
+    fn int_ty() -> TypeExpr {
+        TypeExpr::Named { name: "int".into(), generics: vec![], span: s() }
     }
-    fn bool_type() -> TypeExpr {
-        TypeExpr::Named {
-            name: "bool".into(),
-            generics: vec![],
-            span: s(),
-        }
+    fn bool_ty() -> TypeExpr {
+        TypeExpr::Named { name: "bool".into(), generics: vec![], span: s() }
     }
 
     #[test]
@@ -272,7 +282,7 @@ mod tests {
         let block = Block {
             stmts: vec![Stmt::VarDecl {
                 name: "x".into(),
-                ty: int_type(),
+                ty: int_ty(),
                 value: Expr::Int(42, s()),
                 mutable: false,
                 span: s(),
@@ -282,7 +292,7 @@ mod tests {
         let mut env = Env::new();
         let reg = TypeRegistry::new();
         let mut errs = vec![];
-        check_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
         assert!(errs.is_empty(), "{errs:?}");
     }
 
@@ -291,7 +301,7 @@ mod tests {
         let block = Block {
             stmts: vec![Stmt::VarDecl {
                 name: "x".into(),
-                ty: bool_type(),
+                ty: bool_ty(),
                 value: Expr::Int(1, s()),
                 mutable: false,
                 span: s(),
@@ -301,47 +311,17 @@ mod tests {
         let mut env = Env::new();
         let reg = TypeRegistry::new();
         let mut errs = vec![];
-        check_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
         assert_eq!(errs.len(), 1);
     }
 
-    // Shadowing is ALLOWED in Kiln (new design).
-    #[test]
-    fn shadowing_is_allowed() {
-        let block = Block {
-            stmts: vec![
-                Stmt::VarDecl {
-                    name: "x".into(),
-                    ty: int_type(),
-                    value: Expr::Int(1, s()),
-                    mutable: false,
-                    span: s(),
-                },
-                Stmt::VarDecl {
-                    name: "x".into(),
-                    ty: int_type(),
-                    value: Expr::Int(2, s()),
-                    mutable: false,
-                    span: s(),
-                },
-            ],
-            span: s(),
-        };
-        let mut env = Env::new();
-        let reg = TypeRegistry::new();
-        let mut errs = vec![];
-        check_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
-        assert!(errs.is_empty(), "shadowing should be allowed: {errs:?}");
-    }
-
-    // Assigning to an immutable binding is an error.
     #[test]
     fn assign_to_immutable_is_error() {
         let block = Block {
             stmts: vec![
                 Stmt::VarDecl {
                     name: "x".into(),
-                    ty: int_type(),
+                    ty: int_ty(),
                     value: Expr::Int(1, s()),
                     mutable: false,
                     span: s(),
@@ -357,19 +337,18 @@ mod tests {
         let mut env = Env::new();
         let reg = TypeRegistry::new();
         let mut errs = vec![];
-        check_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
         assert_eq!(errs.len(), 1);
         assert!(matches!(&errs[0], AnalysisError::AssignToImmutable { .. }));
     }
 
-    // Assigning to a mut binding is fine.
     #[test]
     fn assign_to_mut_is_ok() {
         let block = Block {
             stmts: vec![
                 Stmt::VarDecl {
                     name: "x".into(),
-                    ty: int_type(),
+                    ty: int_ty(),
                     value: Expr::Int(1, s()),
                     mutable: true,
                     span: s(),
@@ -385,7 +364,7 @@ mod tests {
         let mut env = Env::new();
         let reg = TypeRegistry::new();
         let mut errs = vec![];
-        check_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
         assert!(errs.is_empty(), "{errs:?}");
     }
 }

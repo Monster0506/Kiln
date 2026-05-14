@@ -67,8 +67,8 @@ pub enum GenericParamKind {
 pub struct GenericParam {
     pub kind: GenericParamKind,
     pub name: String,
-    /// Optional bound: `T: Comparable` or `scope b: a`
-    pub bound: Option<String>,
+    /// Bounds: `T: Ord, Addable` yields `["Ord", "Addable"]`; lifetime params have at most one.
+    pub bounds: Vec<String>,
     pub span: Span,
 }
 
@@ -84,9 +84,17 @@ pub enum Item {
     AnnotationDef(AnnotationDef),
     ProcessorDef(ProcessorDef),
     TypeAlias(TypeAlias),
-    Const(ConstDef),
     Import(Import),
     Export(Export),
+}
+
+/// A bodyless function declaration, only valid inside `@builtin` struct bodies.
+#[derive(Debug, Clone)]
+pub struct FnDecl {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: TypeExpr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -128,11 +136,13 @@ pub struct Field {
 #[derive(Debug, Clone)]
 pub struct StructDef {
     pub annotations: Vec<AnnotationUse>,
+    pub is_builtin: bool,
     pub name: String,
     pub generic_params: Vec<GenericParam>,
     pub interfaces: Vec<TypeExpr>,
     pub fields: Vec<Field>,
     pub methods: Vec<FnDef>,
+    pub decls: Vec<FnDecl>,
     pub span: Span,
 }
 
@@ -194,6 +204,8 @@ pub struct InterfaceDef {
 
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
+    /// Optional generic params for conditional conformance: `impl[T: Display] Display for Vec[T]`
+    pub generic_params: Vec<GenericParam>,
     pub interface: TypeExpr,
     pub for_type: TypeExpr,
     pub methods: Vec<FnDef>,
@@ -231,14 +243,6 @@ pub struct TypeAlias {
     pub name: String,
     pub generic_params: Vec<GenericParam>,
     pub ty: TypeExpr,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub struct ConstDef {
-    pub name: String,
-    pub ty: TypeExpr,
-    pub value: Expr,
     pub span: Span,
 }
 
@@ -457,7 +461,9 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+    Mod,
     Eq,
+    Ne,
     Lt,
     Gt,
     LtEq,

@@ -1,0 +1,178 @@
+# iface_numeric_hierarchy.kn -- the numeric interface hierarchy
+#
+# Kiln's numeric interfaces form a layered hierarchy.
+# Each layer builds on the one below it.
+#
+# Layer 0: lifecycle           Sized, Clone, Copy, Drop
+# Layer 1: equality            PartialEq, Eq
+# Layer 2: hashing             Hash
+# Layer 3: ordering            PartialOrd, Ord
+# Layer 4: representation      Display, Debug
+# Layer 5: algebraic           Semigroup, Monoid
+# Layer 6: numeric primitives  Zero, One, Negatable, Abs, Signum
+# Layer 7: arithmetic          Addable, Subtractable, Multiplicable, Divisible, Remainder
+# Layer 8: bitwise             Bitwise (integers only)
+# Layer 9: compound numerics   Numeric, Integral, Fractional
+
+# ---- Interface declarations -------------------------------------------------
+
+interface PartialEq {
+    hook ==(other: Self) -> bool
+}
+
+interface Eq: PartialEq {
+}
+
+interface PartialOrd: PartialEq {
+    hook partial_cmp(other: Self) -> int
+}
+
+interface Ord: Eq, PartialOrd {
+    hook <=>(other: Self) -> int
+}
+
+interface Display {
+    hook to_str() -> str
+}
+
+interface Addable {
+    hook +(other: Self) -> Self
+}
+
+interface Subtractable {
+    hook -(other: Self) -> Self
+}
+
+interface Multiplicable {
+    hook *(other: Self) -> Self
+}
+
+interface Divisible {
+    hook /(other: Self) -> Self
+}
+
+interface Negatable {
+    hook -() -> Self
+}
+
+# Numeric bundles all arithmetic interfaces.
+interface Numeric: Addable, Subtractable, Multiplicable, Negatable, Ord {
+}
+
+# ---- int satisfies the full Integral hierarchy ------------------------------
+#
+# int: Copy, Clone, Eq, Hash, Ord, Display, Default,
+#      Zero, One, Negatable, Abs, Signum,
+#      Addable, Subtractable, Multiplicable, Divisible, Remainder,
+#      Bitwise, Numeric, Integral
+
+def int_demo() -> void {
+    a: int = 10
+    b: int = 3
+
+    # Arithmetic (Addable, Subtractable, Multiplicable, Divisible, Remainder)
+    add: int = a + b
+    sub: int = a - b
+    mul: int = a * b
+    div: int = a / b
+    rem: int = a % b
+
+    # Comparison (PartialEq, Eq, PartialOrd, Ord)
+    eq: bool = a == b
+    ne: bool = a != b
+    lt: bool = a < b
+    gt: bool = a > b
+    lte: bool = a <= b
+    gte: bool = a >= b
+
+    # Negation (Negatable)
+    neg: int = -a
+
+    # Display
+    msg: str = "a={a}, b={b}, add={add}, sub={sub}, mul={mul}"
+    print(msg)
+}
+
+# ---- float satisfies Fractional but not Eq / Ord ----------------------------
+#
+# float has PartialEq and PartialOrd (not Eq/Ord) because of NaN:
+#   NaN != NaN   -- so == is not reflexive, which breaks Eq
+#   NaN is not ordered relative to any value, which breaks Ord
+#
+# float: Copy, Clone, PartialEq, PartialOrd, Display,
+#        Addable, Subtractable, Multiplicable, Divisible, Fractional, Numeric
+
+def float_demo() -> void {
+    x: float = 2.5
+    y: float = 1.0
+
+    # Arithmetic (all valid -- float: Addable, Subtractable, Multiplicable, Divisible)
+    add: float = x + y
+    sub: float = x - y
+    mul: float = x * y
+    div: float = x / y
+
+    # Comparison (valid -- float: PartialEq, PartialOrd)
+    lt: bool = x < y
+    gt: bool = x > y
+    eq: bool = x == y
+
+    neg: float = -x
+
+    print("x={x}, y={y}, add={add}, div={div}")
+}
+
+# ---- Semigroup / Monoid: algebraic structure for containers ----------------
+#
+# Semigroup: hook concat(other: Self) -> Self  (associative, no identity)
+# Monoid: Semigroup + @static def empty() -> Self  (adds identity)
+#
+# str is a Monoid under concatenation.
+# Vec[T] is a Monoid under concatenation (not + -- that is numeric).
+
+def semigroup_demo() -> void {
+    # str: Semigroup + Monoid under concatenation via +
+    hello: str = "hello"
+    world: str = " world"
+    greeting: str = hello + world
+    print(greeting)
+}
+
+# ---- Generic function constrained to Numeric --------------------------------
+#
+# Numeric requires Addable + Subtractable + Multiplicable + Negatable + Ord.
+# Both int and float satisfy Numeric.
+
+def magnitude[T: Numeric](x: T, y: T) -> T {
+    # Uses Multiplicable (*) and Addable (+)
+    return x * x + y * y
+}
+
+def clamp[T: Ord](value: T, lo: T, hi: T) -> T {
+    if value < lo {
+        return lo
+    }
+    if value > hi {
+        return hi
+    }
+    return value
+}
+
+# ---- int-only operations (Integral: Numeric + Divisible + Remainder + Bitwise)
+
+def int_division_demo() -> void {
+    a: int = 17
+    b: int = 5
+
+    quot: int = a / b
+    rem: int = a % b
+
+    print("17 / 5 = {quot}, remainder {rem}")
+}
+
+def main() -> void {
+    int_demo()
+    float_demo()
+    semigroup_demo()
+    int_division_demo()
+}

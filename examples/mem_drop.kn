@@ -1,0 +1,64 @@
+# mem_drop.kn -- Drop hook and RAII resource management
+
+struct FileHandle: Drop {
+    priv fd: int
+    path: str
+    priv is_open: bool
+
+    def read_bytes(buf: &mut Vec[int], count: int) -> int {
+        return read(fd, buf, count)
+    }
+
+    def write_bytes(buf: &Vec[int]) -> int {
+        return write(fd, buf)
+    }
+}
+
+impl Drop for FileHandle {
+    hook drop() -> void {
+        if is_open {
+            close(fd)
+        }
+    }
+}
+
+struct NetworkSocket: Drop {
+    priv fd: int
+    host: str
+    port: int
+    priv connected: bool
+
+    def send(data: &Vec[int]) -> int {
+        return write(fd, data)
+    }
+}
+
+impl Drop for NetworkSocket {
+    hook drop() -> void {
+        if connected {
+            shutdown(fd)
+        }
+    }
+}
+
+struct TempFile: Drop {
+    path: str
+    priv fd: int
+}
+
+impl Drop for TempFile {
+    hook drop() -> void {
+        close(fd)
+        remove_file(path)
+    }
+}
+
+def demo_raii() -> void {
+    handle: FileHandle = FileHandle { fd: 3, path: "/tmp/demo.txt", is_open: true }
+    buf: Vec[int] = Vec.new()
+    n: int = handle.read_bytes(&mut buf, 128)
+}
+
+def main() -> void {
+    demo_raii()
+}

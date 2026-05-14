@@ -1,0 +1,32 @@
+# check_immutability.kn -- should fail: assigning to immutable bindings
+
+# ERROR: x is immutable
+def bad_assign() -> void {
+    x: int = 10
+    x = 20
+}
+
+# OK: mut allows reassignment
+def good_counter() -> int {
+    mut count: int = 0
+    count = count + 1
+    count = count + 1
+    return count
+}
+
+# OK: shadowing creates a new binding (not mutation)
+def shadowing_ok() -> void {
+    n: int = 1
+    n: int = 2
+    n: str = "three"
+}
+
+# ERROR: loop var is immutable (for bindings are not mut)
+def bad_loop_assign(items: Vec[int]) -> void {
+    for x <- items {
+        x = 0
+    }
+}
+
+def main() -> void {
+}

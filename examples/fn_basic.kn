@@ -1,0 +1,99 @@
+# fn_basic.kn -- basic function declarations and signatures
+
+def greet(name: str) -> str {
+    return "hello, {name}!"
+}
+
+def add(a: int, b: int) -> int {
+    return a + b
+}
+
+def noop() -> void {
+}
+
+def identity(x: int) -> int {
+    return x
+}
+
+def double(x: int) -> int {
+    return x * 2
+}
+
+def square(x: int) -> int {
+    return x * x
+}
+
+def negate(x: int) -> int {
+    return -x
+}
+
+def is_positive(x: int) -> bool {
+    return x > 0
+}
+
+def is_even(n: int) -> bool {
+    return n == n / 2 * 2
+}
+
+def max2(a: int, b: int) -> int {
+    if a >= b {
+        return a
+    }
+    return b
+}
+
+def min2(a: int, b: int) -> int {
+    if a <= b {
+        return a
+    }
+    return b
+}
+
+def clamp(x: int, lo: int, hi: int) -> int {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+def abs_val(x: int) -> int {
+    if x < 0 {
+        return -x
+    }
+    return x
+}
+
+def describe(x: int) -> str {
+    if x > 0 {
+        return "positive"
+    } elif x < 0 {
+        return "negative"
+    } else {
+        return "zero"
+    }
+}
+
+def sum_range(lo: int, hi: int) -> int {
+    mut total: int = 0
+    mut i: int = lo
+    while i <= hi {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+
+def main() -> void {
+    println(greet("TJ"))
+    println(add(1, 23))
+    noop()
+    println(identity(15))
+    println(double(15))
+    println(square(15))
+    println(negate(15))
+    println(is_positive(-15))
+}

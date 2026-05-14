@@ -1,0 +1,129 @@
+# enums_interfaces.kn -- enums implementing interfaces, @derive on enums
+
+# ---- @derive on enums --------------------------------------------------------
+
+@derive(Eq)
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+@derive(Eq, Display)
+enum Weekday {
+    Monday
+    Tuesday
+    Wednesday
+    Thursday
+    Friday
+    Saturday
+    Sunday
+}
+
+# ---- Enum implementing Comparable --------------------------------------------
+
+enum Priority: Comparable {
+    Low
+    Medium
+    High
+    Critical
+}
+
+impl Comparable for Priority {
+    hook <=>(other: Priority) -> int {
+        lo: int = match self {
+            Low => 0,
+            Medium => 1,
+            High => 2,
+            Critical => 3
+        }
+        hi: int = match other {
+            Low => 0,
+            Medium => 1,
+            High => 2,
+            Critical => 3
+        }
+        return lo <=> hi
+    }
+}
+
+# ---- Enum implementing Display -----------------------------------------------
+
+enum Status: Display {
+    Pending
+    Running
+    Done
+    Failed
+}
+
+impl Display for Status {
+    hook to_str() -> str {
+        return match self {
+            Pending => "pending",
+            Running => "running",
+            Done => "done",
+            Failed => "FAILED"
+        }
+    }
+}
+
+# ---- Enum implementing Eq ----------------------------------------------------
+
+enum Direction: Eq {
+    North
+    South
+    East
+    West
+}
+
+impl Eq for Direction {
+    hook ==(other: Direction) -> bool {
+        return match self {
+            North => match other { North => true, _ => false },
+            South => match other { South => true, _ => false },
+            East => match other { East => true, _ => false },
+            West => match other { West => true, _ => false }
+        }
+    }
+}
+
+# ---- Generic enum with interface conformance --------------------------------
+
+enum Result[T, E]: Display {
+    Ok { value: T }
+    Err { error: E }
+}
+
+impl Display for Result[int, str] {
+    hook to_str() -> str {
+        return match self {
+            Ok { value: v } => "Ok({v})",
+            Err { error: e } => "Err({e})"
+        }
+    }
+}
+
+# ---- Using interface methods on enums ----------------------------------------
+
+def sort_priorities(items: Vec[Priority]) -> Vec[Priority] {
+    # bubble sort for illustration
+    n: int = items.length()
+    mut i: int = 0
+    while i < n {
+        mut j: int = 0
+        while j < n - i - 1 {
+            a: Priority = items[j]
+            b: Priority = items[j + 1]
+            if (a <=> b) > 0 {
+                items[j] = b
+                items[j + 1] = a
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return items
+}
+
+def main() -> void {
+}

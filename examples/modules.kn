@@ -1,0 +1,194 @@
+# modules.kn -- module system: imports, exports, package layout
+
+# ---- Imports -----------------------------------------------------------------
+
+# Import individual symbols from stdlib modules
+import math { sqrt, pow, PI, floor, ceil, abs }
+import collections { Vec, Map, Set, Queue }
+import strings { split, join, trim, pad, contains }
+import io { print, println, read_line, read_file, write_file }
+import http.client { get, post, put, delete }
+import http.server { Server, Request, Response, Router }
+import json { parse_json, to_json, JsonValue }
+import time { now, sleep, Duration, Instant }
+import fs { read, write, exists, mkdir, remove, list_dir }
+import net { TcpListener, TcpStream, UdpSocket }
+
+# Import from project-local modules
+import geometry.shapes { Circle, Rect, Triangle, Point }
+import geometry.transforms { translate, rotate, scale }
+import auth.tokens { sign, verify, Token }
+import auth.users { User, Role, Permission }
+import data.models { Product, Order, Customer }
+import utils.format { format_date, format_currency, pluralize }
+import utils.validate { validate_email, validate_url, validate_phone }
+
+# ---- Type aliases (would use type keyword) -----------------------------------
+
+# These are just illustrative -- type aliases use the type keyword
+# type UserId = int
+# type ProductId = int
+# type Callback = Callable[(str), void]
+
+# ---- Structs and enums declared in this module -------------------------------
+
+struct AppConfig {
+    host: str
+    port: int
+    debug: bool
+    timeout: int
+    max_connections: int
+}
+
+struct ApiClient {
+    priv base_url: str
+    priv timeout: int
+    priv headers: Map[str, str]
+
+    def get(path: str) -> str {
+        return http_get("{base_url}{path}")
+    }
+
+    def post(path: str, body: str) -> str {
+        return http_post("{base_url}{path}", body)
+    }
+}
+
+enum LogLevel {
+    Trace
+    Debug
+    Info
+    Warn
+    Error
+    Fatal
+}
+
+struct Logger {
+    priv level: LogLevel
+    priv prefix: str
+
+    def log(lvl: LogLevel, msg: str) -> void {
+        print("[{prefix}] {msg}")
+    }
+
+    def info(msg: str) -> void {
+        log(Info, msg)
+    }
+
+    def error(msg: str) -> void {
+        log(Error, msg)
+    }
+}
+
+# ---- Private helpers (not exported) ------------------------------------------
+
+def http_get(url: str) -> str {
+    return get(url)
+}
+
+def http_post(url: str, body: str) -> str {
+    return post(url, body)
+}
+
+def build_config(host: str, port: int) -> AppConfig {
+    return AppConfig {
+        host: host,
+        port: port,
+        debug: DEBUG,
+        timeout: DEFAULT_TIMEOUT,
+        max_connections: MAX_CONNECTIONS
+    }
+}
+
+def make_logger(prefix: str, level: LogLevel) -> Logger {
+    return Logger { level: level, prefix: prefix }
+}
+
+# ---- Public API functions (these will be exported) ---------------------------
+
+def create_client(base_url: str) -> ApiClient {
+    return ApiClient {
+        base_url: base_url,
+        timeout: DEFAULT_TIMEOUT,
+        headers: Map.new()
+    }
+}
+
+def create_default_config() -> AppConfig {
+    return build_config("localhost", 8080)
+}
+
+def create_production_config(host: str, port: int) -> AppConfig {
+    return build_config(host, port)
+}
+
+def get_version() -> str {
+    return VERSION
+}
+
+# ---- init.kn style package entry point pattern --------------------------------
+#
+# A real package would have init.kn that re-exports the public API:
+#
+#   import modules.client { ApiClient, create_client }
+#   import modules.config { AppConfig, create_default_config }
+#   import modules.logger { Logger, LogLevel, make_logger }
+#
+#   export { ApiClient, create_client, AppConfig, create_default_config,
+#            Logger, LogLevel, make_logger }
+#
+# Consumers import from the package root:
+#   import my_package { ApiClient, create_client }
+
+# ---- Main module pattern -----------------------------------------------------
+
+def demo_imports() -> void {
+    # Using imported symbols
+    root: float = sqrt(16.0)
+    area: float = PI * pow(5.0, 2.0)
+
+    config: AppConfig = create_default_config()
+    client: ApiClient = create_client(BASE_URL)
+    logger: Logger = make_logger("app", Info)
+
+    logger.info("starting application v{VERSION}")
+    logger.info("connecting to {config.host}:{config.port}")
+
+    response: str = client.get("/health")
+    logger.info("health check: {response}")
+}
+
+# ---- Demonstrating no circular imports rule ----------------------------------
+#
+# Module dependency graph must be a DAG. If module A imports B,
+# module B cannot import A (directly or transitively).
+#
+# Good layout:
+#   utils  <-- strings, math (no deps)
+#   models <-- utils
+#   api    <-- models, utils
+#   app    <-- api, models, utils
+#
+# Circular (compile error):
+#   a imports b
+#   b imports a  <-- ERROR
+
+# ---- Export ------------------------------------------------------------------
+
+export {
+    AppConfig,
+    ApiClient,
+    Logger,
+    LogLevel,
+    create_client,
+    create_default_config,
+    create_production_config,
+    get_version,
+    VERSION,
+    MAX_CONNECTIONS,
+    DEFAULT_TIMEOUT
+}
+
+def main() -> void {
+    demo_imports()
+}

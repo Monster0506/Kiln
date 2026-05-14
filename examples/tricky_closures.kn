@@ -1,0 +1,47 @@
+# tricky_closures.kn -- closure edge cases
+
+def apply_fn(x: int, f: Callable[(int), int]) -> int {
+    return f(x)
+}
+
+def demo_zero_arg() -> void {
+    thunk: Callable[(), int] = () -> 42
+    val: int = thunk()
+}
+
+def demo_closure_returning_closure() -> void {
+    make_adder: Callable[(int), Callable[(int), int]] = (x: int) -> (y: int) -> x + y
+    add5: Callable[(int), int] = make_adder(5)
+    result: int = add5(3)
+}
+
+def demo_block_body_closure() -> void {
+    block_cl: Callable[(int, int), int] = (a: int, b: int) -> {
+        if a > b {
+            return a
+        } else {
+            return b
+        }
+    }
+    r: int = block_cl(3, 7)
+}
+
+def demo_closure_as_arg() -> void {
+    r1: int = apply_fn(5, (x: int) -> x + 1)
+    r2: int = apply_fn(4, (x: int) -> x * x)
+}
+
+def demo_multi_capture() -> void {
+    base: int = 10
+    scale: int = 3
+    transform: Callable[(int), int] = (x: int) -> x * scale + base
+    r: int = transform(5)
+}
+
+def main() -> void {
+    demo_zero_arg()
+    demo_closure_returning_closure()
+    demo_block_body_closure()
+    demo_closure_as_arg()
+    demo_multi_capture()
+}

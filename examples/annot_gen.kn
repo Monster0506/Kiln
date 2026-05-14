@@ -1,0 +1,127 @@
+# annot_gen.kn -- gen blocks and <<>> splices in processor definitions
+
+# ---- gen block basics --------------------------------------------------------
+#
+# gen { } produces a Block of Kiln code as a value.
+# <<expr>> splices an AST value from the surrounding processor code into the
+# generated block. The << token is always two characters, unambiguous from <.
+
+annotation Retry {
+    count: int = 3
+}
+
+annotation Memoize {
+    max_size: int = 256
+}
+
+annotation Log {
+    level: str = "info"
+}
+
+annotation Timed { }
+
+# ---- Retry processor: replaces the function body with a retry loop -----------
+
+processor Retry(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    new_body: Block = gen {
+        mut attempts: int = 0
+        while attempts < <<target.annot.count>> {
+            try {
+                <<target.body>>
+                return
+            } except Exception as e {
+                attempts = attempts + 1
+                if attempts == <<target.annot.count>> {
+                    raise e
+                }
+            }
+        }
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+# ---- Memoize processor: wraps body with cache lookup/store ------------------
+
+processor Memoize(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    cache_field: Decl = gen {
+        cache: Map[int, <<target.return_type>>] = Map.new()
+    }
+    new_body: Block = gen {
+        key: int = args.hash()
+        cached: Option[<<target.return_type>>] = cache.get(key)
+        if cached.is_some() {
+            return cached.unwrap()
+        }
+        result: <<target.return_type>> = <<target.body>>
+        cache.set(key, result)
+        return result
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+# ---- Log processor: injects entry/exit logging ------------------------------
+
+processor Log(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    new_body: Block = gen {
+        print("[{<<target.annot.level>>}] entering <<target.name>>")
+        result: <<target.return_type>> = <<target.body>>
+        print("[{<<target.annot.level>>}] exiting <<target.name>>")
+        return result
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+# ---- Timed processor: augments with a new benchmarking wrapper --------------
+#
+# Returns None for the replacement (keeps original) and emits a new function.
+
+processor Timed(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    new_body: Block = gen {
+        start: int = clock_ms()
+        result: <<target.return_type>> = <<target.body>>
+        elapsed: int = clock_ms() - start
+        print("elapsed: {elapsed}ms")
+        return result
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+# ---- Using the annotations ---------------------------------------------------
+
+@Retry { count: 5 }
+def fetch_data(url: str) -> str {
+    return http_get(url)
+}
+
+@Memoize { max_size: 512 }
+def fib(n: int) -> int {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+@Log { level: "debug" }
+def process(input: str) -> str {
+    return input.trim()
+}
+
+@Timed
+def sort_items(items: Vec[int]) -> Vec[int] {
+    return items.sorted()
+}
+
+@Retry { count: 3 }
+@Log { level: "warn" }
+def upload(data: str) -> bool {
+    return send_bytes(data)
+}
+
+def main() -> void {
+    fib(10)
+    fetch_data("test")
+}

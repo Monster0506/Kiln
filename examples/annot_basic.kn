@@ -1,0 +1,129 @@
+# annot_basic.kn -- annotation declarations with fields and defaults
+
+# ---- Annotations with default fields ----------------------------------------
+
+annotation Retry {
+    count: int = 3
+    delay: float = 0.5
+    on_error: str = "log"
+}
+
+annotation Timeout {
+    seconds: float = 30.0
+    cancel_on_drop: bool = true
+}
+
+annotation Cache {
+    ttl: int = 60
+    key: str
+}
+
+annotation Route {
+    path: str
+    method: str = "GET"
+    auth_required: bool = false
+}
+
+annotation RateLimit {
+    requests_per_second: int = 100
+    burst: int = 10
+    per_ip: bool = false
+}
+
+annotation Log {
+    level: str = "info"
+    include_args: bool = false
+    include_result: bool = false
+}
+
+# ---- Annotations with all required fields ------------------------------------
+
+annotation Required {
+    message: str
+}
+
+annotation MinLength {
+    length: int
+    message: str
+}
+
+annotation MaxLength {
+    length: int
+    message: str
+}
+
+# ---- Annotations with all defaults -------------------------------------------
+
+annotation Inline {
+}
+
+annotation Deprecated {
+    reason: str = "use a newer version"
+    since: str = "unknown"
+}
+
+annotation Test {
+    timeout_ms: int = 5000
+    isolate: bool = false
+}
+
+# ---- Applying annotations with brace syntax ----------------------------------
+
+@Retry { count: 5, delay: 0.1 }
+def fetch_data() -> str {
+    return "data"
+}
+
+@Timeout { seconds: 10.0 }
+def slow_operation() -> void {
+}
+
+@Route { path: "/api/users" }
+def list_users() -> str {
+    return "[]"
+}
+
+@Route { path: "/api/users/{id}", method: "GET", auth_required: true }
+def get_user(id: int) -> str {
+    return "{id}"
+}
+
+@RateLimit { requests_per_second: 50, burst: 5 }
+@Log { level: "debug", include_args: true }
+def sensitive_endpoint() -> str {
+    return "data"
+}
+
+# ---- Applying with all defaults (no args) ------------------------------------
+
+@Retry
+def retry_default() -> void {
+}
+
+@Cache { key: "user_list" }
+def get_all_users() -> Vec[str] {
+    return Vec.new()
+}
+
+# ---- Stacking multiple annotations -------------------------------------------
+
+@Deprecated { reason: "use fetch_v2 instead", since: "2.0" }
+@Retry { count: 2 }
+@Log { level: "warn" }
+def old_fetch() -> str {
+    return fetch_data()
+}
+
+@Route { path: "/api/data", auth_required: true }
+@RateLimit { requests_per_second: 10 }
+@Cache { ttl: 300, key: "api_data" }
+def get_data() -> str {
+    return "data"
+}
+
+def main() -> void {
+    println(fetch_data())
+    println(slow_operation())
+    println(retry_default())
+    println(old_fetch())
+}

@@ -1,0 +1,140 @@
+# iface_generic_bounds.kn -- generic functions with interface bounds
+#
+# Bounds on generic parameters are checked at call sites.
+# The constraint solver instantiates T to the concrete argument type
+# and verifies it satisfies each bound.
+
+# ---- Interfaces -------------------------------------------------------------
+
+interface Display {
+    hook to_str() -> str
+}
+
+interface PartialEq {
+    hook ==(other: Self) -> bool
+}
+
+interface Eq: PartialEq {
+}
+
+interface Addable {
+    hook +(other: Self) -> Self
+}
+
+interface Ord: Eq {
+    hook <=>(other: Self) -> int
+}
+
+# ---- Types ------------------------------------------------------------------
+
+struct Color {
+    r: int
+    g: int
+    b: int
+}
+
+impl Display for Color {
+    hook to_str() -> str {
+        return "rgb({r}, {g}, {b})"
+    }
+}
+
+impl PartialEq for Color {
+    hook ==(other: Color) -> bool {
+        return r == other.r && g == other.g && b == other.b
+    }
+
+}
+
+impl Eq for Color {
+}
+
+struct Money {
+    cents: int
+}
+
+impl Display for Money {
+    hook to_str() -> str {
+        dollars: int = cents / 100
+        c: int = cents % 100
+        return "${dollars}.{c}"
+    }
+}
+
+impl Addable for Money {
+    hook +(other: Money) -> Money {
+        return Money { cents: cents + other.cents }
+    }
+}
+
+# ---- Generic functions with single bounds -----------------------------------
+
+# T must implement Display -- constraint solver checks at each call site.
+def log_value[T: Display](label: str, val: T) -> void {
+    print("{label}: {val}")
+}
+
+# T must implement Addable to use + on it.
+def sum_two[T: Addable](a: T, b: T) -> T {
+    return a + b
+}
+
+# T must implement PartialEq to use == on it.
+def are_equal[T: PartialEq](a: T, b: T) -> bool {
+    return a == b
+}
+
+# ---- Generic functions with multiple bounds ---------------------------------
+
+# T must be both printable and comparable.
+def log_and_compare[T: Ord](a: T, b: T) -> int {
+    return a <=> b
+}
+
+# ---- Valid call sites -------------------------------------------------------
+
+def valid_calls() -> void {
+    # int implements Display, Addable, PartialEq, Eq, Ord
+    log_value("count", 42)
+    total: int = sum_two(10, 20)
+    eq: bool = are_equal(3, 3)
+    print("total={total}, eq={eq}")
+
+    # str implements Display
+    log_value("greeting", "hello")
+
+    # float implements Display, Addable, PartialEq, PartialOrd
+    log_value("ratio", 3.14)
+
+    # Color implements Display and PartialEq
+    c1: Color = Color { r: 255, g: 0, b: 0 }
+    c2: Color = Color { r: 0, g: 255, b: 0 }
+    log_value("color", c1)
+    same: bool = are_equal(c1, c2)
+    print("same: {same}")
+
+    # Money implements Display and Addable
+    price: Money = Money { cents: 999 }
+    tax: Money = Money { cents: 80 }
+    total_price: Money = sum_two(price, tax)
+    log_value("total", total_price)
+}
+
+# ---- Demonstration that generics propagate Display through containers -------
+#
+# Vec[T] implements Display when T implements Display.
+# So print(v) is valid for Vec[int] but not Vec[Color] unless Color: Display.
+
+def print_each[T: Display](items: Vec[T]) -> void {
+    i: int = 0
+    loop: int = items.len()
+    while i < loop {
+        item: T = items.get(i)
+        print("{item}")
+        i = i + 1
+    }
+}
+
+def main() -> void {
+    valid_calls()
+}

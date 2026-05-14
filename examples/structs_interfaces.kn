@@ -1,0 +1,116 @@
+# structs_interfaces.kn -- struct conformance to interfaces and impl blocks
+
+# ---- @derive macro -----------------------------------------------------------
+
+@derive(Eq, Display)
+struct Vec2 {
+    x: float
+    y: float
+}
+
+@derive(Eq, Comparable, Display)
+struct Score {
+    value: int
+    label: str
+}
+
+# ---- Struct with interface declaration in header ----------------------------
+
+struct Temperature: Comparable {
+    degrees: float
+}
+
+struct Player: Display {
+    name: str
+    score: int
+    level: int
+}
+
+struct Color: Eq, Display {
+    r: int
+    g: int
+    b: int
+}
+
+# ---- impl blocks -------------------------------------------------------------
+
+impl Comparable for Temperature {
+    hook <=>(other: Temperature) -> int {
+        if degrees < other.degrees {
+            return -1
+        } elif degrees > other.degrees {
+            return 1
+        } else {
+            return 0
+        }
+    }
+}
+
+impl Display for Temperature {
+    hook to_str() -> str {
+        return "{degrees}C"
+    }
+}
+
+impl Eq for Temperature {
+    hook ==(other: Temperature) -> bool {
+        return degrees == other.degrees
+    }
+}
+
+impl Display for Player {
+    hook to_str() -> str {
+        return "{name} (lvl {level}, score {score})"
+    }
+}
+
+impl Eq for Color {
+    hook ==(other: Color) -> bool {
+        return r == other.r && g == other.g && b == other.b
+    }
+}
+
+impl Display for Color {
+    hook to_str() -> str {
+        return "rgb({r},{g},{b})"
+    }
+}
+
+# ---- Using interface methods -------------------------------------------------
+
+def compare_temps(a: Temperature, b: Temperature) -> str {
+    result: int = a <=> b
+    if result < 0 {
+        return "{a} is cooler"
+    } elif result > 0 {
+        return "{a} is warmer"
+    } else {
+        return "equal temperature"
+    }
+}
+
+def sort_players(players: Vec[Player]) -> void {
+    n: int = players.length()
+    mut i: int = 0
+    while i < n {
+        mut j: int = 0
+        while j < n - i - 1 {
+            if players[j].score < players[j + 1].score {
+                a: Player = players[j]
+                players[j] = players[j + 1]
+                players[j + 1] = a
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+def print_all[T: Display](items: Vec[T]) -> void {
+    for item <- items {
+        print("{item}")
+    }
+}
+
+def main() -> void {
+}

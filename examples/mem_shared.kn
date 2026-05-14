@@ -1,0 +1,126 @@
+# mem_shared.kn -- Shared[T] reference counting, Shared with Mutex
+#
+# Shared[T] is immutable: the inner value cannot be mutated through it.
+# For mutable shared state, wrap with Mutex: Shared[Mutex[T]].
+
+# ---- Basic Shared[T] (immutable) ---------------------------------------------
+
+def demo_shared_vec() -> void {
+    shared: Shared[Vec[int]] = Shared.new(Vec.new())
+    clone_ref: Shared[Vec[int]] = shared  # increments ref count
+    # both point to the same Vec; neither can mutate it
+    # freed when last reference drops
+}
+
+def demo_shared_map() -> void {
+    shared: Shared[Map[str, int]] = Shared.new(Map.new())
+    a: Shared[Map[str, int]] = shared
+    b: Shared[Map[str, int]] = shared
+    # a, b, shared all ref-count the same Map (read-only)
+}
+
+# ---- Reading through Shared[T] ----------------------------------------------
+
+def read_shared_len(s: Shared[Vec[int]]) -> int {
+    return s.length()
+}
+
+def read_shared_get(s: Shared[Map[str, int]], key: str) -> Option[int] {
+    return s.get(key)
+}
+
+def demo_read_shared() -> void {
+    data: Shared[Vec[int]] = Shared.new(Vec.new())
+    n: int = read_shared_len(data)
+}
+
+# ---- Mutable shared state: Shared[Mutex[T]] ---------------------------------
+#
+# To mutate shared data, wrap the value in Mutex. Lock it to get a guard;
+# the guard releases the lock when it drops (RAII).
+
+def add_to_shared(s: Shared[Mutex[Vec[int]]], val: int) -> void {
+    guard: MutexGuard[Vec[int]] = s.lock()
+    guard.value.add(val)
+}
+
+def demo_shared_mutable() -> void {
+    data: Shared[Mutex[Vec[int]]] = Shared.new(Mutex.new(Vec.new()))
+    add_to_shared(data, 1)
+    add_to_shared(data, 2)
+}
+
+# ---- Shared[T] with Mutex for thread-safe access ----------------------------
+
+def demo_shared_mutex() -> void {
+    shared: Shared[Mutex[Vec[int]]] = Shared.new(Mutex.new(Vec.new()))
+    clone1: Shared[Mutex[Vec[int]]] = shared
+    clone2: Shared[Mutex[Vec[int]]] = shared
+
+    t1: Task[void] = spawn write_to(clone1, 1)
+    t2: Task[void] = spawn write_to(clone2, 2)
+    t1.join()
+    t2.join()
+
+    guard: MutexGuard[Vec[int]] = shared.lock()
+    len: int = guard.value.length()
+    print("len = {len}")
+}
+
+def write_to(s: Shared[Mutex[Vec[int]]], val: int) -> void {
+    guard: MutexGuard[Vec[int]] = s.lock()
+    guard.value.add(val)
+}
+
+struct Mutex[T] {
+    priv inner: T
+
+    def lock() -> MutexGuard[T] {
+        return MutexGuard { value: inner }
+    }
+}
+
+struct MutexGuard[T] {
+    value: T
+}
+
+# ---- Shared in struct fields ------------------------------------------------
+
+struct SharedCache {
+    priv data: Shared[Map[str, str]]
+
+    def get(key: str) -> Option[str] {
+        return data.get(key)
+    }
+
+    def set(key: str, val: str) -> void {
+        data.set(key, val)
+    }
+
+    def share() -> Shared[Map[str, str]] {
+        return data
+    }
+}
+
+# ---- Nested Shared ----------------------------------------------------------
+
+def demo_nested_shared() -> void {
+    list_of_shared: Vec[Shared[Vec[int]]] = Vec.new()
+
+    s1: Shared[Vec[int]] = Shared.new(Vec.new())
+    s2: Shared[Vec[int]] = Shared.new(Vec.new())
+    list_of_shared.add(s1)
+    list_of_shared.add(s2)
+
+    for s <- list_of_shared {
+        s.add(42)
+    }
+}
+
+def main() -> void {
+    demo_shared_vec()
+    demo_shared_map()
+    demo_read_shared()
+    demo_shared_mutable()
+    demo_nested_shared()
+}

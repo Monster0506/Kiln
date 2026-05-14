@@ -147,7 +147,6 @@ impl Parser {
             TokenKind::Annotation => Ok(Item::AnnotationDef(self.parse_annotation_def()?)),
             TokenKind::Processor => Ok(Item::ProcessorDef(self.parse_processor_def()?)),
             TokenKind::Type => Ok(Item::TypeAlias(self.parse_type_alias()?)),
-            TokenKind::Const => Ok(Item::Const(self.parse_const()?)),
             TokenKind::Import => Ok(Item::Import(self.parse_import()?)),
             TokenKind::Export => Ok(Item::Export(self.parse_export()?)),
             found => Err(ParseError::Unexpected {
@@ -365,6 +364,13 @@ impl Parser {
         }
     }
 
+    fn peek_at(&self, offset: usize) -> &TokenKind {
+        self.tokens
+            .get(self.pos + offset)
+            .map(|t| &t.kind)
+            .unwrap_or(&TokenKind::Eof)
+    }
+
     fn parse_generic_params(&mut self) -> Result<Vec<GenericParam>, ParseError> {
         if !self.eat(&TokenKind::LBracket) {
             return Ok(vec![]);
@@ -374,30 +380,56 @@ impl Parser {
             let start = self.peek_span();
             if self.eat(&TokenKind::Scope) {
                 let name = self.expect_ident()?;
-                let bound = if self.eat(&TokenKind::Colon) {
-                    Some(self.expect_ident()?)
+                // Lifetime params support at most one bound (outlives relation).
+                let bounds = if self.eat(&TokenKind::Colon) {
+                    vec![self.expect_ident()?]
                 } else {
-                    None
+                    vec![]
                 };
                 let end = self.peek_span();
                 params.push(GenericParam {
                     kind: GenericParamKind::Lifetime,
                     name,
-                    bound,
+                    bounds,
                     span: Span::new(start.start, end.start),
                 });
             } else {
                 let name = self.expect_ident()?;
-                let bound = if self.eat(&TokenKind::Colon) {
-                    Some(self.expect_ident()?)
+                let bounds = if self.eat(&TokenKind::Colon) {
+                    let mut bs = vec![self.expect_ident()?];
+                    // Continue consuming bounds while the next tokens are `, Ident` where
+                    // the ident is NOT followed by `:` (which would start a new param).
+                    // Also stop if `, scope` (lifetime param follows).
+                    loop {
+                        if self.peek() != &TokenKind::Comma {
+                            break;
+                        }
+                        // 1-ahead is Comma; 2-ahead tells us what follows.
+                        let next = self.peek_at(1);
+                        if matches!(next, TokenKind::Scope) {
+                            break;
+                        }
+                        if let TokenKind::Ident(_) = next {
+                            // If the token after the ident is `:`, it's a new param.
+                            if self.peek_at(2) == &TokenKind::Colon {
+                                break;
+                            }
+                            // Otherwise treat the ident as another bound.
+                            self.advance(); // consume `,`
+                            bs.push(self.expect_ident()?);
+                        } else {
+                            break;
+                        }
+                    }
+                    bs
                 } else {
-                    None
+                    vec![]
                 };
                 let end = self.peek_span();
                 params.push(GenericParam {
                     kind: GenericParamKind::Type,
                     name,
-                    bound,
+                    bounds,
                     span: Span::new(start.start, end.start),
                 });
             }
@@ -409,6 +441,7 @@ impl Parser {
 
     fn parse_fn_def(&mut self, annotations: Vec<AnnotationUse>) -> Result<FnDef, ParseError> {
         let start = self.peek_span().start;
+        let is_builtin = annotations.iter().any(|a| a.name == "builtin");
         self.expect(TokenKind::Def)?;
         let name = self.expect_ident()?;
         let generic_params = self.parse_generic_params()?;
@@ -442,7 +475,12 @@ impl Parser {
         self.expect(TokenKind::RParen)?;
         self.expect(TokenKind::Arrow)?;
         let return_type = self.parse_type()?;
-        let body = self.parse_block()?;
+        let body_span = self.peek_span();
+        let body = if is_builtin && self.peek() != &TokenKind::LBrace {
+            Block { stmts: vec![], span: body_span }
+        } else {
+            self.parse_block()?
+        };
         let end = self.peek_span().start;
         Ok(FnDef {
             annotations,
@@ -491,6 +529,7 @@ impl Parser {
     }
 
     fn parse_struct(&mut self, annotations: Vec<AnnotationUse>) -> Result<StructDef, ParseError> {
+        let is_builtin = annotations.iter().any(|a| a.name == "builtin");
         let start = self.peek_span().start;
         self.expect(TokenKind::Struct)?;
         let name = self.expect_ident()?;
@@ -499,10 +538,15 @@ impl Parser {
         self.expect(TokenKind::LBrace)?;
         let mut fields = Vec::new();
         let mut methods = Vec::new();
+        let mut decls = Vec::new();
         while self.peek() != &TokenKind::RBrace && self.peek() != &TokenKind::Eof {
             if self.peek() == &TokenKind::Def || self.is_annotated_def() {
                 let anns = self.parse_annotation_uses()?;
-                methods.push(self.parse_fn_def(anns)?);
+                if is_builtin && self.is_bodyless_def() {
+                    decls.push(self.parse_fn_decl()?);
+                } else {
+                    methods.push(self.parse_fn_def(anns)?);
+                }
             } else {
                 fields.push(self.parse_field()?);
                 self.eat(&TokenKind::Comma);
@@ -512,13 +556,93 @@ impl Parser {
         let end = self.peek_span().start;
         Ok(StructDef {
             annotations,
+            is_builtin,
             name,
             generic_params,
             interfaces,
             fields,
             methods,
+            decls,
             span: Span::new(start, end),
         })
+    }
+
+    /// Returns true when the next `def` has no `{` body (bodyless declaration).
+    fn is_bodyless_def(&self) -> bool {
+        let mut i = self.pos;
+        // skip `def`
+        if i < self.tokens.len() && self.tokens[i].kind == TokenKind::Def {
+            i += 1;
+        } else {
+            return false;
+        }
+        // skip name
+        if i < self.tokens.len() {
+            i += 1;
+        }
+        // skip optional generic params [...]
+        if i < self.tokens.len() && self.tokens[i].kind == TokenKind::LBracket {
+            let mut depth = 1;
+            i += 1;
+            while i < self.tokens.len() && depth > 0 {
+                match self.tokens[i].kind {
+                    TokenKind::LBracket => depth += 1,
+                    TokenKind::RBracket => depth -= 1,
+                    _ => {}
+                }
+                i += 1;
+            }
+        }
+        // skip param list (...)
+        if i < self.tokens.len() && self.tokens[i].kind == TokenKind::LParen {
+            let mut depth = 1;
+            i += 1;
+            while i < self.tokens.len() && depth > 0 {
+                match self.tokens[i].kind {
+                    TokenKind::LParen => depth += 1,
+                    TokenKind::RParen => depth -= 1,
+                    _ => {}
+                }
+                i += 1;
+            }
+        }
+        // skip -> ReturnType
+        if i < self.tokens.len() && self.tokens[i].kind == TokenKind::Arrow {
+            i += 1;
+            // skip type tokens until we hit `{`, `def`, `}`, or EOF
+            while i < self.tokens.len() {
+                match self.tokens[i].kind {
+                    TokenKind::LBrace | TokenKind::RBrace | TokenKind::Def | TokenKind::Eof => {
+                        break;
+                    }
+                    _ => i += 1,
+                }
+            }
+        }
+        // bodyless if the next token is NOT `{`
+        i < self.tokens.len() && self.tokens[i].kind != TokenKind::LBrace
+    }
+
+    fn parse_fn_decl(&mut self) -> Result<FnDecl, ParseError> {
+        let start = self.peek_span().start;
+        self.expect(TokenKind::Def)?;
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::LParen)?;
+        let mut params = Vec::new();
+        while self.peek() != &TokenKind::RParen && self.peek() != &TokenKind::Eof {
+            let ps = self.peek_span();
+            let pname = self.expect_ident()?;
+            self.expect(TokenKind::Colon)?;
+            let ty = self.parse_type()?;
+            let end = self.peek_span();
+            params.push(Param { name: pname, ty, span: Span::new(ps.start, end.start) });
+            self.eat(&TokenKind::Comma);
+        }
+        self.expect(TokenKind::RParen)?;
+        self.expect(TokenKind::Arrow)?;
+        let return_type = self.parse_type()?;
+        let end = self.peek_span().start;
+        Ok(FnDecl { name, params, return_type, span: Span::new(start, end) })
     }
 
     fn is_annotated_def(&self) -> bool {
@@ -798,6 +922,7 @@ impl Parser {
     fn parse_impl(&mut self) -> Result<ImplBlock, ParseError> {
         let start = self.peek_span().start;
         self.expect(TokenKind::Impl)?;
+        let generic_params = self.parse_generic_params()?;
         let interface = self.parse_type_atom()?;
         self.expect(TokenKind::For)?;
         let for_type = self.parse_type_atom()?;
@@ -820,6 +945,7 @@ impl Parser {
         self.expect(TokenKind::RBrace)?;
         let end = self.peek_span().start;
         Ok(ImplBlock {
+            generic_params,
             interface,
             for_type,
             methods,
@@ -891,23 +1017,6 @@ impl Parser {
             name,
             generic_params,
             ty,
-            span: Span::new(start, end),
-        })
-    }
-
-    fn parse_const(&mut self) -> Result<ConstDef, ParseError> {
-        let start = self.peek_span().start;
-        self.expect(TokenKind::Const)?;
-        let name = self.expect_ident()?;
-        self.expect(TokenKind::Colon)?;
-        let ty = self.parse_type()?;
-        self.expect(TokenKind::Eq)?;
-        let value = self.parse_expr(0)?;
-        let end = self.peek_span().start;
-        Ok(ConstDef {
-            name,
-            ty,
-            value,
             span: Span::new(start, end),
         })
     }
@@ -1145,14 +1254,14 @@ impl Parser {
         match op {
             TokenKind::PipePipe => Some((1, 2)),
             TokenKind::AmpAmp => Some((3, 4)),
-            TokenKind::EqEq => Some((5, 6)),
+            TokenKind::EqEq | TokenKind::BangEq => Some((5, 6)),
             TokenKind::Lt
             | TokenKind::Gt
             | TokenKind::LtEq
             | TokenKind::GtEq
             | TokenKind::Spaceship => Some((7, 8)),
             TokenKind::Plus | TokenKind::Minus => Some((9, 10)),
-            TokenKind::Star | TokenKind::Slash => Some((11, 12)),
+            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some((11, 12)),
             _ => None,
         }
     }
@@ -1236,7 +1345,9 @@ impl Parser {
             TokenKind::Minus => BinOp::Sub,
             TokenKind::Star => BinOp::Mul,
             TokenKind::Slash => BinOp::Div,
+            TokenKind::Percent => BinOp::Mod,
             TokenKind::EqEq => BinOp::Eq,
+            TokenKind::BangEq => BinOp::Ne,
             TokenKind::Lt => BinOp::Lt,
             TokenKind::Gt => BinOp::Gt,
             TokenKind::LtEq => BinOp::LtEq,
@@ -1805,7 +1916,7 @@ mod tests {
             Item::Function(f) => {
                 assert_eq!(f.generic_params.len(), 1);
                 assert_eq!(f.generic_params[0].name, "T");
-                assert_eq!(f.generic_params[0].bound.as_deref(), Some("Addable"));
+                assert_eq!(f.generic_params[0].bounds, vec!["Addable"]);
             }
             other => panic!("{other:?}"),
         }
@@ -2194,7 +2305,7 @@ export { Point, distance }
             Item::Function(f) => {
                 assert_eq!(f.generic_params.len(), 2);
                 assert_eq!(f.generic_params[1].name, "b");
-                assert_eq!(f.generic_params[1].bound.as_deref(), Some("a"));
+                assert_eq!(f.generic_params[1].bounds, vec!["a"]);
                 assert!(matches!(
                     f.generic_params[1].kind,
                     GenericParamKind::Lifetime

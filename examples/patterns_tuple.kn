@@ -1,0 +1,75 @@
+# patterns_tuple.kn -- tuple patterns in match
+
+def classify_coords(x: int, y: int) -> str {
+    return match (x, y) {
+        (0, 0) => "origin",
+        (int a, 0) => "on x-axis at {a}",
+        (0, int b) => "on y-axis at {b}",
+        (int a, int b) => "point ({a}, {b})"
+    }
+}
+
+def label_pair(x: int, y: int) -> str {
+    return match (x, y) {
+        (1, 1) => "unit",
+        (int n, 0) => "only x: {n}",
+        (0, int m) => "only y: {m}",
+        (int n, int m) => "{n} and {m}"
+    }
+}
+
+def quadrant(x: int, y: int) -> str {
+    return match (x > 0, y > 0) {
+        (true, true) => "first",
+        (false, true) => "second",
+        (false, false) => "third",
+        (true, false) => "fourth"
+    }
+}
+
+def describe_sign_pair(a: int, b: int) -> str {
+    return match (a >= 0, b >= 0) {
+        (true, true) => "both non-negative",
+        (true, false) => "a non-negative, b negative",
+        (false, true) => "a negative, b non-negative",
+        (false, false) => "both negative"
+    }
+}
+
+def match_triple(x: int, y: int, z: int) -> str {
+    return match (x, y, z) {
+        (0, 0, 0) => "all zero",
+        (int a, 0, 0) => "only x: {a}",
+        (0, int b, 0) => "only y: {b}",
+        (0, 0, int c) => "only z: {c}",
+        (int a, int b, int c) => "({a},{b},{c})"
+    }
+}
+
+# ---- Tuple destructuring assignment ------------------------------------------
+
+def demo_tuple_destruct(pair: (int, int)) -> void {
+    (a, b) = pair
+}
+
+def demo_swap(x: int, y: int) -> (int, int) {
+    (y, x) = (x, y)
+    return (x, y)
+}
+
+def minmax(a: int, b: int) -> (int, int) {
+    if a < b {
+        return (a, b)
+    }
+    return (b, a)
+}
+
+def demo_minmax(nums: Vec[int]) -> void {
+    (lo, hi) = minmax(nums[0], nums[1])
+}
+
+def main() -> void {
+    classify_coords(0, 0)
+    quadrant(5, 5)
+    label_pair(3, 4)
+}

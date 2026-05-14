@@ -1,0 +1,64 @@
+# vars.kn -- variable declarations and constants
+
+# ---- Immutable variables (default) -------------------------------------------
+
+def demo_variables() -> void {
+    x: int = 5
+    println(x)
+    y: float = 3.14
+    println(y)
+    name: str = "kiln"
+    println(name)
+    flag: bool = true
+    println(flag)
+
+    big: int = 8_000_000_000
+    println(big)
+    precise: float = 6.626_075_15
+    println(precise)
+}
+
+# ---- Shadowing rebinds the name to a new immutable value ---------------------
+
+def demo_shadowing() -> void {
+    n: int = 0
+    println(n)
+    n: int = 1
+    println(n)
+    n: int = n + 1    # each line creates a new binding
+    println(n)
+    n: str = "done"   # new binding with different type
+    println(n)
+}
+
+# ---- mut for bindings that need reassignment ---------------------------------
+
+def demo_mut() -> void {
+    mut counter: int = 0
+    println(counter)
+    counter = counter + 1
+    println(counter)
+    counter = counter + 1
+    println(counter)
+
+    mut flag: bool = false
+    println(flag)
+    flag = true
+    println(flag)
+}
+
+def demo_var_types() -> void {
+    a: int = 42
+    b: float = 3.14
+    c: str = "hello"
+    d: bool = true
+    e: Vec[int] = Vec.new()
+#    f: Map[str, int] = Map.new()
+}
+
+def main() -> void {
+    demo_variables()
+    demo_shadowing()
+    demo_mut()
+    demo_var_types()
+}

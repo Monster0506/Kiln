@@ -1,0 +1,68 @@
+# tricky_match.kn -- match edge cases
+
+enum Expr {
+    Num { val: int }
+    Add { left: Expr, right: Expr }
+    Mul { left: Expr, right: Expr }
+    Neg { inner: Expr }
+}
+
+def eval_expr(e: Expr) -> int {
+    return match e {
+        Num { val: v } => v,
+        Add { left: l, right: r } => eval_expr(l) + eval_expr(r),
+        Mul { left: l, right: r } => eval_expr(l) * eval_expr(r),
+        Neg { inner: i } => -eval_expr(i)
+    }
+}
+
+def demo_match_with_guards(x: int) -> str {
+    category: str = match x {
+        int n if n < 0 => "negative",
+        int n if n == 0 => "zero",
+        int n if n < 10 => "small",
+        _ => "large"
+    }
+    return category
+}
+
+def doubled_plus_one(n: int) -> int {
+    doubled: int = n * 2
+    return doubled + 1
+}
+
+def demo_match_block_arm(x: int) -> int {
+    result: int = match x {
+        int n if n > 0 => doubled_plus_one(n),
+        _ => 0
+    }
+    return result
+}
+
+def demo_nested_match() -> str {
+    opt: Option[int] = Some { value: 42 }
+    msg: str = match opt {
+        Some { value: v } => match v {
+            int n if n > 0 => "positive some",
+            _ => "non-positive some"
+        },
+        None => "none"
+    }
+    return msg
+}
+
+def demo_match_tuple() -> str {
+    pair: (int, int) = (3, 7)
+    desc: str = match pair {
+        (0, 0) => "origin",
+        (int a, 0) => "x-axis",
+        (0, int b) => "y-axis",
+        (int a, int b) => "point {a},{b}"
+    }
+    return desc
+}
+
+def main() -> void {
+    demo_nested_match()
+    demo_match_tuple()
+}

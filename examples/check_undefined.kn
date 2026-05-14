@@ -1,0 +1,20 @@
+# check_undefined.kn -- should fail: undefined names
+
+# ERROR: unknown_fn is not defined anywhere
+def calls_unknown() -> void {
+    unknown_fn(42)
+}
+
+# ERROR: uses undefined variable
+def uses_undefined() -> int {
+    return ghost_value
+}
+
+# OK: uses a name defined earlier in the same scope
+def uses_defined() -> int {
+    x: int = 7
+    return x
+}
+
+def main() -> void {
+}

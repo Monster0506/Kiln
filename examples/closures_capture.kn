@@ -1,0 +1,93 @@
+# closures_capture.kn -- closures capturing variables from outer scope
+
+# ---- Basic capture -----------------------------------------------------------
+
+def demo_capture_simple() -> void {
+    mut count: int = 0
+    inc: Callable[(), void] = () -> { count = count + 1 }
+    inc()
+    inc()
+    # count is now 2
+}
+
+def demo_capture_read() -> void {
+    base: int = 10
+    add_base: Callable[(int), int] = (x: int) -> x + base
+    scale: int = 3
+    scaled: Callable[(int), int] = (x: int) -> x * scale + base
+    r1: int = add_base(5)    # 15
+    r2: int = scaled(2)      # 16
+}
+
+# ---- Capturing multiple variables --------------------------------------------
+
+def demo_capture_multi() -> void {
+    min_val: int = 0
+    max_val: int = 100
+    clamp: Callable[(int), int] = (x: int) -> {
+        if x < min_val { return min_val }
+        if x > max_val { return max_val }
+        return x
+    }
+    clamped: int = clamp(150)
+}
+
+def demo_capture_str() -> void {
+    prefix: str = "INFO"
+    sep: str = ": "
+    format_msg: Callable[(str), str] = (msg: str) -> "{prefix}{sep}{msg}"
+    formatted: str = format_msg("starting up")
+}
+
+# ---- Modifying captured variables --------------------------------------------
+
+def demo_capture_mutate() -> void {
+    mut total: int = 0
+    add: Callable[(int), void] = (n: int) -> { total = total + n }
+    add(5)
+    add(10)
+    add(15)
+    # total is 30
+}
+
+def demo_counter() -> void {
+    mut count: int = 0
+    inc: Callable[(), void] = () -> { count = count + 1 }
+    dec: Callable[(), void] = () -> { count = count - 1 }
+    get: Callable[(), int] = () -> count
+    inc()
+    inc()
+    inc()
+    dec()
+    current: int = get()   # 2
+}
+
+# ---- Capture in nested functions ----------------------------------------
+
+def outer() -> int {
+    mut x: int = 10
+
+    def inner() -> int {
+        return x * 2
+    }
+
+    x = 20
+    return inner()   # captures updated x
+}
+
+def make_accumulator(start: int) -> Callable[(int), int] {
+    mut total: int = start
+    return (n: int) -> {
+        total = total + n
+        return total
+    }
+}
+
+def main() -> void {
+    demo_capture_simple()
+    demo_capture_read()
+    demo_capture_multi()
+    demo_capture_str()
+    demo_capture_mutate()
+    demo_counter()
+}

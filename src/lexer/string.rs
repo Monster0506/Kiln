@@ -4,7 +4,7 @@ use super::token::{Token, TokenKind};
 use crate::diagnostics::{LexError, Span};
 
 impl<'src> Lexer<'src> {
-    pub(super) fn lex_string(&mut self) -> Result<Token, LexError> {
+    pub(super) fn lex_string(&mut self, close: char) -> Result<Token, LexError> {
         let start = self.pos;
         let mut text = String::new();
 
@@ -15,11 +15,11 @@ impl<'src> Lexer<'src> {
                         span: Span::new(start, self.pos),
                     });
                 }
-                Some('"') => {
+                Some(c) if c == close => {
                     if !text.is_empty() {
                         return Ok(Token::new(TokenKind::StringText(text), start, self.pos));
                     }
-                    self.advance(); // consume closing `"`
+                    self.advance(); // consume closing delimiter
                     self.mode_stack.pop();
                     return Ok(Token::new(TokenKind::StringEnd, start, self.pos));
                 }
@@ -30,7 +30,7 @@ impl<'src> Lexer<'src> {
                     let brace_start = self.pos;
                     self.advance(); // consume `{`
                     self.mode_stack.pop();
-                    self.mode_stack.push(Mode::Interp { depth: 1 });
+                    self.mode_stack.push(Mode::Interp { depth: 1, close });
                     return Ok(Token::new(TokenKind::InterpStart, brace_start, self.pos));
                 }
                 Some('\\') => {
@@ -76,7 +76,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    pub(super) fn lex_interp(&mut self, depth: usize) -> Result<Token, LexError> {
+    pub(super) fn lex_interp(&mut self, depth: usize, close: char) -> Result<Token, LexError> {
         // Skip whitespace inside the interpolation.
         while self.peek().map(|c| c.is_whitespace()).unwrap_or(false) {
             self.advance();
@@ -88,17 +88,17 @@ impl<'src> Lexer<'src> {
             None => Ok(Token::new(TokenKind::Eof, start, start)),
             Some('{') => {
                 self.advance();
-                *self.mode_stack.last_mut().unwrap() = Mode::Interp { depth: depth + 1 };
+                *self.mode_stack.last_mut().unwrap() = Mode::Interp { depth: depth + 1, close };
                 Ok(Token::new(TokenKind::LBrace, start, self.pos))
             }
             Some('}') => {
                 self.advance();
                 if depth <= 1 {
                     self.mode_stack.pop();
-                    self.mode_stack.push(Mode::String);
+                    self.mode_stack.push(Mode::String { close });
                     Ok(Token::new(TokenKind::InterpEnd, start, self.pos))
                 } else {
-                    *self.mode_stack.last_mut().unwrap() = Mode::Interp { depth: depth - 1 };
+                    *self.mode_stack.last_mut().unwrap() = Mode::Interp { depth: depth - 1, close };
                     Ok(Token::new(TokenKind::RBrace, start, self.pos))
                 }
             }

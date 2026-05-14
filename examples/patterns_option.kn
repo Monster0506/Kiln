@@ -1,0 +1,121 @@
+# patterns_option.kn -- matching on Option and Result-like enums
+
+# ---- Option enum -------------------------------------------------------------
+
+enum Option[T] {
+    Some { value: T }
+    None
+}
+
+enum Result[T, E] {
+    Ok { value: T }
+    Err { error: E }
+}
+
+# ---- Matching on Option ------------------------------------------------------
+
+def unwrap_or(opt: Option[int], default: int) -> int {
+    return match opt {
+        Some { value: v } => v,
+        None => default
+    }
+}
+
+def map_option(opt: Option[int], f: Callable[(int), int]) -> Option[int] {
+    return match opt {
+        Some { value: v } => Some { value: f(v) },
+        None => None
+    }
+}
+
+def and_then(opt: Option[int], f: Callable[(int), Option[int]]) -> Option[int] {
+    return match opt {
+        Some { value: v } => f(v),
+        None => None
+    }
+}
+
+def is_some(opt: Option[int]) -> bool {
+    return match opt {
+        Some { value: _ } => true,
+        None => false
+    }
+}
+
+def is_none(opt: Option[int]) -> bool {
+    return match opt {
+        None => true,
+        _ => false
+    }
+}
+
+def describe_opt(opt: Option[int]) -> str {
+    return match opt {
+        Some { value: v } if v > 0 => "positive {v}",
+        Some { value: v } if v < 0 => "negative {v}",
+        Some { value: v } => "zero",
+        None => "absent"
+    }
+}
+
+# ---- Matching on Result ------------------------------------------------------
+
+def print_err_zero(e: str) -> int {
+    print("error: {e}")
+    return 0
+}
+
+def unwrap_result(r: Result[int, str]) -> int {
+    return match r {
+        Ok { value: v } => v,
+        Err { error: e } => print_err_zero(e)
+    }
+}
+
+def map_result(r: Result[int, str], f: Callable[(int), int]) -> Result[int, str] {
+    return match r {
+        Ok { value: v } => Ok { value: f(v) },
+        Err { error: e } => Err { error: e }
+    }
+}
+
+def is_ok(r: Result[int, str]) -> bool {
+    return match r {
+        Ok { value: _ } => true,
+        Err { error: _ } => false
+    }
+}
+
+def describe_result(r: Result[int, str]) -> str {
+    return match r {
+        Ok { value: v } if v > 100 => "large ok: {v}",
+        Ok { value: v } => "ok: {v}",
+        Err { error: e } => "err: {e}"
+    }
+}
+
+# ---- Chaining option checks --------------------------------------------------
+
+def chain_options(a: Option[int], b: Option[int]) -> Option[int] {
+    has_a: bool = match a { Some { value: _ } => true, None => false }
+    if !has_a { return None }
+    av: int = match a { Some { value: v } => v, None => 0 }
+    has_b: bool = match b { Some { value: _ } => true, None => false }
+    if !has_b { return None }
+    bv: int = match b { Some { value: v } => v, None => 0 }
+    return Some { value: av + bv }
+}
+
+def all_some(opts: Vec[Option[int]]) -> Option[Vec[int]] {
+    result: Vec[int] = Vec.new()
+    for opt <- opts {
+        has: bool = match opt { Some { value: _ } => true, None => false }
+        if !has { return None }
+        v: int = match opt { Some { value: x } => x, None => 0 }
+        result.add(v)
+    }
+    return Some { value: result }
+}
+
+def main() -> void {
+}

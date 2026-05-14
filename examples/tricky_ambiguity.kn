@@ -1,0 +1,93 @@
+# tricky_ambiguity.kn -- struct literal vs block ambiguity in control flow
+
+struct Point {
+    x: float
+    y: float
+}
+
+struct Rect {
+    x: float
+    y: float
+    width: float
+    height: float
+}
+
+# ---- Struct literal OK in assignment -----------------------------------------
+
+def make_origin() -> Point {
+    p: Point = Point { x: 0.0, y: 0.0 }
+    return p
+}
+
+def make_rect(x: float, y: float, w: float, h: float) -> Rect {
+    r: Rect = Rect { x: x, y: y, width: w, height: h }
+    return r
+}
+
+# ---- Struct literal OK in return position ------------------------------------
+
+def make_point(x: float, y: float) -> Point {
+    return Point { x: x, y: y }
+}
+
+# ---- Struct literal OK as function argument ---------------------------------
+
+def distance(a: Point, b: Point) -> float {
+    dx: float = a.x - b.x
+    dy: float = a.y - b.y
+    return dx * dx + dy * dy
+}
+
+def demo_struct_as_arg() -> float {
+    return distance(
+        Point { x: 0.0, y: 0.0 },
+        Point { x: 3.0, y: 4.0 }
+    )
+}
+
+# ---- Struct literal NOT allowed in control flow head -- use a variable ------
+
+def demo_if_var(thresh: float) -> str {
+    p: Point = Point { x: 1.0, y: 1.0 }  # assign first
+    origin: Point = make_origin()
+    d: float = distance(p, origin)
+    if d > thresh {                        # then use in condition
+        return "far"
+    }
+    return "near"
+}
+
+def demo_while_var(points: Vec[Point]) -> int {
+    n: int = points.length()
+    mut count: int = 0
+    mut i: int = 0
+    while i < n {                # NOT: while Point { } ...
+        p: Point = points[i]
+        if p.x > 0.0 {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+def demo_for_var(rects: Vec[Rect]) -> float {
+    mut total_area: float = 0.0
+    for r <- rects {             # NOT: for r <- Rect { } ...
+        total_area = total_area + r.width * r.height
+    }
+    return total_area
+}
+
+def demo_match_var(p: Point) -> str {
+    # Use match on a simple expression, not a struct literal
+    is_positive_x: bool = p.x > 0.0
+    return match is_positive_x { # NOT: match Point { ... } ...
+        true => "x is positive",
+        false => "x is non-positive"
+    }
+}
+
+def main() -> void {
+    demo_struct_as_arg()
+}

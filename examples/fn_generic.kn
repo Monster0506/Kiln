@@ -1,0 +1,109 @@
+# fn_generic.kn -- generic functions, bounded generics, multi-return
+
+# ---- Generic functions -------------------------------------------------------
+
+def identity[T](x: T) -> T {
+    return x
+}
+
+def swap[A, B](a: A, b: B) -> (B, A) {
+    return (b, a)
+}
+
+def first[T](a: T, b: T) -> T {
+    return a
+}
+
+def wrap_in_vec[T](item: T) -> Vec[T] {
+    v: Vec[T] = Vec.new()
+    v.add(item)
+    return v
+}
+
+# ---- Bounded generics --------------------------------------------------------
+
+def max_of[T: Comparable](a: T, b: T) -> T {
+    if (a <=> b) >= 0 {
+        return a
+    }
+    return b
+}
+
+def min_of[T: Comparable](a: T, b: T) -> T {
+    if (a <=> b) <= 0 {
+        return a
+    }
+    return b
+}
+
+def add_generic[T: Addable](a: T, b: T) -> T {
+    return a + b
+}
+
+def are_equal[T: Eq](a: T, b: T) -> bool {
+    return a == b
+}
+
+def print_item[T: Display](item: T) -> void {
+    print("{item}")
+}
+
+def find_max[T: Comparable](items: Vec[T]) -> T {
+    mut best: T = items[0]
+    for item <- items {
+        if (item <=> best) > 0 {
+            best = item
+        }
+    }
+    return best
+}
+
+def sort_pair[T: Comparable](a: T, b: T) -> (T, T) {
+    if (a <=> b) <= 0 {
+        return (a, b)
+    }
+    return (b, a)
+}
+
+# ---- Multi-return via tuples -------------------------------------------------
+
+def minmax(nums: Vec[int]) -> (int, int) {
+    mut lo: int = nums[0]
+    mut hi: int = nums[0]
+    for n <- nums {
+        if n < lo {
+            lo = n
+        }
+        if n > hi {
+            hi = n
+        }
+    }
+    return (lo, hi)
+}
+
+def divmod(a: int, b: int) -> (int, int) {
+    q: int = a / b
+    r: int = a - q * b
+    return (q, r)
+}
+
+def split_at(s: str, n: int) -> (str, str) {
+    return (s.slice(0, n), s.slice(n, s.length()))
+}
+
+def stats(nums: Vec[int]) -> (int, int, int) {
+    mut lo: int = nums[0]
+    mut hi: int = nums[0]
+    mut total: int = 0
+    for n <- nums {
+        if n < lo { lo = n }
+        if n > hi { hi = n }
+        total = total + n
+    }
+    return (lo, hi, total)
+}
+
+def main() -> void {
+    identity(42)
+    first(1, 2)
+}

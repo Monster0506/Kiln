@@ -1,0 +1,150 @@
+# annot_builtin.kn -- @derive, @static, @deprecated, @inline on declarations
+
+# ---- @derive on structs ------------------------------------------------------
+
+@derive(Eq, Display)
+struct Point {
+    x: float
+    y: float
+}
+
+@derive(Eq, Comparable, Display)
+struct Score {
+    value: int
+    label: str
+}
+
+@derive(Eq)
+struct Color {
+    r: int
+    g: int
+    b: int
+}
+
+@derive(Eq, Display, Comparable)
+struct Version {
+    major: int
+    minor: int
+    patch: int
+}
+
+# ---- @derive on enums --------------------------------------------------------
+
+@derive(Eq)
+enum Status {
+    Active
+    Inactive
+    Pending
+    Banned
+}
+
+@derive(Eq, Display)
+enum LogLevel {
+    Trace
+    Debug
+    Info
+    Warn
+    Error
+    Fatal
+}
+
+# ---- @static on struct methods -----------------------------------------------
+
+struct MathUtils {
+    @static
+    def square(x: int) -> int {
+        return x * x
+    }
+
+    @static
+    def cube(x: int) -> int {
+        return x * x * x
+    }
+
+    @static
+    def clamp(val: int, lo: int, hi: int) -> int {
+        if val < lo { return lo }
+        if val > hi { return hi }
+        return val
+    }
+}
+
+struct Registry {
+    priv items: Vec[str]
+
+    @static
+    def new() -> Registry {
+        return Registry { items: Vec.new() }
+    }
+
+    def register(name: str) -> void {
+        items.add(name)
+    }
+
+    def count() -> int {
+        return items.length()
+    }
+}
+
+# ---- @deprecated on functions ------------------------------------------------
+
+@deprecated
+def old_calculate(x: int, y: int) -> int {
+    return x + y
+}
+
+@deprecated
+def legacy_format(s: str) -> str {
+    return "{s}"
+}
+
+def new_calculate(x: int, y: int) -> int {
+    return x + y
+}
+
+# ---- @inline on functions ----------------------------------------------------
+
+@inline
+def add_inline(a: int, b: int) -> int {
+    return a + b
+}
+
+@inline
+def is_even_inline(n: int) -> bool {
+    return n == n / 2 * 2
+}
+
+@inline
+def square_inline(x: float) -> float {
+    return x * x
+}
+
+# ---- Combining @static and @deprecated --------------------------------------
+
+struct OldApi {
+    @static
+    @deprecated
+    def legacy_method(x: int) -> int {
+        return x
+    }
+}
+
+# ---- @derive with manual impl override ---------------------------------------
+
+@derive(Eq, Display)
+struct Wrapper {
+    value: int
+    label: str
+}
+
+impl Display for Wrapper {
+    hook to_str() -> str {
+        return "[{label}: {value}]"
+    }
+}
+
+def main() -> void {
+    old_calculate(1, 2)
+    add_inline(3, 4)
+    is_even_inline(5)
+}

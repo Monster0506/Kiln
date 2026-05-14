@@ -1,0 +1,95 @@
+# mem_references.kn -- &T immutable references, &mut T mutable references
+
+# ---- Immutable references ---------------------------------------------------
+
+def len_ref(v: &Vec[int]) -> int {
+    return v.length()
+}
+
+def sum_ref(v: &Vec[int]) -> int {
+    mut total: int = 0
+    for x <- v {
+        total = total + x
+    }
+    return total
+}
+
+def contains_ref(v: &Vec[int], target: int) -> bool {
+    for x <- v {
+        if x == target {
+            return true
+        }
+    }
+    return false
+}
+
+def read_first(v: &Vec[int]) -> Option[int] {
+    if v.length() == 0 {
+        return None
+    }
+    return Some { value: v[0] }
+}
+
+def borrow_int(n: &int) -> int {
+    return n * 2
+}
+
+def str_len(s: &str) -> int {
+    return s.length()
+}
+
+def inspect_map(m: &Map[str, int], key: str) -> Option[int] {
+    return m.get(key)
+}
+
+# ---- Mutable references -----------------------------------------------------
+
+def push_all(v: &mut Vec[int], items: Vec[int]) -> void {
+    for item <- items {
+        v.add(item)
+    }
+}
+
+def clear_vec(v: &mut Vec[int]) -> void {
+    v.clear()
+}
+
+def double_in_place(v: &mut Vec[int]) -> void {
+    mut i: int = 0
+    while i < v.length() {
+        v[i] = v[i] * 2
+        i = i + 1
+    }
+}
+
+def increment(n: &mut int) -> void {
+    n = n + 1
+}
+
+def update_map(m: &mut Map[str, int], key: str, val: int) -> void {
+    m.set(key, val)
+}
+
+# ---- Functions using both borrow styles -------------------------------------
+
+def copy_non_zero(src: &Vec[int], dst: &mut Vec[int]) -> void {
+    for x <- src {
+        if !(x == 0) {
+            dst.add(x)
+        }
+    }
+}
+
+def merge_maps(src: &Map[str, int], dst: &mut Map[str, int]) -> void {
+    for key <- src.keys() {
+        v: Option[int] = src.get(key)
+        n: int = match v {
+            Some { value: x } => x,
+            None => 0
+        }
+        dst.set(key, n)
+    }
+}
+
+def main() -> void {
+}

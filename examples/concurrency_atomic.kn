@@ -1,0 +1,118 @@
+# concurrency_atomic.kn -- Atomic[T] for lock-free shared state
+
+# ---- Basic Atomic operations -------------------------------------------------
+
+def demo_atomic_counter() -> void {
+    counter: Atomic[int] = Atomic.new(0)
+
+    t1: Task[void] = spawn atomic_inc(counter)
+    t2: Task[void] = spawn atomic_inc(counter)
+    t3: Task[void] = spawn atomic_inc(counter)
+
+    t1.join()
+    t2.join()
+    t3.join()
+
+    final: int = counter.load()
+    print("count = {final}")
+}
+
+def atomic_inc(counter: Atomic[int]) -> void {
+    counter.fetch_add(1)
+}
+
+def atomic_add_n(counter: Atomic[int], n: int) -> void {
+    counter.fetch_add(n)
+}
+
+# ---- Atomic load and store ---------------------------------------------------
+
+def demo_atomic_load_store() -> void {
+    val: Atomic[int] = Atomic.new(42)
+    current: int = val.load()
+    val.store(current * 2)
+    updated: int = val.load()
+    print("was={current} now={updated}")
+}
+
+# ---- Atomic[bool] as cancellation flag --------------------------------------
+
+def cancellable_work(flag: Atomic[bool]) -> int {
+    mut total: int = 0
+    mut i: int = 0
+    while i < 1000000 {
+        if flag.load() {
+            return total
+        }
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+def demo_cancellation_flag() -> void {
+    flag: Atomic[bool] = Atomic.new(false)
+    task: Task[int] = spawn cancellable_work(flag)
+
+    do_some_other_work()
+
+    flag.store(true)
+    result: int = task.join()
+    print("partial result: {result}")
+}
+
+def do_some_other_work() -> void {
+    mut i: int = 0
+    while i < 100 {
+        i = i + 1
+    }
+}
+
+# ---- Atomic counter across many tasks ----------------------------------------
+
+def sum_worker(start: int, end: int, shared: Atomic[int]) -> void {
+    mut i: int = start
+    while i < end {
+        shared.fetch_add(i)
+        i = i + 1
+    }
+}
+
+def demo_parallel_sum(n: int) -> int {
+    total: Atomic[int] = Atomic.new(0)
+    chunk: int = n / 4
+
+    t1: Task[void] = spawn sum_worker(0, chunk, total)
+    t2: Task[void] = spawn sum_worker(chunk, chunk * 2, total)
+    t3: Task[void] = spawn sum_worker(chunk * 2, chunk * 3, total)
+    t4: Task[void] = spawn sum_worker(chunk * 3, n, total)
+
+    t1.join()
+    t2.join()
+    t3.join()
+    t4.join()
+
+    return total.load()
+}
+
+# ---- Atomic[int] as sequence number -----------------------------------------
+
+def next_id(seq: Atomic[int]) -> int {
+    seq.fetch_add(1)
+    return seq.load()
+}
+
+def demo_sequence() -> void {
+    seq: Atomic[int] = Atomic.new(0)
+    id1: int = next_id(seq)
+    id2: int = next_id(seq)
+    id3: int = next_id(seq)
+    print("ids: {id1} {id2} {id3}")
+}
+
+def main() -> void {
+    demo_atomic_counter()
+    demo_atomic_load_store()
+    demo_cancellation_flag()
+    demo_sequence()
+}

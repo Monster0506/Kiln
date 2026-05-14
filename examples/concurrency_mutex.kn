@@ -1,0 +1,120 @@
+# concurrency_mutex.kn -- Mutex[T] for exclusive access to shared state
+
+# ---- Basic Mutex usage -------------------------------------------------------
+
+def demo_basic_mutex() -> void {
+    shared: Mutex[Vec[int]] = Mutex.new(Vec.new())
+
+    t1: Task[void] = spawn push_value(shared, 1)
+    t2: Task[void] = spawn push_value(shared, 2)
+    t3: Task[void] = spawn push_value(shared, 3)
+
+    t1.join()
+    t2.join()
+    t3.join()
+
+    guard: MutexGuard[Vec[int]] = shared.lock()
+    len: int = guard.value.length()
+    print("count = {len}")
+}
+
+def push_value(m: Mutex[Vec[int]], v: int) -> void {
+    guard: MutexGuard[Vec[int]] = m.lock()
+    guard.value.add(v)
+    # lock released when guard goes out of scope
+}
+
+# ---- Mutex[int] shared counter -----------------------------------------------
+
+def increment_mutex(m: Mutex[int]) -> void {
+    guard: MutexGuard[int] = m.lock()
+    guard.value = guard.value + 1
+}
+
+def demo_mutex_counter() -> void {
+    counter: Mutex[int] = Mutex.new(0)
+
+    tasks: Vec[Task[void]] = Vec.new()
+    mut i: int = 0
+    while i < 10 {
+        t: Task[void] = spawn increment_mutex(counter)
+        tasks.add(t)
+        i = i + 1
+    }
+
+    for t <- tasks {
+        t.join()
+    }
+
+    guard: MutexGuard[int] = counter.lock()
+    print("final count = {guard.value}")
+}
+
+# ---- Mutex protecting a Map --------------------------------------------------
+
+def insert_entry(m: Mutex[Map[str, int]], key: str, val: int) -> void {
+    guard: MutexGuard[Map[str, int]] = m.lock()
+    guard.value.set(key, val)
+}
+
+def get_entry(m: Mutex[Map[str, int]], key: str) -> Option[int] {
+    guard: MutexGuard[Map[str, int]] = m.lock()
+    return guard.value.get(key)
+}
+
+def demo_mutex_map() -> void {
+    registry: Mutex[Map[str, int]] = Mutex.new(Map.new())
+
+    t1: Task[void] = spawn insert_entry(registry, "a", 1)
+    t2: Task[void] = spawn insert_entry(registry, "b", 2)
+    t3: Task[void] = spawn insert_entry(registry, "c", 3)
+
+    t1.join()
+    t2.join()
+    t3.join()
+
+    va: Option[int] = get_entry(registry, "a")
+    print("a = {va?}")
+}
+
+# ---- Producer / consumer pattern ---------------------------------------------
+
+def producer(queue: Mutex[Vec[int]], n: int) -> void {
+    mut i: int = 0
+    while i < n {
+        guard: MutexGuard[Vec[int]] = queue.lock()
+        guard.value.add(i)
+        i = i + 1
+    }
+}
+
+def consumer(queue: Mutex[Vec[int]]) -> int {
+    mut total: int = 0
+    mut i: int = 0
+    while i < 100 {
+        guard: MutexGuard[Vec[int]] = queue.lock()
+        if guard.value.length() > 0 {
+            v: int = guard.value[0]
+            guard.value.remove(0)
+            total = total + v
+        }
+        i = i + 1
+    }
+    return total
+}
+
+def demo_producer_consumer() -> void {
+    queue: Mutex[Vec[int]] = Mutex.new(Vec.new())
+    prod: Task[void] = spawn producer(queue, 50)
+    cons: Task[int] = spawn consumer(queue)
+    prod.join()
+    total: int = cons.join()
+    print("consumed total = {total}")
+}
+
+def main() -> void {
+    demo_basic_mutex()
+    demo_mutex_counter()
+    demo_mutex_map()
+    demo_producer_consumer()
+}

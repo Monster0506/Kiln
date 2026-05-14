@@ -1,0 +1,119 @@
+# mem_weak.kn -- Weak[T] for breaking reference cycles
+
+# ---- The cycle problem -------------------------------------------------------
+#
+# If Parent holds Shared[Child] and Child holds Shared[Parent], neither ever
+# drops. Weak[T] breaks the cycle: the weaker side does not increment the
+# ref count and cannot prevent the value from being freed.
+
+struct Parent {
+    name: str
+    child: Option[Shared[Child]]
+}
+
+struct Child {
+    name: str
+    parent: Weak[Parent]
+}
+
+def make_family(parent_name: str, child_name: str) -> Shared[Parent] {
+    parent: Shared[Parent] = Shared.new(Parent { name: parent_name, child: None })
+    child: Shared[Child] = Shared.new(Child {
+        name: child_name,
+        parent: parent.downgrade()
+    })
+    return parent
+}
+
+# ---- Upgrading a Weak reference -----------------------------------------------
+#
+# .upgrade() returns Option[Shared[T]]: Some if the value is still alive,
+# None if it was already freed.
+
+def print_parent_name(child: &Child) -> void {
+    match child.parent.upgrade() {
+        Some { value: parent } => print("parent: {parent.name}"),
+        None                   => print("parent was freed")
+    }
+}
+
+def with_parent(child: &Child, f: Callable[(Shared[Parent]), void]) -> void {
+    match child.parent.upgrade() {
+        Some { value: parent } => f(parent),
+        None                   => print("parent already dropped")
+    }
+}
+
+# ---- Observer pattern with Weak -----------------------------------------------
+#
+# Listeners hold a Weak back-reference so the event source does not keep them
+# alive. Dead listeners are silently skipped.
+
+struct EventSource {
+    priv listeners: Vec[Weak[Listener]]
+
+    def subscribe(listener: Weak[Listener]) -> void {
+        listeners.add(listener)
+    }
+
+    def notify(event: str) -> void {
+        for weak <- listeners {
+            match weak.upgrade() {
+                Some { value: listener } => listener.on_event(event),
+                None                     => print("skipped freed listener")
+            }
+        }
+    }
+}
+
+struct Listener {
+    name: str
+
+    def on_event(event: str) -> void {
+        print("{name} received: {event}")
+    }
+}
+
+def demo_observer() -> void {
+    source: EventSource = EventSource { listeners: Vec.new() }
+    listener: Shared[Listener] = Shared.new(Listener { name: "L1" })
+    source.subscribe(listener.downgrade())
+    source.notify("click")
+}
+
+# ---- Weak cache -------------------------------------------------------------
+#
+# Cache entries are weak: if the caller drops their Shared, the cache entry
+# automatically becomes invalid.
+
+struct WeakCache {
+    priv entries: Map[str, Weak[Vec[int]]]
+
+    def insert(key: str, value: Shared[Vec[int]]) -> void {
+        entries.set(key, value.downgrade())
+    }
+
+    def get(key: str) -> Option[Shared[Vec[int]]] {
+        match entries.get(key) {
+            Some { value: weak } => weak.upgrade(),
+            None                 => None
+        }
+    }
+}
+
+def demo_weak_cache() -> void {
+    cache: WeakCache = WeakCache { entries: Map.new() }
+
+    data: Shared[Vec[int]] = Shared.new(Vec.new())
+    cache.insert("nums", data)
+
+    match cache.get("nums") {
+        Some { value: v } => print("found: {v.length()} items"),
+        None              => print("not found or freed")
+    }
+}
+
+def main() -> void {
+    demo_observer()
+    demo_weak_cache()
+}

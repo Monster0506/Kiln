@@ -1,0 +1,112 @@
+# operators.kn -- arithmetic, comparison, boolean, spaceship, precedence
+
+# ---- Arithmetic operators ----------------------------------------------------
+
+def demo_arithmetic(a: int, b: int) -> int {
+    sum: int = a + b
+    diff: int = a - b
+    product: int = a * b
+    quotient: int = a / b
+    return sum + diff + product + quotient
+}
+
+def demo_float_arithmetic(x: float, y: float) -> float {
+    return x * y + x / y - y
+}
+
+def demo_unary_neg() -> void {
+    n: int = -5
+    f: float = -3.14
+    a: int = 10
+    neg_a: int = -a
+}
+
+# ---- Comparison operators ----------------------------------------------------
+
+def demo_comparisons(a: int, b: int) -> bool {
+    eq: bool = a == b
+    lt: bool = a < b
+    gt: bool = a > b
+    lte: bool = a <= b
+    gte: bool = a >= b
+    return eq || lt || gt || lte || gte
+}
+
+def demo_float_comparisons(x: float, y: float) -> bool {
+    return x > 0.0 && y < 1.0 && !(x == y)
+}
+
+# ---- Boolean operators -------------------------------------------------------
+
+def demo_booleans(a: bool, b: bool) -> bool {
+    both: bool = a && b
+    either: bool = a || b
+    inverted: bool = !a
+    compound: bool = !a && (b || inverted)
+    return both || either || compound
+}
+
+def demo_short_circuit(x: int) -> bool {
+    return x > 0 && x < 100
+}
+
+# ---- Operator precedence -----------------------------------------------------
+
+def demo_precedence() -> void {
+    # Mul before add
+    r1: int = 2 + 3 * 4         # 14
+    r2: int = (2 + 3) * 4       # 20
+
+    # Comparison lower than arithmetic
+    r3: bool = 1 + 2 == 3       # true
+
+    # Not before && before ||
+    r4: bool = !false && true || false
+    r5: bool = !(false && true) || false
+
+    # Left-associative subtraction
+    r6: int = 10 - 3 - 2        # 5
+
+    # Left-associative division
+    r7: float = 1.0 + 2.0 * 3.0 / 4.0
+}
+
+# ---- Spaceship operator ------------------------------------------------------
+
+def demo_spaceship(a: int, b: int) -> int {
+    return a <=> b
+}
+
+def compare_ints(a: int, b: int) -> str {
+    result: int = a <=> b
+    if result < 0 {
+        return "less"
+    } elif result > 0 {
+        return "greater"
+    } else {
+        return "equal"
+    }
+}
+
+# ---- Type casting ------------------------------------------------------------
+
+def demo_casting() -> void {
+    n: int = int(3.7)
+    f: float = 5 as float
+    also_n: int = 9.9 as int
+    also_f: float = int(2) as float
+}
+
+def int_to_float(n: int) -> float {
+    return n as float
+}
+
+def float_to_int(f: float) -> int {
+    return f as int
+}
+
+def main() -> void {
+    demo_unary_neg()
+    demo_precedence()
+    demo_casting()
+}

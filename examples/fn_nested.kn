@@ -1,0 +1,75 @@
+# fn_nested.kn -- nested function definitions, closures as inner helpers
+
+def outer() -> int {
+    x: int = 10
+    def inner() -> int {
+        return x * 2
+    }
+    return inner()
+}
+
+def make_adder(n: int) -> int {
+    def add_n(x: int) -> int {
+        return x + n
+    }
+    return add_n(5)
+}
+
+def compute_with_helpers(data: Vec[int]) -> int {
+    def is_even(n: int) -> bool {
+        return n == n / 2 * 2
+    }
+    def double(n: int) -> int {
+        return n * 2
+    }
+    mut total: int = 0
+    for n <- data {
+        if is_even(n) {
+            total = total + double(n)
+        }
+    }
+    return total
+}
+
+def process_list(items: Vec[int], threshold: int) -> Vec[int] {
+    def passes(x: int) -> bool {
+        return x > threshold && x < threshold * 10
+    }
+    def transform(x: int) -> int {
+        return x * 2 - threshold
+    }
+    result: Vec[int] = Vec.new()
+    for item <- items {
+        if passes(item) {
+            result.add(transform(item))
+        }
+    }
+    return result
+}
+
+def nested_helpers(a: int, b: int, c: int) -> int {
+    def add(x: int, y: int) -> int {
+        return x + y
+    }
+    def mul(x: int, y: int) -> int {
+        return x * y
+    }
+    return add(mul(a, b), mul(b, c))
+}
+
+def find_with_helper(nums: Vec[int]) -> int {
+    def is_target(n: int) -> bool {
+        return n > 10 && n < 20
+    }
+    for n <- nums {
+        if is_target(n) {
+            return n
+        }
+    }
+    return -1
+}
+
+def main() -> void {
+    outer()
+    make_adder(5)
+}

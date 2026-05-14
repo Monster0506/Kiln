@@ -1,0 +1,172 @@
+# iface_hierarchy.kn -- exception hierarchy and interface inheritance
+
+# ---- Built-in Exception interface -------------------------------------------
+#
+# interface Exception {
+#   message: str
+# }
+
+# ---- First-level interface extensions ----------------------------------------
+
+interface IoError: Exception {
+    path: str
+    hook retry_allowed() -> bool
+}
+
+interface NetworkError: Exception {
+    host: str
+    port: int
+}
+
+interface ParseError: Exception {
+    line: int
+    col: int
+}
+
+interface ValidationError: Exception {
+    field: str
+}
+
+# ---- Second-level extensions ------------------------------------------------
+
+interface FsError: IoError {
+    hook is_recoverable() -> bool
+}
+
+interface HttpError: NetworkError {
+    hook status_code() -> int
+}
+
+# ---- Concrete exception structs implementing the hierarchy ------------------
+
+struct FileNotFoundError: FsError {
+    message: str
+    path: str
+}
+
+impl FsError for FileNotFoundError {
+    hook retry_allowed() -> bool {
+        return false
+    }
+
+    hook is_recoverable() -> bool {
+        return false
+    }
+}
+
+struct PermissionDeniedError: FsError {
+    message: str
+    path: str
+}
+
+impl FsError for PermissionDeniedError {
+    hook retry_allowed() -> bool {
+        return false
+    }
+
+    hook is_recoverable() -> bool {
+        return false
+    }
+}
+
+struct DiskFullError: IoError {
+    message: str
+    path: str
+    needed_bytes: int
+}
+
+impl IoError for DiskFullError {
+    hook retry_allowed() -> bool {
+        return false
+    }
+}
+
+struct ConnectionRefusedError: HttpError {
+    message: str
+    host: str
+    port: int
+}
+
+impl HttpError for ConnectionRefusedError {
+    hook status_code() -> int {
+        return 503
+    }
+}
+
+struct HttpTimeoutError: HttpError {
+    message: str
+    host: str
+    port: int
+    seconds: float
+}
+
+impl HttpError for HttpTimeoutError {
+    hook status_code() -> int {
+        return 504
+    }
+}
+
+struct TypeMismatchError: ParseError {
+    message: str
+    line: int
+    col: int
+    expected_type: str
+}
+
+struct FieldRequiredError: ValidationError {
+    message: str
+    field: str
+}
+
+# ---- Catching by hierarchy level --------------------------------------------
+#
+# An `except IoError as e` clause catches any type implementing IoError,
+# which includes FsError and its subtypes.
+
+def read_file(path: str) -> str {
+    if path.length() == 0 {
+        raise FileNotFoundError { message: "empty path", path: "" }
+    }
+    return "file content"
+}
+
+def demo_catch_hierarchy(path: str) -> str {
+    try {
+        return read_file(path)
+    } except FileNotFoundError as e {
+        print("not found: {e.path}")
+    } except PermissionDeniedError as e {
+        print("no permission: {e.path}")
+    } except FsError as e {
+        print("fs error: {e.message}")
+    } except IoError as e {
+        print("io error: {e.message}")
+    } except Exception as e {
+        print("other: {e.message}")
+    }
+    return ""
+}
+
+def demo_catch_network(host: str, port: int) -> str {
+    try {
+        return connect(host, port)
+    } except HttpTimeoutError as e {
+        print("timeout after {e.seconds}s")
+    } except ConnectionRefusedError as e {
+        print("refused: {e.status_code()}")
+    } except HttpError as e {
+        print("http error: {e.status_code()}")
+    } except NetworkError as e {
+        print("network: {e.message}")
+    } except Exception as e {
+        print("unknown: {e.message}")
+    }
+    return ""
+}
+
+def connect(host: str, port: int) -> str {
+    return "connected"
+}
+
+def main() -> void {
+}

@@ -1,0 +1,122 @@
+# mem_indirect.kn -- @indirect for recursive struct types
+
+# ---- Linked list via @indirect -----------------------------------------------
+
+struct ListNode {
+    value: int
+    @indirect next: Option[ListNode]
+}
+
+def list_push_front(head: Option[ListNode], val: int) -> ListNode {
+    return ListNode { value: val, next: head }
+}
+
+def list_sum(head: Option[ListNode]) -> int {
+    mut total: int = 0
+    mut current: Option[ListNode] = head
+    mut is_some: bool = match current { Some { value: _ } => true, None => false }
+    while is_some {
+        node: ListNode = match current { Some { value: n } => n, None => ListNode { value: 0, next: None } }
+        total = total + node.value
+        current = node.next
+        is_some = match current { Some { value: _ } => true, None => false }
+    }
+    return total
+}
+
+def list_length(head: Option[ListNode]) -> int {
+    mut count: int = 0
+    mut current: Option[ListNode] = head
+    mut is_some: bool = match current { Some { value: _ } => true, None => false }
+    while is_some {
+        node: ListNode = match current { Some { value: n } => n, None => ListNode { value: 0, next: None } }
+        count = count + 1
+        current = node.next
+        is_some = match current { Some { value: _ } => true, None => false }
+    }
+    return count
+}
+
+def demo_linked_list() -> void {
+    empty: Option[ListNode] = None
+    node3: ListNode = list_push_front(empty, 3)
+    node2: ListNode = list_push_front(Some { value: node3 }, 2)
+    node1: ListNode = list_push_front(Some { value: node2 }, 1)
+    head: Option[ListNode] = Some { value: node1 }
+    total: int = list_sum(head)
+    len: int = list_length(head)
+}
+
+# ---- Binary tree via @indirect -----------------------------------------------
+
+struct BinNode {
+    value: int
+    @indirect left: Option[BinNode]
+    @indirect right: Option[BinNode]
+}
+
+def tree_insert(root: Option[BinNode], val: int) -> BinNode {
+    new_node: BinNode = BinNode { value: val, left: None, right: None }
+    has_root: bool = match root { Some { value: _ } => true, None => false }
+    if !has_root { return new_node }
+    existing: BinNode = match root { Some { value: n } => n, None => new_node }
+    if val < existing.value {
+        updated: BinNode = BinNode {
+            value: existing.value,
+            left: Some { value: tree_insert(existing.left, val) },
+            right: existing.right
+        }
+        return updated
+    } else {
+        updated: BinNode = BinNode {
+            value: existing.value,
+            left: existing.left,
+            right: Some { value: tree_insert(existing.right, val) }
+        }
+        return updated
+    }
+}
+
+def tree_contains(root: &Option[BinNode], val: int) -> bool {
+    is_some: bool = match root { Some { value: _ } => true, None => false }
+    if !is_some { return false }
+    node: BinNode = match root { Some { value: n } => n, None => BinNode { value: 0, left: None, right: None } }
+    if val == node.value {
+        return true
+    } elif val < node.value {
+        left_ref: Option[BinNode] = node.left
+        return tree_contains(&left_ref, val)
+    } else {
+        right_ref: Option[BinNode] = node.right
+        return tree_contains(&right_ref, val)
+    }
+}
+
+def tree_height(root: &Option[BinNode]) -> int {
+    is_some: bool = match root { Some { value: _ } => true, None => false }
+    if !is_some { return 0 }
+    node: BinNode = match root { Some { value: n } => n, None => BinNode { value: 0, left: None, right: None } }
+    left_ref: Option[BinNode] = node.left
+    right_ref: Option[BinNode] = node.right
+    lh: int = tree_height(&left_ref)
+    rh: int = tree_height(&right_ref)
+    if lh > rh {
+        return lh + 1
+    } else {
+        return rh + 1
+    }
+}
+
+def demo_binary_tree() -> void {
+    mut root: Option[BinNode] = None
+    root = Some { value: tree_insert(root, 5) }
+    root = Some { value: tree_insert(root, 3) }
+    root = Some { value: tree_insert(root, 7) }
+    found: bool = tree_contains(&root, 3)
+    height: int = tree_height(&root)
+}
+
+def main() -> void {
+    demo_linked_list()
+    demo_binary_tree()
+}

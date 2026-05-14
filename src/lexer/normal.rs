@@ -80,10 +80,10 @@ impl<'src> Lexer<'src> {
             }
         }
 
-        // String literal entry.
-        if self.peek() == Some('"') {
-            self.advance(); // consume opening `"`
-            self.mode_stack.push(Mode::String);
+        // String literal entry (both `"` and `'` start a string).
+        if self.peek() == Some('"') || self.peek() == Some('\'') {
+            let close = self.advance().unwrap();
+            self.mode_stack.push(Mode::String { close });
             return Ok(Token::new(TokenKind::StringStart, start, self.pos));
         }
 
@@ -103,8 +103,15 @@ impl<'src> Lexer<'src> {
             Some('/') => Ok(Token::new(TokenKind::Slash, start, self.pos)),
             Some('?') => Ok(Token::new(TokenKind::Question, start, self.pos)),
             Some('@') => Ok(Token::new(TokenKind::At, start, self.pos)),
-            Some('!') => Ok(Token::new(TokenKind::Bang, start, self.pos)),
+            Some('!') => {
+                if self.eat('=') {
+                    Ok(Token::new(TokenKind::BangEq, start, self.pos))
+                } else {
+                    Ok(Token::new(TokenKind::Bang, start, self.pos))
+                }
+            }
             Some('*') => Ok(Token::new(TokenKind::Star, start, self.pos)),
+            Some('%') => Ok(Token::new(TokenKind::Percent, start, self.pos)),
             Some('|') => {
                 if self.eat('|') {
                     Ok(Token::new(TokenKind::PipePipe, start, self.pos))
@@ -178,7 +185,6 @@ fn keyword_or_ident(s: &str) -> TokenKind {
         "processor" => TokenKind::Processor,
         "type" => TokenKind::Type,
         "hook" => TokenKind::Hook,
-        "const" => TokenKind::Const,
         "priv" => TokenKind::Priv,
         "return" => TokenKind::Return,
         "raise" => TokenKind::Raise,

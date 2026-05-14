@@ -1,0 +1,108 @@
+# mem_copy_move.kn -- copy semantics for primitives, move for heap types
+
+# ---- Copy types: primitives copy on assignment ------------------------------
+
+def demo_int_copy() -> void {
+    x: int = 5
+    mut y: int = x   # copy: both x and y are valid
+    y = 10           # changing y does not affect x
+    a: int = x + y   # x is still 5
+}
+
+def demo_float_copy() -> void {
+    a: float = 3.14
+    mut b: float = a  # copy
+    b = 2.71          # a is unchanged
+}
+
+def demo_bool_copy() -> void {
+    flag: bool = true
+    mut other: bool = flag  # copy
+    other = false           # flag is unchanged
+}
+
+def demo_copy_in_loop() -> void {
+    base: int = 10
+    mut total: int = 0
+    mut i: int = 0
+    while i < 5 {
+        n: int = base   # copy each iteration
+        total = total + n + i
+        i = i + 1
+    }
+}
+
+# ---- Move types: heap-allocated values transfer ownership -------------------
+
+def demo_vec_move() -> void {
+    a: Vec[int] = Vec.new()
+    b: Vec[int] = a       # move: a is no longer valid after this
+    b.add(1)
+    b.add(2)
+}
+
+def demo_map_move() -> void {
+    m: Map[str, int] = Map.new()
+    n: Map[str, int] = m   # move
+    n.set("key", 42)
+}
+
+# ---- Moving into a function -------------------------------------------------
+
+def consume(items: Vec[int]) -> int {
+    mut total: int = 0
+    for x <- items {
+        total = total + x
+    }
+    return total
+}
+
+def demo_move_to_fn() -> void {
+    nums: Vec[int] = Vec.new()
+    nums.add(1)
+    nums.add(2)
+    nums.add(3)
+    result: int = consume(nums)  # nums moved into consume
+    # nums is invalid here
+}
+
+# ---- Returning a moved value ------------------------------------------------
+
+def make_vec() -> Vec[int] {
+    v: Vec[int] = Vec.new()
+    v.add(10)
+    v.add(20)
+    return v   # ownership transferred to caller
+}
+
+def demo_return_move() -> void {
+    items: Vec[int] = make_vec()
+    items.add(30)
+}
+
+# ---- Struct move ------------------------------------------------------------
+
+struct Buffer {
+    priv data: Vec[int]
+    size: int
+}
+
+def take_buffer(buf: Buffer) -> int {
+    return buf.size
+}
+
+def demo_struct_move() -> void {
+    buf: Buffer = Buffer { data: Vec.new(), size: 0 }
+    n: int = take_buffer(buf)  # buf moved
+}
+
+def main() -> void {
+    demo_int_copy()
+    demo_float_copy()
+    demo_bool_copy()
+    demo_copy_in_loop()
+    demo_vec_move()
+    demo_map_move()
+    demo_return_move()
+    demo_struct_move()
+}

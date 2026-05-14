@@ -1,0 +1,80 @@
+# strings.kn -- string literals, interpolation, method calls
+
+# ---- Plain string literals ---------------------------------------------------
+
+def demo_plain() -> void {
+    s1: str = "hello world"
+    s2: str = "kiln"
+    s3: str = ""
+    s4: str = "with spaces and punctuation!"
+}
+
+# ---- Escape sequences --------------------------------------------------------
+
+def demo_escapes() -> void {
+    brace: str = "literal brace: \{"
+    close: str = "and close: \}"
+    newline: str = "line one\nline two"
+    tab: str = "col1\tcol2"
+    quote: str = "she said \"hello\""
+    backslash: str = "path: C:\\Users"
+}
+
+# ---- String interpolation ----------------------------------------------------
+
+def demo_interp() -> void {
+    name: str = "world"
+    greeting: str = "hello, {name}!"
+
+    x: int = 3
+    y: int = 4
+    multi: str = "x={x} and y={y} total={x + y}"
+}
+
+def demo_string_returns() -> str {
+    x: int = 7
+    return "the answer is {x * 6}"
+}
+
+def greet(name: str, title: str) -> str {
+    return "hello, {title} {name}!"
+}
+
+# ---- Expressions inside interpolation ----------------------------------------
+
+def demo_expr_interp(a: int, b: int) -> void {
+    sum_str: str = "sum = {a + b}"
+    diff_str: str = "diff = {a - b}"
+    prod_str: str = "product = {a * b}"
+    cmp_str: str = "a > b: {a > b}"
+}
+
+def demo_call_interp(items: Vec[str]) -> void {
+    len_str: str = "length = {items.length()}"
+}
+
+def demo_nested_call_interp(n: int) -> str {
+    return "result is {compute(n)}"
+}
+
+def compute(n: int) -> int {
+    return n * n
+}
+
+# ---- String methods (illustrative) -------------------------------------------
+
+def demo_string_ops(s: str) -> void {
+    up: str = s.to_upper()
+    lo: str = s.to_lower()
+    trimmed: str = s.trim()
+    length: int = s.length()
+    starts: bool = s.starts_with("hello")
+    ends: bool = s.ends_with("world")
+}
+
+def main() -> void {
+    demo_plain()
+    demo_escapes()
+    demo_interp()
+    demo_string_returns()
+}

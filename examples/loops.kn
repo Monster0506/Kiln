@@ -1,0 +1,175 @@
+# loops.kn -- while, do-while, for, break, continue
+
+# ---- while loops -------------------------------------------------------------
+
+def count_down(n: int) -> void {
+    mut i: int = n
+    while i > 0 {
+        i = i - 1
+    }
+}
+
+def collatz(n: int) -> int {
+    mut val: int = n
+    mut steps: int = 0
+    while !(val == 1) {
+        if val == val / 2 * 2 {
+            val = val / 2
+        } else {
+            val = val * 3 + 1
+        }
+        steps = steps + 1
+    }
+    return steps
+}
+
+def sum_while(n: int) -> int {
+    mut total: int = 0
+    mut i: int = 0
+    while i <= n {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+def find_first_over(items: Vec[int], threshold: int) -> int {
+    mut i: int = 0
+    while i < items.length() {
+        if items[i] > threshold {
+            return items[i]
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+# ---- do-while loops ----------------------------------------------------------
+
+def read_until_zero(buf: Vec[int]) -> void {
+    mut i: int = 0
+    do {
+        i = i + 1
+    } while i < buf.length()
+}
+
+def retry_until_success(max_tries: int) -> bool {
+    mut tries: int = 0
+    mut success: bool = false
+    do {
+        success = attempt()
+        tries = tries + 1
+    } while !success && tries < max_tries
+    return success
+}
+
+def attempt() -> bool { return true }
+
+def scan_input() -> int {
+    mut total: int = 0
+    do {
+        val: int = next_value()
+        total = total + val
+    } while total < 100
+    return total
+}
+
+def next_value() -> int { return 1 }
+
+# ---- for loops ---------------------------------------------------------------
+
+def sum_vec(nums: Vec[int]) -> int {
+    mut total: int = 0
+    for n <- nums {
+        total = total + n
+    }
+    return total
+}
+
+def print_each(items: Vec[str]) -> void {
+    for item <- items {
+        print("{item}")
+    }
+}
+
+def typed_for(nums: Vec[int]) -> void {
+    for n: int <- nums {
+        print("{n}")
+    }
+}
+
+def nested_loops(matrix: Vec[Vec[int]]) -> void {
+    for row <- matrix {
+        for val <- row {
+            print("{val}")
+        }
+    }
+}
+
+def count_positives(nums: Vec[int]) -> int {
+    mut count: int = 0
+    for n <- nums {
+        if n > 0 {
+            count = count + 1
+        }
+    }
+    return count
+}
+
+def double_all(nums: Vec[int]) -> Vec[int] {
+    result: Vec[int] = Vec.new()
+    for n <- nums {
+        result.add(n * 2)
+    }
+    return result
+}
+
+# ---- break and continue ------------------------------------------------------
+
+def first_negative(nums: Vec[int]) -> int {
+    mut result: int = 0
+    for n <- nums {
+        if n < 0 {
+            result = n
+            break
+        }
+    }
+    return result
+}
+
+def skip_zeros(nums: Vec[int]) -> void {
+    for n <- nums {
+        if n == 0 {
+            continue
+        }
+        print("{n}")
+    }
+}
+
+def skip_negatives(nums: Vec[int]) -> Vec[int] {
+    result: Vec[int] = Vec.new()
+    for n <- nums {
+        if n < 0 {
+            continue
+        }
+        result.add(n)
+    }
+    return result
+}
+
+def take_until(nums: Vec[int], sentinel: int) -> Vec[int] {
+    result: Vec[int] = Vec.new()
+    for n <- nums {
+        if n == sentinel {
+            break
+        }
+        result.add(n)
+    }
+    return result
+}
+
+def main() -> void {
+    count_down(5)
+    collatz(7)
+    sum_while(10)
+}

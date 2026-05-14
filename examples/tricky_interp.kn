@@ -1,0 +1,49 @@
+# tricky_interp.kn -- string interpolation edge cases
+
+def demo_simple_interp(name: str) -> str {
+    return "hello {name}"
+}
+
+def demo_arith_interp(x: int, y: int) -> void {
+    s1: str = "sum = {x + y}"
+    s2: str = "product = {x * y}"
+    s3: str = "diff = {x - y}"
+}
+
+def demo_compare_interp(x: int, y: int) -> void {
+    s1: str = "x>y: {x > y}"
+}
+
+def demo_logical_interp(x: int, y: int) -> void {
+    s1: str = "both positive: {x > 0 && y > 0}"
+}
+
+def demo_call_interp(items: Vec[str], name: str) -> void {
+    s1: str = "length = {items.length()}"
+    s2: str = "name len = {name.length()}"
+    s3: str = "upper = {name.to_upper()}"
+}
+
+def demo_index_interp(items: Vec[str]) -> void {
+    s1: str = "first = {items[0]}"
+}
+
+def demo_unary_interp(x: int) -> void {
+    s1: str = "neg = {-x}"
+    s2: str = "not = {!false}"
+}
+
+def demo_multi_interp(x: int, y: int) -> void {
+    s1: str = "x={x} y={y} sum={x+y} product={x*y}"
+}
+
+def demo_nested_interp(items: Vec[int]) -> void {
+    n: int = items.length()
+    s1: str = "count={n} doubled={n * 2}"
+}
+
+def main() -> void {
+    demo_arith_interp(10, 5)
+    demo_compare_interp(3, 7)
+    demo_unary_interp(5)
+}

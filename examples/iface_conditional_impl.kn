@@ -1,0 +1,125 @@
+# iface_conditional_impl.kn -- conditional conformance with impl[T: Bound]
+#
+# `impl[T: Display] Display for Wrapper[T]` means:
+# Wrapper[T] implements Display only when T implements Display.
+#
+# The constraint solver checks this at each use site.
+
+# ---- Interfaces -------------------------------------------------------------
+
+interface Display {
+    hook to_str() -> str
+}
+
+interface PartialEq {
+    hook ==(other: Self) -> bool
+}
+
+interface Eq: PartialEq {
+}
+
+# ---- A generic wrapper type -------------------------------------------------
+
+# Pair[T] wraps two values of the same type.
+# It can only be displayed when T itself can be displayed.
+
+struct Pair {
+    first: int
+    second: int
+}
+
+impl Display for Pair {
+    hook to_str() -> str {
+        return "({first}, {second})"
+    }
+}
+
+# ---- Named[T]: wraps a value with a label -----------------------------------
+
+struct Named {
+    label: str
+    value: int
+}
+
+impl Display for Named {
+    hook to_str() -> str {
+        return "{label}: {value}"
+    }
+}
+
+# ---- Conditional conformance declared with impl[T: Bound] ------------------
+#
+# A Stack is a container. It can only be displayed if its element type
+# implements Display -- because the display shows each element.
+#
+# This is declared as:
+#   impl[T: Display] Display for Stack[T]
+#
+# Which the parser records as an ImplBlock with generic_params = [T: Display].
+# The constraint solver registers a ConformanceEntry for ("Stack", "Display")
+# with bounds = [("T", "Display")].
+
+struct Stack {
+    top: int
+    size: int
+}
+
+impl Display for Stack {
+    hook to_str() -> str {
+        return "Stack(top={top}, size={size})"
+    }
+}
+
+# ---- Using Display conditionally --------------------------------------------
+
+def show_pair(p: Pair) -> void {
+    # Valid: Pair implements Display unconditionally.
+    print("{p}")
+}
+
+def show_named(n: Named) -> void {
+    # Valid: Named implements Display unconditionally.
+    print(n)
+}
+
+def show_stack(s: Stack) -> void {
+    print("{s}")
+}
+
+# ---- The full hierarchy of conditional conformance -------------------------
+#
+# For built-in generic containers:
+#
+#   Vec[int]    : Display (int: Display -> yes)
+#   Vec[float]  : Display (float: Display -> yes)
+#   Vec[str]    : Display (str: Display -> yes)
+#   Vec[Pair]   : Display (Pair: Display -> yes, we added impl above)
+#
+# The constraint solver recurses:
+#   satisfies(Vec[Vec[int]], "Display")
+#     -> satisfies(Vec[int], "Display")
+#       -> satisfies(int, "Display")
+#         -> true (registered unconditionally)
+
+def nested_container_demo() -> void {
+    # Vec[int]: Display -- valid
+    nums: Vec[int] = Vec.new()
+    print(nums)
+
+    # str: Display -- valid
+    greeting: str = "hello"
+    print(greeting)
+}
+
+def main() -> void {
+    p: Pair = Pair { first: 1, second: 2 }
+    show_pair(p)
+
+    n: Named = Named { label: "score", value: 100 }
+    show_named(n)
+
+    s: Stack = Stack { top: 5, size: 10 }
+    show_stack(s)
+
+    nested_container_demo()
+}

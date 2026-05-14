@@ -32,7 +32,6 @@ pub enum TokenKind {
     Processor,
     Type,
     Hook,
-    Const,
     Priv,
     Return,
     Raise,
@@ -63,8 +62,10 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
+    Percent,
     Eq,        // `=`
     EqEq,      // `==`
+    BangEq,    // `!=`
     Bang,      // `!`
     Lt,        // `<`
     Gt,        // `>`

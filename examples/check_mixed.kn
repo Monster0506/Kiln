@@ -1,0 +1,75 @@
+# check_mixed.kn -- multiple independent errors across several functions
+#
+# Useful for confirming the analyzer accumulates all errors rather than
+# stopping at the first one.
+
+# OK
+def square(x: int) -> int {
+    return x * x
+}
+
+# ERROR: missing return (only one branch)
+def first_positive(a: int, b: int) -> int {
+    if a > 0 {
+        return a
+    } elif b > 0 {
+        return b
+    }
+    # falls through when both are <= 0
+}
+
+# OK
+def is_even(n: int) -> bool {
+    remainder: int = n - (n / 2) * 2
+    if remainder == 0 {
+        return true
+    } else {
+        return false
+    }
+}
+
+# ERROR: assigns to immutable
+def bad_increment(n: int) -> int {
+    n = n + 1
+    return n
+}
+
+# OK
+def absolute(x: int) -> int {
+    if x < 0 {
+        return 0 - x
+    } else {
+        return x
+    }
+}
+
+# ERROR: type mismatch -- declared float, returned bool
+def bad_types(x: int) -> float {
+    return x == 0
+}
+
+# OK: loop with mut counter
+def count_down(n: int) -> int {
+    mut result: int = 0
+    mut i: int = n
+    while i > 0 {
+        result = result + 1
+        i = i - 1
+    }
+    return result
+}
+
+# ERROR: undefined name
+def uses_ghost() -> int {
+    return ghost_value + 1
+}
+
+# OK: two levels of shadowing, no mutation
+def layers(x: int) -> int {
+    x: int = x + 1
+    x: int = x + 1
+    return x
+}
+
+def main() -> void {
+}

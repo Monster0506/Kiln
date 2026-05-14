@@ -1,0 +1,53 @@
+# tricky_precedence.kn -- operator precedence edge cases
+
+def demo_arith_precedence() -> void {
+    r1: int = 2 + 3 * 4         # 14: mul before add
+    r2: int = (2 + 3) * 4       # 20: parens override
+    r3: int = 10 - 3 - 2        # 5: left-associative
+    r4: int = 10 - 3 - 2 - 1   # 4: left-associative chain
+    r5: float = 1.0 / 2.0 / 4.0 # 0.125: left-associative div
+}
+
+def demo_unary_precedence() -> void {
+    r1: int = -2 + 3            # 1: unary binds tighter
+    r2: int = -(2 + 3)          # -5: parens override
+    r3: bool = !false && true   # true: not binds tighter than &&
+    r4: bool = !(false && true) # true: parens override
+}
+
+def demo_logical_precedence() -> void {
+    r1: bool = false || true && true    # true: && before ||
+    r2: bool = (false || true) && true  # true
+    r3: bool = false || false && false  # false: && before ||
+    r4: bool = (false || false) && true # false
+}
+
+def demo_comparison_precedence() -> void {
+    r1: bool = 1 + 2 == 3        # (1+2)==3 -> true
+    r2: bool = 2 * 3 > 4 + 1    # (2*3) > (4+1) -> true
+    r3: bool = 3 * 4 == 12 && 5 + 7 > 10
+    r4: bool = !true || false && true   # false
+}
+
+def demo_spaceship_precedence() -> void {
+    r1: bool = (3 <=> 5) < 0    # true: <=> result compared to int
+    r2: int = 1 <=> 1           # 0
+    r3: int = 5 <=> 3           # positive
+    r4: bool = (5 <=> 3) > 0   # true
+}
+
+def demo_complex_expr() -> void {
+    r1: int = 2 + 3 * 4 - 1 * 2     # 12
+    r2: float = 1.0 + 2.0 * 3.0 / 4.0  # 2.5
+    r3: bool = 3 > 2 && 4 < 5 || false
+    r4: int = -(-5)                   # 5
+}
+
+def main() -> void {
+    demo_arith_precedence()
+    demo_unary_precedence()
+    demo_logical_precedence()
+    demo_comparison_precedence()
+    demo_spaceship_precedence()
+    demo_complex_expr()
+}

@@ -1,0 +1,110 @@
+# tricky_postfix.kn -- postfix operators: ?, as, int(), method chaining
+
+# ---- Unwrap operator (?) ----------------------------------------------------
+
+enum Option[T] {
+    Some { value: T }
+    None
+}
+
+def get_value(opt: Option[int]) -> int {
+    return opt?
+}
+
+def get_nested(outer: Option[Option[int]]) -> int {
+    inner: Option[int] = outer?
+    return inner?
+}
+
+def compute_opt(x: int) -> Option[int] {
+    if x > 0 {
+        return Some { value: x * 2 }
+    }
+    return None
+}
+
+def chain_unwrap(x: int) -> int {
+    result: Option[int] = compute_opt(x)
+    return result?
+}
+
+# ---- as cast ----------------------------------------------------------------
+
+def demo_as_casts() -> void {
+    n: int = 42
+    f: float = n as float
+    back: int = f as int
+
+    big: float = 3.7
+    truncated: int = big as int
+
+    r1: float = 5 as float
+    r2: int = 3.14 as int
+    r3: float = int(9.9) as float
+}
+
+def demo_as_in_expr() -> float {
+    a: int = 7
+    b: int = 2
+    return a as float / b as float
+}
+
+def demo_chained_as() -> void {
+    r1: float = 5 as float
+    r2: int = (5 as float) as int
+    r3: float = int(3.7) as float
+}
+
+# ---- int() and float() cast calls -------------------------------------------
+
+def demo_call_casts() -> void {
+    n1: int = int(3.7)
+    n2: int = int(-2.9)
+    n3: int = int(0.0)
+    f1: float = float(5)
+    f2: float = float(-3)
+    combined: float = int(3.7) as float
+}
+
+# ---- Method chaining --------------------------------------------------------
+
+def demo_method_chain(s: str) -> str {
+    upper: str = s.to_upper()
+    trimmed: str = upper.trim()
+    result: str = trimmed.slice(0, 5)
+    return result
+}
+
+def demo_chained_length(items: Vec[str]) -> int {
+    first: str = items[0]
+    return first.length()
+}
+
+# ---- Index then method -------------------------------------------------------
+
+def demo_index_method(matrix: Vec[Vec[int]]) -> int {
+    row: Vec[int] = matrix[0]
+    len: int = row.length()
+    val: int = matrix[0][1]
+    return len + val
+}
+
+# ---- Field access chains ----------------------------------------------------
+
+struct Node {
+    label: str
+    value: int
+}
+
+def demo_field_chain(n: Node) -> str {
+    label: str = n.label
+    val: int = n.value
+    return "{label}:{val}"
+}
+
+def main() -> void {
+    demo_as_casts()
+    demo_as_in_expr()
+    demo_chained_as()
+    demo_call_casts()
+}

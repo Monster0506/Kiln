@@ -1,0 +1,84 @@
+# patterns_literal.kn -- literal patterns, wildcards, basic match
+
+def weekday_name(day: int) -> str {
+    return match day {
+        0 => "Sunday",
+        1 => "Monday",
+        2 => "Tuesday",
+        3 => "Wednesday",
+        4 => "Thursday",
+        5 => "Friday",
+        6 => "Saturday",
+        _ => "unknown"
+    }
+}
+
+def bool_to_word(b: bool) -> str {
+    return match b {
+        true => "yes",
+        false => "no"
+    }
+}
+
+def classify_http(code: int) -> str {
+    return match code {
+        200 => "OK",
+        201 => "Created",
+        204 => "No Content",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        500 => "Internal Server Error",
+        503 => "Service Unavailable",
+        _ => "other"
+    }
+}
+
+def route_command(cmd: str) -> str {
+    return match cmd {
+        "quit" => "exiting",
+        "help" => "showing help",
+        "ls" => "listing files",
+        "pwd" => "printing directory",
+        "clear" => "clearing screen",
+        _ => "unknown command: {cmd}"
+    }
+}
+
+def wildcard_demo(x: int) -> str {
+    return match x {
+        0 => "zero",
+        1 => "one",
+        _ => "other"
+    }
+}
+
+def at_least_one(items: Vec[int]) -> str {
+    n: int = items.length()
+    return match n {
+        0 => "empty",
+        1 => "one item",
+        _ => "{n} items"
+    }
+}
+
+def nested_bool_match(a: bool, b: bool) -> str {
+    result: str = match a {
+        true => match b {
+            true => "both true",
+            false => "first true only"
+        },
+        false => match b {
+            true => "second true only",
+            false => "both false"
+        }
+    }
+    return result
+}
+
+def main() -> void {
+    weekday_name(0)
+    classify_http(200)
+    bool_to_word(true)
+}

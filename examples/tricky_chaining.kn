@@ -1,0 +1,91 @@
+# tricky_chaining.kn -- field access chains, method chaining, call result chaining
+
+struct Node {
+    value: int
+    label: str
+}
+
+def demo_field_chain(n: Node) -> str {
+    label: str = n.label
+    v: int = n.value
+    return "{label}:{v}"
+}
+
+def demo_method_chain_steps(s: str) -> str {
+    step1: str = s.trim()
+    step2: str = step1.to_upper()
+    result: str = step2.slice(0, 5)
+    return result
+}
+
+def demo_chained_method(s: str) -> str {
+    result: str = s.trim().to_upper().slice(0, 5)
+    return result
+}
+
+def demo_index_then_index(matrix: Vec[Vec[int]]) -> int {
+    val: int = matrix[0][1]
+    return val
+}
+
+def demo_index_then_method(items: Vec[Vec[int]]) -> int {
+    row: Vec[int] = items[0]
+    len: int = row.length()
+    return len
+}
+
+def demo_call_result_chain(f: Callable[(int), Callable[(int), int]]) -> int {
+    g: Callable[(int), int] = f(3)
+    result: int = g(4)
+    return result
+}
+
+def demo_vec_chain() -> int {
+    items: Vec[int] = Vec.new()
+    items.add(3)
+    items.add(1)
+    items.add(4)
+    count: int = items.length()
+    return count
+}
+
+def demo_string_method_chain(s: str) -> int {
+    upper: str = s.to_upper()
+    trimmed: str = upper.trim()
+    n: int = trimmed.length()
+    return n
+}
+
+# ---- Iterator lazy chains ----------------------------------------------------
+
+def demo_iter_chain(nums: Vec[int]) -> Vec[int] {
+    result: Vec[int] = nums
+        .iter()
+        .filter((x: int) -> x > 0)
+        .map((x: int) -> x * 2)
+        .collect()
+    return result
+}
+
+def demo_iter_chain_full(nums: Vec[int], other: Vec[int]) -> Vec[(int, int)] {
+    result: Vec[(int, int)] = nums
+        .iter()
+        .filter((x: int) -> x > 0)
+        .map((x: int) -> x * 2)
+        .zip(other.iter())
+        .take(10)
+        .collect()
+    return result
+}
+
+def demo_iter_reduce(nums: Vec[int]) -> int {
+    total: int = nums
+        .iter()
+        .filter((x: int) -> x > 0)
+        .reduce(0, (acc: int, x: int) -> acc + x)
+    return total
+}
+
+def main() -> void {
+    demo_vec_chain()
+}

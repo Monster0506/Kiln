@@ -76,8 +76,8 @@ impl<'src> Lexer<'src> {
     pub fn next_token(&mut self) -> Result<Token, LexError> {
         match self.current_mode().clone() {
             Mode::Normal => self.lex_normal(),
-            Mode::String => self.lex_string(),
-            Mode::Interp { depth } => self.lex_interp(depth),
+            Mode::String { close } => self.lex_string(close),
+            Mode::Interp { depth, close } => self.lex_interp(depth, close),
         }
     }
 }

@@ -1,0 +1,60 @@
+# check_conformance.kn -- interface conformance errors
+
+interface HasMessage {
+    message: str
+}
+
+interface HasCode {
+    code: int
+}
+
+interface Identifiable {
+    id: int
+    name: str
+}
+
+# OK: provides required field
+struct NetworkError: HasMessage {
+    message: str
+    url: str
+    status: int
+}
+
+# OK: provides both required fields
+struct DatabaseError: HasMessage, HasCode {
+    message: str
+    code: int
+    query: str
+}
+
+# OK: provides all three required fields
+struct User: Identifiable {
+    id: int
+    name: str
+    email: str
+}
+
+# ERROR: missing `message`
+struct ParseError: HasMessage {
+    line: int
+    col: int
+}
+
+# ERROR: missing `code`
+struct TimeoutError: HasCode {
+    message: str
+    duration: int
+}
+
+# ERROR: missing both `id` and `name`
+struct Ghost: Identifiable {
+    value: int
+}
+
+# ERROR: interface doesn't exist
+struct BadType: NonExistentInterface {
+    x: int
+}
+
+def main() -> void {
+}

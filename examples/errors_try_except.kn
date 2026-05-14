@@ -1,0 +1,194 @@
+# errors_try_except.kn -- try / except / finally blocks
+
+# ---- Exception structs used here --------------------------------------------
+
+struct ValueError: Exception {
+    message: str
+}
+
+struct NetworkError: Exception {
+    message: str
+    status_code: int
+}
+
+struct TimeoutError: Exception {
+    message: str
+    seconds: float
+}
+
+struct ParseError: Exception {
+    message: str
+    line: int
+}
+
+# ---- Basic try / except ------------------------------------------------------
+
+def demo_basic_try(a: int, b: int) -> int {
+    mut result: int = 0
+    try {
+        result = checked_divide(a, b)
+    } except ValueError as e {
+        print("error: {e.message}")
+    }
+    return result
+}
+
+def checked_divide(a: int, b: int) -> int {
+    if b == 0 {
+        raise ValueError { message: "division by zero" }
+    }
+    return a / b
+}
+
+# ---- Multiple except clauses (most specific first) ---------------------------
+
+def demo_multi_except(url: str) -> str {
+    mut response: str = ""
+    try {
+        response = fetch(url)
+    } except TimeoutError as e {
+        print("timed out after {e.seconds}s: {e.message}")
+    } except NetworkError as e {
+        print("network error {e.status_code}: {e.message}")
+    } except ValueError as e {
+        print("bad input: {e.message}")
+    } except Exception as e {
+        print("unexpected: {e.message}")
+    }
+    return response
+}
+
+def fetch(url: str) -> str {
+    if url.length() == 0 {
+        raise ValueError { message: "empty URL" }
+    }
+    return "ok"
+}
+
+# ---- try / finally ----------------------------------------------------------
+
+def demo_finally(path: str) -> str {
+    handle: FileHandle = open_file(path)
+    mut content: str = ""
+    try {
+        content = handle.read()
+    } except Exception as e {
+        print("read error: {e.message}")
+    } finally {
+        handle.close()
+    }
+    return content
+}
+
+struct FileHandle {
+    priv path: str
+    priv is_open: bool
+
+    def read() -> str {
+        return "file contents"
+    }
+
+    def close() -> void {
+        is_open = false
+    }
+}
+
+def open_file(path: str) -> FileHandle {
+    return FileHandle { path: path, is_open: true }
+}
+
+# ---- try / except / finally all together -------------------------------------
+
+def demo_full_try(url: str) -> str {
+    mut result: str = ""
+    try {
+        result = fetch(url)
+    } except TimeoutError as e {
+        print("timeout: {e.seconds}s")
+        result = "timeout_fallback"
+    } except NetworkError as e {
+        print("network {e.status_code}")
+        result = "network_fallback"
+    } except Exception as e {
+        print("unknown: {e.message}")
+        result = "error_fallback"
+    } finally {
+        print("request completed for {url}")
+    }
+    return result
+}
+
+# ---- Nested try blocks -------------------------------------------------------
+
+def demo_nested_try(a: int, b: int, c: int) -> int {
+    mut outer: int = 0
+    try {
+        mut inner: int = 0
+        try {
+            inner = checked_divide(a, b)
+        } except ValueError as e {
+            print("inner error: {e.message}")
+            inner = 0
+        }
+        outer = checked_divide(inner + c, 2)
+    } except Exception as e {
+        print("outer error: {e.message}")
+    }
+    return outer
+}
+
+# ---- Re-raise an exception ---------------------------------------------------
+
+def demo_reraise(a: int, b: int) -> int {
+    try {
+        return checked_divide(a, b)
+    } except ValueError as e {
+        print("logging: {e.message}")
+        raise e
+    }
+    return 0
+}
+
+# ---- Catching in a loop ------------------------------------------------------
+
+def sum_safe(items: Vec[str]) -> int {
+    mut total: int = 0
+    for item <- items {
+        try {
+            n: int = item.to_int()
+            total = total + n
+        } except ValueError as e {
+            print("skipping '{item}': {e.message}")
+        }
+    }
+    return total
+}
+
+# ---- Finally used for cleanup ------------------------------------------------
+
+def with_lock(m: Mutex[int]) -> int {
+    guard: MutexGuard[int] = m.lock()
+    mut result: int = 0
+    try {
+        result = guard.value * 2
+    } finally {
+        print("lock released")
+    }
+    return result
+}
+
+struct Mutex[T] {
+    priv inner: T
+
+    def lock() -> MutexGuard[T] {
+        return MutexGuard { value: inner }
+    }
+}
+
+struct MutexGuard[T] {
+    value: T
+}
+
+def main() -> void {
+    demo_basic_try(10, 2)
+}

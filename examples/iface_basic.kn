@@ -1,0 +1,107 @@
+# iface_basic.kn -- basic interface declarations, required fields, default bodies
+
+# ---- Basic interface declarations --------------------------------------------
+
+interface Display {
+    hook to_str() -> str
+}
+
+interface Debug {
+    hook debug_str() -> str
+}
+
+interface Clone {
+    hook clone() -> Self
+}
+
+interface Drop {
+    hook drop() -> void
+}
+
+# ---- Interface with required fields ------------------------------------------
+
+interface Exception {
+    message: str
+
+    hook to_str() -> str {
+        return message
+    }
+}
+
+interface Named {
+    name: str
+}
+
+interface Labeled {
+    label: str
+
+    hook display_label() -> str {
+        return "[{label}]"
+    }
+}
+
+# ---- Interface with default method bodies ------------------------------------
+
+interface Printable {
+    hook to_str() -> str
+
+    hook print() -> void {
+        print(to_str())
+    }
+
+    hook println() -> void {
+        print("{to_str()}\n")
+    }
+}
+
+interface Describable {
+    hook describe() -> str
+
+    hook summarize() -> str {
+        d: str = describe()
+        return "Summary: {d}"
+    }
+
+    hook is_blank() -> bool {
+        return describe().length() == 0
+    }
+}
+
+interface Serializable {
+    hook to_json() -> str
+    hook to_csv() -> str
+
+    hook serialize(format: str) -> str {
+        return match format {
+            "json" => to_json(),
+            "csv" => to_csv(),
+            _ => to_json()
+        }
+    }
+}
+
+# ---- Conforming structs with inline hooks ------------------------------------
+
+struct Greeting: Printable {
+    message: str
+}
+
+impl Printable for Greeting {
+    hook to_str() -> str {
+        return message
+    }
+}
+
+struct Person: Named, Describable {
+    name: str
+    age: int
+}
+
+impl Describable for Person {
+    hook describe() -> str {
+        return "{name}, age {age}"
+    }
+}
+
+def main() -> void {
+}

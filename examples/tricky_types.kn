@@ -1,0 +1,54 @@
+# tricky_types.kn -- complex type annotations: unions, nested generics, Callable, Shared
+
+def demo_union_types() -> void {
+    val: int | str = 42
+    flag: bool | int = true
+}
+
+def demo_nested_generics() -> void {
+    matrix: Vec[Vec[int]] = Vec.new()
+    index: Map[str, Vec[int]] = Map.new()
+    nested: Option[Vec[str]] = None
+    deep: Map[str, Map[str, int]] = Map.new()
+    very_deep: Vec[Map[str, Option[Vec[int]]]] = Vec.new()
+}
+
+def demo_callable_types() -> void {
+    f1: Callable[(int), int] = (x: int) -> x
+    f2: Callable[(int, str), bool] = (n: int, s: str) -> n > 0
+    f3: Callable[(int, int, int), float] = (a: int, b: int, c: int) -> float(a + b + c)
+    f4: Callable[(), void] = () -> { print("hello") }
+    f5: Callable[(), int] = () -> 42
+}
+
+def demo_ref_in_callable() -> void {
+    take_ref: Callable[(&Vec[int]), int] = (v: &Vec[int]) -> v.length()
+}
+
+def demo_shared_type() -> void {
+    shared: Shared[Vec[int]] = Shared.new(Vec.new())
+}
+
+def demo_nested_callable() -> void {
+    hof: Callable[(Callable[(int), int]), Callable[(int), int]] = (f: Callable[(int), int]) -> f
+}
+
+def id[T](x: T) -> T { return x }
+def make_vec[T]() -> Vec[T] { return Vec.new() }
+
+def demo_generic_calls() -> void {
+    v: int = id(42)
+    s: str = id("hello")
+    f: float = id(3.14)
+    ints: Vec[int] = make_vec()
+    strs: Vec[str] = make_vec()
+}
+
+def main() -> void {
+    demo_union_types()
+    demo_nested_generics()
+    demo_callable_types()
+    demo_shared_type()
+    demo_nested_callable()
+    demo_generic_calls()
+}

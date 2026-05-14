@@ -20,13 +20,22 @@ pub fn collect_top_level(
             Item::Enum(e) => (e.name.clone(), e.span),
             Item::Interface(i) => (i.name.clone(), i.span),
             Item::TypeAlias(t) => (t.name.clone(), t.span),
-            Item::Const(c) => (c.name.clone(), c.span),
             Item::Function(f) => (f.name.clone(), f.span),
             // ImplBlock, Import, Export, AnnotationDef, ProcessorDef have no top-level name to bind
             _ => continue,
         };
 
         if env.would_shadow(&name) {
+            // Allow multiple definitions of the same function name at the same scope
+            // level — they become overloads, resolved in Pass 1b.
+            let in_same_scope = matches!(
+                env.lookup_in_current_scope(&name),
+                Some(Symbol::Fn { .. }) | Some(Symbol::FnOverloadSet { .. })
+            );
+            let is_fn_item = matches!(item, Item::Function(_));
+            if is_fn_item && in_same_scope {
+                continue;
+            }
             errors.push(AnalysisError::DuplicateName { name, span });
             continue;
         }
@@ -57,12 +66,9 @@ pub fn collect_top_level(
             }
             Item::Function(f) => Symbol::Fn {
                 generic_params: f.generic_params.iter().map(|g| g.name.clone()).collect(),
-                params: vec![], // resolved in pass 2
+                generic_bounds: vec![], // resolved in pass 1b
+                params: vec![],         // resolved in pass 1b
                 ret: Ty::Unknown,
-                span,
-            },
-            Item::Const(_) => Symbol::Const {
-                ty: Ty::Unknown,
                 span,
             },
             _ => continue,
@@ -88,11 +94,13 @@ mod tests {
     fn make_struct(name: &str) -> Item {
         Item::Struct(StructDef {
             annotations: vec![],
+            is_builtin: false,
             name: name.to_string(),
             generic_params: vec![],
             interfaces: vec![],
             fields: vec![],
             methods: vec![],
+            decls: vec![],
             span: s(),
         })
     }

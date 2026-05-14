@@ -1,0 +1,176 @@
+# structs_indirect.kn -- @indirect for recursive struct fields, Drop hook
+
+# ---- @indirect for recursive types ------------------------------------------
+
+struct Node {
+    value: int
+    @indirect next: Option[Node]
+}
+
+struct TreeNode {
+    value: int
+    @indirect left: Option[TreeNode]
+    @indirect right: Option[TreeNode]
+}
+
+struct ListNode {
+    data: str
+    @indirect tail: Option[ListNode]
+}
+
+# ---- Building linked lists ---------------------------------------------------
+
+def make_list(values: Vec[int]) -> Option[Node] {
+    n: int = values.length()
+    if n == 0 {
+        return None
+    }
+    mut i: int = n - 1
+    mut head: Option[Node] = None
+    while i >= 0 {
+        head = Some { value: Node { value: values[i], next: head } }
+        i = i - 1
+    }
+    return head
+}
+
+def list_sum(node: Option[Node]) -> int {
+    mut total: int = 0
+    mut current: Option[Node] = node
+    mut is_some: bool = match current { Some { value: _ } => true, None => false }
+    while is_some {
+        inner: Node = match current { Some { value: n } => n, None => Node { value: 0, next: None } }
+        total = total + inner.value
+        current = inner.next
+        is_some = match current { Some { value: _ } => true, None => false }
+    }
+    return total
+}
+
+def list_length(node: Option[Node]) -> int {
+    mut count: int = 0
+    mut current: Option[Node] = node
+    mut is_some: bool = match current { Some { value: _ } => true, None => false }
+    while is_some {
+        inner: Node = match current { Some { value: n } => n, None => Node { value: 0, next: None } }
+        count = count + 1
+        current = inner.next
+        is_some = match current { Some { value: _ } => true, None => false }
+    }
+    return count
+}
+
+# ---- Building binary trees --------------------------------------------------
+
+def tree_leaf(v: int) -> TreeNode {
+    return TreeNode { value: v, left: None, right: None }
+}
+
+def insert_into_node(node: TreeNode, t: Option[TreeNode], v: int) -> Option[TreeNode] {
+    if v < node.value {
+        new_left: Option[TreeNode] = insert(node.left, v)
+        return Some { value: TreeNode { value: node.value, left: new_left, right: node.right } }
+    } elif v > node.value {
+        new_right: Option[TreeNode] = insert(node.right, v)
+        return Some { value: TreeNode { value: node.value, left: node.left, right: new_right } }
+    } else {
+        return t
+    }
+}
+
+def insert(t: Option[TreeNode], v: int) -> Option[TreeNode] {
+    return match t {
+        None => Some { value: TreeNode { value: v, left: None, right: None } },
+        Some { value: node } => insert_into_node(node, t, v)
+    }
+}
+
+def tree_sum(t: Option[TreeNode]) -> int {
+    return match t {
+        None => 0,
+        Some { value: node } => node.value + tree_sum(node.left) + tree_sum(node.right)
+    }
+}
+
+def tree_depth_node(node: TreeNode) -> int {
+    ld: int = tree_depth(node.left)
+    rd: int = tree_depth(node.right)
+    mut base: int = ld
+    if rd > ld { base = rd }
+    return base + 1
+}
+
+def tree_depth(t: Option[TreeNode]) -> int {
+    return match t {
+        None => 0,
+        Some { value: node } => tree_depth_node(node)
+    }
+}
+
+# ---- Drop hook for RAII cleanup ---------------------------------------------
+
+struct FileHandle: Drop {
+    priv fd: int
+    path: str
+    is_open: bool
+
+    def read() -> str {
+        return read_fd(fd)
+    }
+
+    def write(data: str) -> void {
+        write_fd(fd, data)
+    }
+}
+
+impl Drop for FileHandle {
+    hook drop() -> void {
+        if is_open {
+            close_fd(fd)
+        }
+    }
+}
+
+struct TempDir: Drop {
+    priv path: str
+    priv created: bool
+
+    def path_str() -> str {
+        return path
+    }
+}
+
+impl Drop for TempDir {
+    hook drop() -> void {
+        if created {
+            remove_dir(path)
+        }
+    }
+}
+
+struct Connection: Drop {
+    priv socket: int
+    priv connected: bool
+
+    def send(data: str) -> void {
+        write_socket(socket, data)
+    }
+}
+
+impl Drop for Connection {
+    hook drop() -> void {
+        if connected {
+            disconnect(socket)
+        }
+    }
+}
+
+def close_fd(fd: int) -> void { }
+def read_fd(fd: int) -> str { return "" }
+def write_fd(fd: int, data: str) -> void { }
+def remove_dir(path: str) -> void { }
+def disconnect(socket: int) -> void { }
+def write_socket(socket: int, data: str) -> void { }
+
+def main() -> void {
+}

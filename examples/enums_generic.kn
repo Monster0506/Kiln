@@ -1,0 +1,146 @@
+# enums_generic.kn -- generic enums and methods
+
+# ---- Generic enums -----------------------------------------------------------
+
+enum Option[T] {
+    Some { value: T }
+    None
+}
+
+enum Result[T, E] {
+    Ok { value: T }
+    Err { error: E }
+}
+
+enum Either[L, R] {
+    Left { value: L }
+    Right { value: R }
+}
+
+enum Tree[T] {
+    Leaf { value: T }
+    Branch { @indirect left: Tree[T], @indirect right: Tree[T] }
+}
+
+enum Validated[T] {
+    Valid { value: T }
+    Invalid { errors: Vec[str] }
+}
+
+# ---- Enums with methods ------------------------------------------------------
+
+enum Coin {
+    Penny
+    Nickel
+    Dime
+    Quarter
+
+    def value_cents() -> int {
+        return match self {
+            Penny => 1,
+            Nickel => 5,
+            Dime => 10,
+            Quarter => 25
+        }
+    }
+
+    def is_silver() -> bool {
+        return match self {
+            Penny => false,
+            _ => true
+        }
+    }
+
+    def description() -> str {
+        return "worth {value_cents()} cents"
+    }
+}
+
+enum Priority {
+    Low
+    Medium
+    High
+    Critical
+
+    def is_urgent() -> bool {
+        return match self {
+            Critical => true,
+            High => true,
+            _ => false
+        }
+    }
+
+    def level() -> int {
+        return match self {
+            Low => 0,
+            Medium => 1,
+            High => 2,
+            Critical => 3
+        }
+    }
+}
+
+# ---- Using generic enums -----------------------------------------------------
+
+def safe_div(a: int, b: int) -> Option[int] {
+    if b == 0 {
+        return None
+    }
+    return Some { value: a / b }
+}
+
+def find_in(items: Vec[int], target: int) -> Option[int] {
+    mut i: int = 0
+    while i < items.length() {
+        if items[i] == target {
+            return Some { value: i }
+        }
+        i = i + 1
+    }
+    return None
+}
+
+def unwrap_or(opt: Option[int], default: int) -> int {
+    return match opt {
+        Some { value: v } => v,
+        None => default
+    }
+}
+
+def tree_sum(t: Tree[int]) -> int {
+    return match t {
+        Leaf { value: v } => v,
+        Branch { left: l, right: r } => tree_sum(l) + tree_sum(r)
+    }
+}
+
+def tree_depth_max(ld: int, rd: int) -> int {
+    if ld > rd {
+        return ld + 1
+    }
+    return rd + 1
+}
+
+def tree_depth(t: Tree[int]) -> int {
+    return match t {
+        Leaf { value: _ } => 1,
+        Branch { left: l, right: r } => tree_depth_max(tree_depth(l), tree_depth(r))
+    }
+}
+
+def validate_age(age: int) -> Validated[int] {
+    if age < 0 {
+        errs: Vec[str] = Vec.new()
+        errs.add("age cannot be negative")
+        return Invalid { errors: errs }
+    }
+    if age > 150 {
+        errs: Vec[str] = Vec.new()
+        errs.add("age {age} is unrealistic")
+        return Invalid { errors: errs }
+    }
+    return Valid { value: age }
+}
+
+def main() -> void {
+}

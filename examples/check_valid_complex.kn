@@ -1,0 +1,91 @@
+# check_valid_complex.kn -- complex programs that should pass cleanly
+
+def factorial(n: int) -> int {
+    if n <= 1 {
+        return 1
+    } else {
+        return n * factorial(n - 1)
+    }
+}
+
+def fibonacci(n: int) -> int {
+    if n <= 1 {
+        return n
+    } else {
+        return fibonacci(n - 1) + fibonacci(n - 2)
+    }
+}
+
+def gcd(a: int, b: int) -> int {
+    if b == 0 {
+        return a
+    } else {
+        return gcd(b, a - b * (a / b))
+    }
+}
+
+def clamp(val: int, lo: int, hi: int) -> int {
+    if val < lo {
+        return lo
+    } elif val > hi {
+        return hi
+    } else {
+        return val
+    }
+}
+
+def sign(x: int) -> int {
+    if x > 0 {
+        return 1
+    } elif x < 0 {
+        return -1
+    } else {
+        return 0
+    }
+}
+
+# All shadowing, no mutation needed
+def compute_bounds(a: int, b: int, c: int) -> int {
+    lo: int = a
+    lo: int = b
+    hi: int = a
+    hi: int = b
+    if c < lo {
+        lo: int = c
+    }
+    if c > hi {
+        hi: int = c
+    }
+    return hi - lo
+}
+
+# Mix of mut and immutable
+def running_stats(n: int) -> int {
+    mut total: int = 0
+    mut count: int = 0
+    mut i: int = 0
+    while i < n {
+        value: int = i * i
+        total = total + value
+        count = count + 1
+        i = i + 1
+    }
+    if count == 0 {
+        return 0
+    }
+    return total
+}
+
+# Nested functions (each is its own scope)
+def outer(x: int) -> int {
+    def inner(y: int) -> int {
+        return y + 1
+    }
+    result: int = inner(x)
+    return result
+}
+
+def main() -> void {
+    factorial(5)
+    fibonacci(8)
+}

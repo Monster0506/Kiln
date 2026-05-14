@@ -1,0 +1,87 @@
+# enums_fields.kn -- enums with payload fields
+
+# ---- Enums with fields -------------------------------------------------------
+
+enum Shape {
+    Circle { radius: float }
+    Rect { width: float, height: float }
+    Triangle { base: float, height: float }
+    Dot
+}
+
+enum Event {
+    KeyPress { key: str, shift: bool, ctrl: bool }
+    MouseClick { x: int, y: int, button: int }
+    MouseMove { x: int, y: int }
+    Resize { width: int, height: int }
+    Quit
+}
+
+enum Token {
+    Number { value: float }
+    Identifier { name: str }
+    Operator { symbol: str }
+    LeftParen
+    RightParen
+    End
+}
+
+enum Message {
+    Text { body: str }
+    Image { url: str, width: int, height: int }
+    File { name: str, size: int, mime: str }
+    Reaction { emoji: str, count: int }
+}
+
+# ---- Functions operating on field enums -------------------------------------
+
+def area(s: Shape) -> float {
+    return match s {
+        Circle { radius: r } => 3.14159 * r * r,
+        Rect { width: w, height: h } => w * h,
+        Triangle { base: b, height: h } => 0.5 * b * h,
+        Dot => 0.0
+    }
+}
+
+def describe_shape(s: Shape) -> str {
+    return match s {
+        Circle { radius: r } => "circle r={r}",
+        Rect { width: w, height: h } => "rect {w}x{h}",
+        Triangle { base: b, height: h } => "triangle b={b} h={h}",
+        Dot => "dot"
+    }
+}
+
+def perimeter(s: Shape) -> float {
+    return match s {
+        Circle { radius: r } => 2.0 * 3.14159 * r,
+        Rect { width: w, height: h } => 2.0 * (w + h),
+        Triangle { base: b, height: h } => b + 2.0 * h,
+        Dot => 0.0
+    }
+}
+
+def handle_event(e: Event) -> void {
+    match e {
+        KeyPress { key: k, shift: s, ctrl: c } => print("key={k} shift={s} ctrl={c}"),
+        MouseClick { x: x, y: y, button: b } => print("click ({x},{y}) btn={b}"),
+        MouseMove { x: x, y: y } => print("move ({x},{y})"),
+        Resize { width: w, height: h } => print("resize {w}x{h}"),
+        Quit => print("quit")
+    }
+}
+
+def eval_token(t: Token) -> str {
+    return match t {
+        Number { value: v } => "num:{v}",
+        Identifier { name: n } => "id:{n}",
+        Operator { symbol: s } => "op:{s}",
+        LeftParen => "(",
+        RightParen => ")",
+        End => "EOF"
+    }
+}
+
+def main() -> void {
+}

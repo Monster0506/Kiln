@@ -1,0 +1,26 @@
+# check_missing_return.kn -- should fail: non-void functions that don't always return
+
+# ERROR: no return at all
+def compute(x: int) -> int {
+    y: int = x + 1
+}
+
+# ERROR: only returns on one branch (no else)
+def safe_div(a: int, b: int) -> int {
+    if b == 0 {
+        return 0
+    }
+    # falls off the end if b != 0
+}
+
+# OK: both branches return
+def max_val(a: int, b: int) -> int {
+    if a > b {
+        return a
+    } else {
+        return b
+    }
+}
+
+def main() -> void {
+}

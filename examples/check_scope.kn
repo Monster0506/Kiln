@@ -1,0 +1,59 @@
+# check_scope.kn -- scope, shadowing, and mutability patterns
+
+# OK: params are immutable -- use shadowing to refine
+def normalize(x: int) -> int {
+    x: int = x + 0
+    if x < 0 {
+        x: int = 0 - x
+    }
+    return x
+}
+
+# ERROR: trying to assign to the param directly (immutable)
+def bad_normalize(x: int) -> int {
+    x = x + 1
+    return x
+}
+
+# OK: shadow with different type in different branches
+def describe(n: int) -> str {
+    result: str = "unknown"
+    result: str = "number"
+    return result
+}
+
+# OK: mut variable survives across if branches
+def accumulate(a: int, b: int, c: int) -> int {
+    mut total: int = 0
+    total = total + a
+    total = total + b
+    total = total + c
+    return total
+}
+
+# ERROR: inner shadow of mut doesn't make outer binding mutable
+def shadow_not_mut() -> void {
+    x: int = 1
+    x: int = 2
+    x = 3
+}
+
+# OK: mut in one scope, different name in another
+def two_counters() -> int {
+    mut a: int = 0
+    a = a + 1
+    a = a + 1
+    mut b: int = 10
+    b = b - 1
+    return a + b
+}
+
+# ERROR: for loop var is not mutable
+def bad_for(items: Vec[int]) -> void {
+    for item <- items {
+        item = 0
+    }
+}
+
+def main() -> void {
+}

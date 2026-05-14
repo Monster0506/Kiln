@@ -163,6 +163,7 @@ mod tests {
     fn ok_when_required_field_present() {
         let st = StructDef {
             annotations: vec![],
+            is_builtin: false,
             name: "ValueError".into(),
             generic_params: vec![],
             interfaces: vec![named("Exception")],
@@ -175,6 +176,7 @@ mod tests {
                 span: s(),
             }],
             methods: vec![],
+            decls: vec![],
             span: s(),
         };
         let mut errs = vec![];
@@ -186,11 +188,13 @@ mod tests {
     fn error_when_required_field_missing() {
         let st = StructDef {
             annotations: vec![],
+            is_builtin: false,
             name: "BadError".into(),
             generic_params: vec![],
             interfaces: vec![named("Exception")],
             fields: vec![],
             methods: vec![],
+            decls: vec![],
             span: s(),
         };
         let mut errs = vec![];

@@ -1,0 +1,159 @@
+# errors_raise.kn -- the raise statement, when and how to use it
+
+# ---- Exception struct definitions --------------------------------------------
+
+struct ValueError: Exception {
+    message: str
+}
+
+struct IndexError: Exception {
+    message: str
+}
+
+struct TypeError: Exception {
+    message: str
+}
+
+struct OverflowError: Exception {
+    message: str
+}
+
+# ---- Basic raise -------------------------------------------------------------
+
+def checked_divide(a: int, b: int) -> int {
+    if b == 0 {
+        raise ValueError { message: "division by zero" }
+    }
+    return a / b
+}
+
+def get_first(items: Vec[int]) -> int {
+    if items.length() == 0 {
+        raise IndexError { message: "empty list" }
+    }
+    return items[0]
+}
+
+def checked_index(items: Vec[int], i: int) -> int {
+    if i < 0 {
+        raise IndexError { message: "negative index: {i}" }
+    }
+    if i >= items.length() {
+        raise IndexError { message: "index {i} out of range (len={items.length()})" }
+    }
+    return items[i]
+}
+
+# ---- Raise inside branches ---------------------------------------------------
+
+def classify_input(x: int) -> str {
+    if x < -1000000 {
+        raise OverflowError { message: "value too small: {x}" }
+    } elif x > 1000000 {
+        raise OverflowError { message: "value too large: {x}" }
+    } elif x < 0 {
+        return "negative"
+    } elif x == 0 {
+        return "zero"
+    } else {
+        return "positive"
+    }
+}
+
+def require_positive(x: int, name: str) -> void {
+    if x <= 0 {
+        raise ValueError { message: "{name} must be positive, got {x}" }
+    }
+}
+
+# ---- Raise inside loops ------------------------------------------------------
+
+def find_first_negative(nums: Vec[int]) -> int {
+    for n <- nums {
+        if n < 0 {
+            return n
+        }
+    }
+    raise ValueError { message: "no negative numbers found" }
+}
+
+def all_positive(nums: Vec[int]) -> void {
+    mut i: int = 0
+    while i < nums.length() {
+        if nums[i] < 0 {
+            raise ValueError { message: "negative value at index {i}: {nums[i]}" }
+        }
+        i = i + 1
+    }
+}
+
+# ---- Raise with complex message ----------------------------------------------
+
+def parse_int(s: str) -> int {
+    n: int = s.to_int()
+    if n == 0 && !(s == "0") {
+        raise ValueError { message: "cannot parse '{s}' as integer" }
+    }
+    return n
+}
+
+def safe_sqrt(x: float) -> float {
+    if x < 0.0 {
+        raise ValueError { message: "cannot take sqrt of negative number: {x}" }
+    }
+    return x.sqrt()
+}
+
+def require_non_empty(s: str, field: str) -> void {
+    if s.length() == 0 {
+        raise ValueError { message: "field '{field}' must not be empty" }
+    }
+}
+
+# ---- Guard clauses (raise early) ---------------------------------------------
+
+def process(name: str, value: int, items: Vec[int]) -> int {
+    require_non_empty(name, "name")
+    require_positive(value, "value")
+    if items.length() == 0 {
+        raise ValueError { message: "items must not be empty" }
+    }
+    mut total: int = 0
+    for item <- items {
+        total = total + item * value
+    }
+    return total
+}
+
+# ---- Raise in match arm ------------------------------------------------------
+
+enum Command {
+    Add { x: int, y: int }
+    Div { x: int, y: int }
+    Sqrt { x: float }
+}
+
+def exec_div(a: int, b: int) -> float {
+    if b == 0 {
+        raise ValueError { message: "division by zero in Div command" }
+    }
+    return float(a / b)
+}
+
+def exec_sqrt(v: float) -> float {
+    if v < 0.0 {
+        raise ValueError { message: "negative input to Sqrt: {v}" }
+    }
+    return v.sqrt()
+}
+
+def execute(cmd: Command) -> float {
+    return match cmd {
+        Add { x: a, y: b } => float(a + b),
+        Div { x: a, y: b } => exec_div(a, b),
+        Sqrt { x: v } => exec_sqrt(v)
+    }
+}
+
+def main() -> void {
+}

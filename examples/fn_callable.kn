@@ -1,0 +1,141 @@
+# fn_callable.kn -- Callable types, functions as values, higher-order functions
+
+def double(x: int) -> int { return x * 2 }
+def square(x: int) -> int { return x * x }
+def is_positive(x: int) -> bool { return x > 0 }
+def negate(x: int) -> int { return -x }
+
+# ---- Functions as Callable values -------------------------------------------
+
+def apply(f: Callable[(int), int], x: int) -> int {
+    return f(x)
+}
+
+def apply2(f: Callable[(int, int), int], a: int, b: int) -> int {
+    return f(a, b)
+}
+
+def apply_bool(f: Callable[(int), bool], x: int) -> bool {
+    return f(x)
+}
+
+def apply_twice(f: Callable[(int), int], x: int) -> int {
+    return f(f(x))
+}
+
+def demo_fn_values() -> void {
+    f: Callable[(int), int] = double
+    g: Callable[(int), int] = square
+    a: int = apply(f, 5)
+    b: int = apply(g, 5)
+    c: int = apply(double, 3)
+    println(a)
+    println(b)
+    println(c)
+}
+
+# ---- Collections of Callable -------------------------------------------------
+
+def call_all(fns: Vec[Callable[(int), int]], x: int) -> void {
+    for f <- fns {
+        println(f(x))
+    }
+}
+
+def apply_pipeline(x: int, fns: Vec[Callable[(int), int]]) -> int {
+    mut result: int = x
+    for f <- fns {
+        y:int = f(result)
+        println(y)
+        result = y
+    }
+    return result
+}
+
+def transform[T, U](items: Vec[T], f: Callable[(T), U]) -> Vec[U] {
+    out: Vec[U] = Vec.new()
+    for item <- items {
+        out.add(f(item))
+    }
+    return out
+}
+
+def filter[T](items: Vec[T], pred: Callable[(T), bool]) -> Vec[T] {
+    out: Vec[T] = Vec.new()
+    for item <- items {
+        if pred(item) {
+            out.add(item)
+        }
+    }
+    return out
+}
+
+
+
+def demo_collections() -> void {
+    x: Vec[Callable[(int), int]] = Vec.new()
+    x.add(double)
+    x.add(square)
+    x.add(negate)
+    x.add((y:int)-> y+5)
+    call_all(x, 10)
+    println("")
+    println("")
+    println("")
+    println("")
+    println(apply_pipeline(5,x))
+    
+    println("")
+    println("")
+    println("")
+    println("")
+    t_to_u: Callable[(int), float] = (y: int)->y+0.1
+    println(t_to_u(10))
+    println("")
+    println("")
+    println("")
+    println("")
+    z: Vec[int] = Vec.new()
+    for i <- range(1,10) {
+       z.add(i)
+    }
+    mut zf: Vec[float] = transform(z, t_to_u)
+    for i <- zf {
+        println(i)
+    }
+    println("")
+    println("")
+    println("")
+    println("")
+    pred: Callable[(float), bool] = (y: float) -> (y-0.1) as int % 2 != 0
+    zf = filter(zf, pred)
+    for i <- zf {
+        println(i)
+    }
+    
+}
+
+# ---- Callable in struct fields -----------------------------------------------
+
+struct Handler {
+    on_event: Callable[(str), void]
+    transform: Callable[(int), int]
+    predicate: Callable[(int), bool]
+}
+
+def demo_handler_struct() -> void {
+    h: Handler = Handler {
+        on_event: (msg: str) -> { print(msg) },
+        transform: double,
+        predicate: is_positive
+    }
+    h.on_event("hello")
+    n: int = h.transform(5)
+    ok: bool = h.predicate(n)
+}
+
+def main() -> void {
+    demo_fn_values()
+    demo_collections()
+    demo_handler_struct()
+}

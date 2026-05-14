@@ -1,0 +1,81 @@
+# patterns_binding.kn -- type binding patterns and interface guard patterns
+
+# ---- Type binding patterns ---------------------------------------------------
+
+def describe_int(x: int) -> str {
+    return match x {
+        0 => "exactly zero",
+        int n => "the integer {n}"
+    }
+}
+
+def format_str(raw: str) -> str {
+    return match raw {
+        "" => "(empty)",
+        str s => "got: {s}"
+    }
+}
+
+def categorize_float(x: float) -> str {
+    return match x {
+        0.0 => "zero",
+        float f => "float value {f}"
+    }
+}
+
+def bind_and_compute(x: int) -> int {
+    return match x {
+        0 => 0,
+        int n => n * n + n
+    }
+}
+
+def bound_or_default(x: int, default: int) -> int {
+    return match x {
+        int n if n > 0 => n,
+        _ => default
+    }
+}
+
+def sign_message(x: int) -> str {
+    return match x {
+        int n if n > 0 => "positive: {n}",
+        int n if n < 0 => "negative: {n}",
+        _ => "zero"
+    }
+}
+
+# ---- Interface guard patterns ------------------------------------------------
+
+interface Comparable {
+    hook <=>(other: Self) -> int
+}
+
+interface Printable {
+    hook to_str() -> str
+}
+
+interface Addable {
+    hook +(other: Self) -> Self
+}
+
+def handle_printable(val: Printable) -> str {
+    return match val {
+        Comparable c => "comparable",
+        Printable p => p.to_str()
+    }
+}
+
+def categorize_interface(val: Printable) -> str {
+    return match val {
+        Addable a => "addable",
+        Comparable c => "comparable",
+        _ => "other"
+    }
+}
+
+def main() -> void {
+    describe_int(42)
+    format_str("hello")
+    bind_and_compute(5)
+}

@@ -1,0 +1,97 @@
+# structs_basic.kn -- struct definitions, field access, struct literals
+
+# ---- Basic struct definitions ------------------------------------------------
+
+struct Point {
+    x: float
+    y: float
+}
+
+struct Rect {
+    x: float
+    y: float
+    width: float
+    height: float
+}
+
+struct Color {
+    r: int
+    g: int
+    b: int
+    a: int
+}
+
+struct Person {
+    name: str
+    age: int
+    email: str
+}
+
+struct Config {
+    host: str
+    port: int
+    debug: bool
+    timeout: float
+}
+
+# ---- Struct literals ---------------------------------------------------------
+
+def demo_literals() -> void {
+    p: Point = Point { x: 1.0, y: 2.0 }
+    r: Rect = Rect { x: 0.0, y: 0.0, width: 100.0, height: 50.0 }
+    c: Color = Color { r: 255, g: 128, b: 0, a: 255 }
+    person: Person = Person { name: "alice", age: 30, email: "alice@example.com" }
+    cfg: Config = Config { host: "localhost", port: 8080, debug: false, timeout: 30.0 }
+}
+
+# ---- Field access ------------------------------------------------------------
+
+def area(r: Rect) -> float {
+    return r.width * r.height
+}
+
+def perimeter(r: Rect) -> float {
+    return 2.0 * (r.width + r.height)
+}
+
+def distance(a: Point, b: Point) -> float {
+    dx: float = a.x - b.x
+    dy: float = a.y - b.y
+    return dx * dx + dy * dy
+}
+
+def is_origin(p: Point) -> bool {
+    return p.x == 0.0 && p.y == 0.0
+}
+
+def contains(r: Rect, p: Point) -> bool {
+    return p.x >= r.x && p.x <= r.x + r.width
+        && p.y >= r.y && p.y <= r.y + r.height
+}
+
+def describe_color(c: Color) -> str {
+    return "rgba({c.r},{c.g},{c.b},{c.a})"
+}
+
+def is_opaque(c: Color) -> bool {
+    return c.a == 255
+}
+
+# ---- Field mutation ----------------------------------------------------------
+
+def move_point(p: Point, dx: float, dy: float) -> Point {
+    return Point { x: p.x + dx, y: p.y + dy }
+}
+
+def scale_rect(r: Rect, factor: float) -> Rect {
+    return Rect {
+        x: r.x,
+        y: r.y,
+        width: r.width * factor,
+        height: r.height * factor
+    }
+}
+
+def main() -> void {
+    demo_literals()
+}

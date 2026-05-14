@@ -1,0 +1,170 @@
+# iface_operator_bounds.kn -- operator desugaring into interface bounds
+#
+# Every operator in Kiln compiles down to an interface hook.
+# The constraint solver checks these at compile time.
+
+# ---- Operator-to-interface mapping ------------------------------------------
+#
+# a + b    requires Addable       hook +(other: Self) -> Self
+# a - b    requires Subtractable  hook -(other: Self) -> Self
+# a * b    requires Multiplicable hook *(other: Self) -> Self
+# a / b    requires Divisible     hook /(other: Self) -> Self
+# a % b    requires Remainder     hook %(other: Self) -> Self
+# -a       requires Negatable     hook -() -> Self
+# a == b   requires PartialEq     hook ==(other: Self) -> bool
+# a < b    requires PartialOrd    hook partial_cmp(other: Self) -> Option[int]
+# a <=> b  requires Ord           hook <=>(other: Self) -> int
+# {x}      requires Display       hook to_str() -> str
+
+# ---- Interfaces used below --------------------------------------------------
+
+interface Display {
+    hook to_str() -> str
+}
+
+interface Eq: PartialEq {
+}
+
+interface PartialEq {
+    hook ==(other: Self) -> bool
+}
+
+interface PartialOrd: PartialEq {
+    hook partial_cmp(other: Self) -> int
+}
+
+interface Ord: Eq, PartialOrd {
+    hook <=>(other: Self) -> int
+}
+
+interface Addable {
+    hook +(other: Self) -> Self
+}
+
+interface Subtractable {
+    hook -(other: Self) -> Self
+}
+
+interface Negatable {
+    hook -() -> Self
+}
+
+interface Multiplicable {
+    hook *(other: Self) -> Self
+}
+
+interface Divisible {
+    hook /(other: Self) -> Self
+}
+
+# ---- A numeric type that supports arithmetic ---------------------------------
+
+struct Vec2 {
+    x: float
+    y: float
+}
+
+impl Display for Vec2 {
+    hook to_str() -> str {
+        return "({x}, {y})"
+    }
+}
+
+impl Addable for Vec2 {
+    hook +(other: Vec2) -> Vec2 {
+        return Vec2 { x: x + other.x, y: y + other.y }
+    }
+}
+
+impl Subtractable for Vec2 {
+    hook -(other: Vec2) -> Vec2 {
+        return Vec2 { x: x - other.x, y: y - other.y }
+    }
+}
+
+impl Negatable for Vec2 {
+    hook -() -> Vec2 {
+        return Vec2 { x: 0.0 - x, y: 0.0 - y }
+    }
+}
+
+impl Multiplicable for Vec2 {
+    hook *(other: Vec2) -> Vec2 {
+        return Vec2 { x: x * other.x, y: y * other.y }
+    }
+}
+
+impl PartialEq for Vec2 {
+    hook ==(other: Vec2) -> bool {
+        return x == other.x && y == other.y
+    }
+
+}
+
+# ---- Operators on Vec2 are now valid ----------------------------------------
+
+def add_vecs(a: Vec2, b: Vec2) -> Vec2 {
+    return a + b
+}
+
+def scale_subtract(a: Vec2, b: Vec2) -> Vec2 {
+    return a - b
+}
+
+def negate(v: Vec2) -> Vec2 {
+    return -v
+}
+
+# ---- int and float have all arithmetic operators built in -------------------
+
+def arithmetic_demo() -> void {
+    a: int = 10
+    b: int = 3
+
+    sum: int = a + b
+    diff: int = a - b
+    prod: int = a * b
+    quot: int = a / b
+    rem: int = a % b
+
+    x: float = 1.5
+    y: float = 2.5
+    fsum: float = x + y
+
+    eq: bool = a == b
+    lt: bool = a < b
+    gt: bool = x > y
+
+    print("sum: {sum}")
+    print("diff: {diff}")
+    print("prod: {prod}")
+    print("rem: {rem}")
+    print("fsum: {fsum}")
+}
+
+# ---- String interpolation requires Display -----------------------------------
+
+def display_demo() -> void {
+    n: int = 42
+    f: float = 3.14
+    b: bool = true
+    s: str = "hello"
+
+    # All of int, float, bool, str implement Display.
+    msg: str = "n={n}, f={f}, b={b}, s={s}"
+    print(msg)
+
+    v: Vec2 = Vec2 { x: 1.0, y: 2.0 }
+    # Vec2 has an impl Display block, so this is valid.
+    print("vec: {v}")
+}
+
+def main() -> void {
+    arithmetic_demo()
+    display_demo()
+
+    a: Vec2 = Vec2 { x: 1.0, y: 2.0 }
+    b: Vec2 = Vec2 { x: 3.0, y: 4.0 }
+    c: Vec2 = add_vecs(a, b)
+    print("{c}")
+}

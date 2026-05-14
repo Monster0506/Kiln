@@ -1,0 +1,48 @@
+# check_valid.kn -- should pass kiln check with no errors
+
+def add(a: int, b: int) -> int {
+    return a + b
+}
+
+def greet(name: str) -> str {
+    prefix: str = "Hello, "
+    return prefix
+}
+
+def clamp(val: int, lo: int, hi: int) -> int {
+    if val < lo {
+        return lo
+    }
+    if val > hi {
+        return hi
+    }
+    return val
+}
+
+def sum_to(n: int) -> int {
+    mut total: int = 0
+    mut i: int = 0
+    while i <= n {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+def abs_val(x: int) -> int {
+    if x < 0 {
+        return 0 - x
+    }
+    return x
+}
+
+def void_fn() -> void {
+    x: int = 42
+    x: int = x + 1
+}
+
+def main() -> void {
+    void_fn()
+    add(2, 3)
+    greet("World")
+}

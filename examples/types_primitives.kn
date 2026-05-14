@@ -1,0 +1,139 @@
+# types_primitives.kn -- int, float, bool, str, void, type casting
+
+# ---- Primitive types ---------------------------------------------------------
+
+def demo_int() -> int {
+    a: int = 42
+    b: int = -7
+    big: int = 8_000_000_000
+    hex_style: int = 255
+    return a + b + big + hex_style
+}
+
+def demo_float() -> float {
+    x: float = 3.14
+    y: float = -2.71828
+    precise: float = 6.626_070_15
+    small: float = 0.001
+    return x + y + precise + small
+}
+
+def demo_bool() -> bool {
+    t: bool = true
+    f: bool = false
+    a: bool = t && f
+    b: bool = t || f
+    c: bool = !t
+    return a || b || c
+}
+
+def demo_str() -> str {
+    s: str = "hello, world"
+    empty: str = ""
+    interp: str = "value is {42}"
+    return "{s} {interp}"
+}
+
+def demo_void() -> void {
+    x: int = 1
+    y: int = x + 1
+}
+
+# ---- Type casting ------------------------------------------------------------
+
+def demo_int_to_float() -> float {
+    n: int = 5
+    f: float = n as float
+    return f
+}
+
+def demo_float_to_int() -> int {
+    f: float = 3.7
+    n: int = f as int
+    return n
+}
+
+# def demo_cast_call_style() -> void {
+#     n: int = int(3.7)
+#     f: float = float(5)
+#     also_n: int = int(-2.9)
+# }
+ 
+# def demo_chained_casts() -> void {
+#     x: int = 5
+#     r1: float = x as float
+#     r2: int = r1 as int
+#     r3: float = int(3.7) as float
+#     r4: int = (5 as float) as int
+# }
+ 
+def demo_cast_in_expr() -> float {
+    a: int = 7
+    b: int = 2
+    result: float = a as float / b as float
+    return result
+}
+
+# ---- Void as return type -----------------------------------------------------
+
+def log(msg: str) -> void {
+    print(msg)
+}
+
+def noop() -> void {
+}
+
+def set_flag(flag: bool) -> void {
+    stored: bool = flag
+}
+
+# ---- Numeric operations producing primitives ---------------------------------
+
+def clamp(x: int, lo: int, hi: int) -> int {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+def lerp(a: float, b: float, t: float) -> float {
+    return a + (b - a) * t
+}
+
+def abs_int(x: int) -> int {
+    if x < 0 {
+        return -x
+    }
+    return x
+}
+
+def abs_float(x: float) -> float {
+    if x < 0.0 {
+        return -x
+    }
+    return x
+}
+
+# def sign_of(x: int) -> int {
+#     return match x {
+#         int n if n > 0 => 1,
+#         int n if n < 0 => -1,
+#         _ => 0
+#     }
+# }
+
+def main() -> void {
+   demo_int()
+   demo_float()
+   demo_bool()
+   demo_str()
+   demo_void()
+   demo_int_to_float()
+   demo_float_to_int()
+#    demo_cast_call_style()
+#    demo_chained_casts()
+   demo_cast_in_expr()
+}

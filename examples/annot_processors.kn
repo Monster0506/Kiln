@@ -1,0 +1,124 @@
+# annot_processors.kn -- processor declarations for compile-time annotation expansion
+
+# ---- Annotation declarations -------------------------------------------------
+
+annotation Retry {
+    count: int = 3
+    delay: float = 0.5
+}
+
+annotation Memoize {
+    max_size: int = 256
+    ttl: int = 0
+}
+
+annotation Validate {
+    strict: bool = false
+}
+
+annotation Log {
+    level: str = "info"
+    include_args: bool = true
+}
+
+annotation Benchmark {
+    warmup: int = 3
+    iterations: int = 10
+}
+
+annotation Test {
+    isolate: bool = false
+}
+
+# ---- Processor declarations --------------------------------------------------
+#
+# Processors are compile-time functions invoked for each usage of an annotation.
+# They receive a structured representation of the annotated declaration and
+# return new declarations to inject.
+
+processor Retry(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    # Replaces the function body with a retry loop using gen { } and <<>>.
+    new_body: Block = gen {
+        mut attempts: int = 0
+        while attempts < <<target.annot.count>> {
+            try {
+                <<target.body>>
+                return
+            } except Exception as e {
+                attempts = attempts + 1
+            }
+        }
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+processor Memoize(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    # Replaces the function body with a cache-checked version.
+    result: Vec[Decl] = Vec.new()
+    return (None, result)
+}
+
+processor Validate(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    # Injects parameter validation before the function body.
+    result: Vec[Decl] = Vec.new()
+    return (None, result)
+}
+
+processor Log(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    # Wraps the function with entry/exit logging.
+    result: Vec[Decl] = Vec.new()
+    return (None, result)
+}
+
+processor Benchmark(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    # Generates a benchmarking harness alongside the original function.
+    result: Vec[Decl] = Vec.new()
+    return (None, result)
+}
+
+processor Test(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    # Registers the function in the test registry.
+    result: Vec[Decl] = Vec.new()
+    return (None, result)
+}
+
+# ---- Using the annotations ---------------------------------------------------
+
+@Retry { count: 5, delay: 0.2 }
+def fetch_user(id: int) -> str {
+    return "user_{id}"
+}
+
+@Memoize { max_size: 512 }
+def expensive_computation(n: int) -> int {
+    mut total: int = 0
+    mut i: int = 0
+    while i < n {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+@Log { level: "debug", include_args: true }
+@Validate
+def process_input(name: str, value: int) -> str {
+    return "{name}:{value}"
+}
+
+@Benchmark { warmup: 5, iterations: 100 }
+def sort_benchmark(items: Vec[int]) -> Vec[int] {
+    return items
+}
+
+@Retry
+@Log
+def upload(data: str) -> bool {
+    return true
+}
+
+def main() -> void {
+    fetch_user(1)
+    expensive_computation(5)
+}

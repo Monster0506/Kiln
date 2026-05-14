@@ -33,15 +33,19 @@ pub enum AnalysisError {
         span: Span,
     },
 
-    #[error("{span}: generic bound violated: `{ty}` does not satisfy `{bound}`")]
+    #[error("{span}: type `{ty}` does not implement `{iface}`{context}")]
     BoundViolation {
         ty: String,
-        bound: String,
+        iface: String,
+        context: String,
         span: Span,
     },
 
     #[error("{span}: field `{field}` is private")]
     PrivateField { field: String, span: Span },
+
+    #[error("{span}: no matching overload for `{name}`")]
+    NoMatchingOverload { name: String, span: Span },
 }
 
 impl AnalysisError {
@@ -56,6 +60,7 @@ impl AnalysisError {
             AnalysisError::MissingConformance { .. } => "E007",
             AnalysisError::BoundViolation { .. } => "E008",
             AnalysisError::PrivateField { .. } => "E009",
+            AnalysisError::NoMatchingOverload { .. } => "E010",
         }
     }
 
@@ -70,6 +75,7 @@ impl AnalysisError {
             AnalysisError::MissingConformance { .. } => "conformance error",
             AnalysisError::BoundViolation { .. } => "type error",
             AnalysisError::PrivateField { .. } => "visibility error",
+            AnalysisError::NoMatchingOverload { .. } => "type error",
         }
     }
 
@@ -98,11 +104,14 @@ impl AnalysisError {
             } => {
                 format!("type `{ty}` does not satisfy `{iface}`: {detail}")
             }
-            AnalysisError::BoundViolation { ty, bound, .. } => {
-                format!("generic bound violated: `{ty}` does not satisfy `{bound}`")
+            AnalysisError::BoundViolation { ty, iface, context, .. } => {
+                format!("type `{ty}` does not implement `{iface}`{context}")
             }
             AnalysisError::PrivateField { field, .. } => {
                 format!("field `{field}` is private")
+            }
+            AnalysisError::NoMatchingOverload { name, .. } => {
+                format!("no matching overload for `{name}`")
             }
         }
     }
@@ -118,6 +127,7 @@ impl AnalysisError {
             AnalysisError::MissingConformance { span, .. } => *span,
             AnalysisError::BoundViolation { span, .. } => *span,
             AnalysisError::PrivateField { span, .. } => *span,
+            AnalysisError::NoMatchingOverload { span, .. } => *span,
         }
     }
 }

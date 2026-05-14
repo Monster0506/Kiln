@@ -1,0 +1,168 @@
+# errors_custom.kn -- defining and using custom exception types
+
+# ---- The Exception interface -------------------------------------------------
+#
+# interface Exception {
+#   message: str
+#   hook to_str() -> str { return message }
+# }
+#
+# Any struct with a `message: str` field implementing Exception is an exception.
+
+# ---- Simple custom exceptions ------------------------------------------------
+
+struct ValueError: Exception {
+    message: str
+}
+
+struct TypeError: Exception {
+    message: str
+}
+
+struct IndexError: Exception {
+    message: str
+}
+
+struct KeyError: Exception {
+    message: str
+}
+
+struct OverflowError: Exception {
+    message: str
+}
+
+struct ZeroDivisionError: Exception {
+    message: str
+}
+
+struct NotImplementedError: Exception {
+    message: str
+}
+
+# ---- Exceptions with extra fields --------------------------------------------
+
+struct NetworkError: Exception {
+    message: str
+    status_code: int
+}
+
+struct TimeoutError: Exception {
+    message: str
+    seconds: float
+}
+
+struct ParseError: Exception {
+    message: str
+    line: int
+    col: int
+}
+
+struct ValidationError: Exception {
+    message: str
+    field: str
+    value: str
+}
+
+struct AuthError: Exception {
+    message: str
+    user_id: int
+    required_role: str
+}
+
+# ---- Using custom exceptions -------------------------------------------------
+
+def divide(a: int, b: int) -> int {
+    if b == 0 {
+        raise ZeroDivisionError { message: "cannot divide {a} by zero" }
+    }
+    return a / b
+}
+
+def get_item(items: Vec[str], index: int) -> str {
+    if index < 0 || index >= items.length() {
+        raise IndexError { message: "index {index} out of bounds (len={items.length()})" }
+    }
+    return items[index]
+}
+
+def validate_age(age: int) -> void {
+    if age < 0 {
+        raise ValidationError {
+            message: "age cannot be negative",
+            field: "age",
+            value: "{age}"
+        }
+    }
+    if age > 150 {
+        raise ValidationError {
+            message: "age {age} is unrealistic",
+            field: "age",
+            value: "{age}"
+        }
+    }
+}
+
+def require_auth(user_id: int, role: str) -> void {
+    if user_id == 0 {
+        raise AuthError {
+            message: "authentication required",
+            user_id: 0,
+            required_role: role
+        }
+    }
+}
+
+def fetch_url(url: str) -> str {
+    if url.length() == 0 {
+        raise NetworkError {
+            message: "empty URL",
+            status_code: 400
+        }
+    }
+    return "response"
+}
+
+def parse_config(line: int, col: int, text: str) -> void {
+    if text.length() == 0 {
+        raise ParseError {
+            message: "unexpected end of input",
+            line: line,
+            col: col
+        }
+    }
+}
+
+# ---- Catching custom exceptions by field access ------------------------------
+
+def demo_catch_fields(url: str) -> str {
+    try {
+        return fetch_url(url)
+    } except NetworkError as e {
+        print("HTTP {e.status_code}: {e.message}")
+    } except TimeoutError as e {
+        print("timed out after {e.seconds}s")
+    } except Exception as e {
+        print("error: {e.message}")
+    }
+    return ""
+}
+
+def demo_catch_validation(age: int) -> void {
+    try {
+        validate_age(age)
+        print("age {age} is valid")
+    } except ValidationError as e {
+        print("field '{e.field}' has invalid value '{e.value}': {e.message}")
+    }
+}
+
+def demo_catch_parse(text: str) -> void {
+    try {
+        parse_config(1, 0, text)
+    } except ParseError as e {
+        print("parse error at {e.line}:{e.col}: {e.message}")
+    }
+}
+
+def main() -> void {
+}

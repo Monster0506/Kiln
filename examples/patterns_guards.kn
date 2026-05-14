@@ -1,0 +1,72 @@
+# patterns_guards.kn -- guard conditions on match arms
+
+def classify_int(x: int) -> str {
+    return match x {
+        int n if n < 0 => "negative: {n}",
+        0 => "zero",
+        int n if n > 0 && n < 10 => "small: {n}",
+        int n if n >= 10 && n < 100 => "medium: {n}",
+        int n => "large: {n}"
+    }
+}
+
+def grade(score: int) -> str {
+    return match score {
+        int s if s >= 90 => "A",
+        int s if s >= 80 => "B",
+        int s if s >= 70 => "C",
+        int s if s >= 60 => "D",
+        _ => "F"
+    }
+}
+
+def fizzbuzz(n: int) -> str {
+    return match n {
+        int x if x == x / 15 * 15 => "fizzbuzz",
+        int x if x == x / 3 * 3 => "fizz",
+        int x if x == x / 5 * 5 => "buzz",
+        int x => "{x}"
+    }
+}
+
+def temperature_label(degrees: float) -> str {
+    return match degrees {
+        float t if t < 0.0 => "freezing",
+        float t if t < 10.0 => "cold",
+        float t if t < 20.0 => "cool",
+        float t if t < 30.0 => "warm",
+        float t => "hot"
+    }
+}
+
+def range_check(x: int, lo: int, hi: int) -> str {
+    return match x {
+        int n if n < lo => "below range",
+        int n if n > hi => "above range",
+        int n => "in range: {n}"
+    }
+}
+
+def divisibility(n: int) -> str {
+    return match n {
+        int x if x == x / 6 * 6 => "divisible by 2 and 3",
+        int x if x == x / 2 * 2 => "divisible by 2",
+        int x if x == x / 3 * 3 => "divisible by 3",
+        _ => "not divisible"
+    }
+}
+
+def guard_compound(a: int, b: int) -> str {
+    return match (a, b) {
+        (int x, int y) if x > 0 && y > 0 => "both positive",
+        (int x, int y) if x < 0 && y < 0 => "both negative",
+        (int x, int y) if x == y => "equal",
+        _ => "mixed"
+    }
+}
+
+def main() -> void {
+    classify_int(42)
+    grade(95)
+    fizzbuzz(15)
+}

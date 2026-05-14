@@ -1,0 +1,111 @@
+# patterns_enum.kn -- enum destructuring patterns
+
+# ---- Shared type definitions -------------------------------------------------
+
+enum Shape {
+    Circle { radius: float }
+    Rect { width: float, height: float }
+    Triangle { base: float, height: float }
+    Dot
+}
+
+enum Color {
+    Red
+    Green
+    Blue
+    Custom { r: int, g: int, b: int }
+}
+
+enum Direction {
+    North
+    South
+    East
+    West
+}
+
+# ---- Matching field variants -------------------------------------------------
+
+def area(s: Shape) -> float {
+    return match s {
+        Circle { radius: r } => 3.14159 * r * r,
+        Rect { width: w, height: h } => w * h,
+        Triangle { base: b, height: h } => 0.5 * b * h,
+        Dot => 0.0
+    }
+}
+
+def perimeter(s: Shape) -> float {
+    return match s {
+        Circle { radius: r } => 2.0 * 3.14159 * r,
+        Rect { width: w, height: h } => 2.0 * w + 2.0 * h,
+        Triangle { base: b, height: h } => b + h + (b * b + h * h),
+        Dot => 0.0
+    }
+}
+
+def describe_shape(s: Shape) -> str {
+    return match s {
+        Circle { radius: r } => "circle r={r}",
+        Rect { width: w, height: h } => "rect {w}x{h}",
+        Triangle { base: b, height: h } => "triangle b={b} h={h}",
+        Dot => "dot"
+    }
+}
+
+# ---- Matching variants without fields ----------------------------------------
+
+def is_dot(s: Shape) -> bool {
+    return match s {
+        Dot => true,
+        _ => false
+    }
+}
+
+def is_primary_color(c: Color) -> bool {
+    return match c {
+        Red => true,
+        Green => true,
+        Blue => true,
+        _ => false
+    }
+}
+
+def color_to_hex(c: Color) -> str {
+    return match c {
+        Red => "#ff0000",
+        Green => "#00ff00",
+        Blue => "#0000ff",
+        Custom { r: r, g: g, b: b } => "#{r}{g}{b}"
+    }
+}
+
+def direction_name(d: Direction) -> str {
+    return match d {
+        North => "north",
+        South => "south",
+        East => "east",
+        West => "west"
+    }
+}
+
+def is_horizontal(d: Direction) -> bool {
+    return match d {
+        East => true,
+        West => true,
+        _ => false
+    }
+}
+
+# ---- Match as statement -------------------------------------------------------
+
+def print_shape_info(s: Shape) -> void {
+    match s {
+        Circle { radius: r } => print("circle: area = {3.14159 * r * r}"),
+        Rect { width: w, height: h } => print("rect: {w} x {h}"),
+        Triangle { base: b, height: h } => print("triangle: b={b} h={h}"),
+        Dot => print("dot: no area")
+    }
+}
+
+def main() -> void {
+}

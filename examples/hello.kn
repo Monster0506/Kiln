@@ -2,6 +2,7 @@ def greet(name: str) -> str {
   return "hello, {name}!"
 }
 
-def main() -> str {
-    greet("TJ")
+def main() -> void {
+    println(greet("TJ"))
+    println(greet("Kiln"))
 }

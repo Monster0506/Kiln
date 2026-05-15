@@ -355,6 +355,7 @@ pub fn check_fn_def(
         variadic: f.variadic.as_ref().map(|v| v.name.clone()),
         return_type: ret,
         body,
+        is_builtin: false,
         span: f.span,
     }
 }

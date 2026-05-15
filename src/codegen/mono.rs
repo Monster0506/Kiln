@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::analyzer::infer::type_name_of;
-use crate::analyzer::ty::{Ty, TypeId};
+use crate::analyzer::ty::Ty;
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedCatchHandler, TypedClosureBody, TypedExpr, TypedExprKind, TypedFile,
     TypedFnDef, TypedHookDef, TypedImplBlock, TypedItem, TypedMatchArm, TypedParam, TypedStmt,
@@ -110,15 +110,15 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
 // ---------------------------------------------------------------------------
 
 fn is_generic_fn(f: &TypedFnDef) -> bool {
-//    if f.is_builtin {
-//        return false;
-//    }
+    if f.is_builtin {
+        return false;
+    }
     f.params.iter().any(|p| contains_type_param(&p.ty))
 }
 
 fn contains_type_param(ty: &Ty) -> bool {
     match ty {
-        Ty::Named(id, _) => *id == TypeId(0),
+        Ty::GenericParam(_) => true,
         Ty::Vec(t) | Ty::Set(t) | Ty::Option(t) | Ty::Shared(t) => contains_type_param(t),
         Ty::Ref(t, _) => contains_type_param(t),
         Ty::Map(k, v) => contains_type_param(k) || contains_type_param(v),
@@ -139,7 +139,7 @@ pub fn type_mono_name(ty: &Ty) -> String {
         Ty::Bool => "bool".into(),
         Ty::Str => "str".into(),
         Ty::Void => "void".into(),
-        Ty::Named(_, name) | Ty::Interface(_, name) => name.clone(),
+        Ty::Named(_, name) | Ty::Interface(_, name) | Ty::GenericParam(name) => name.clone(),
         Ty::Vec(t) => format!("Vec_{}", type_mono_name(t)),
         Ty::Set(t) => format!("Set_{}", type_mono_name(t)),
         Ty::Option(t) => format!("Option_{}", type_mono_name(t)),
@@ -367,7 +367,7 @@ fn unify_params(fn_def: &TypedFnDef, arg_tys: &[Ty]) -> HashMap<String, Ty> {
 
 fn unify_ty(pat: &Ty, concrete: &Ty, subst: &mut HashMap<String, Ty>) {
     match (pat, concrete) {
-        (Ty::Named(id, name), _) if *id == TypeId(0) => {
+        (Ty::GenericParam(name), _) => {
             subst
                 .entry(name.clone())
                 .or_insert_with(|| concrete.clone());
@@ -416,6 +416,7 @@ fn specialize_fn(
         variadic: f.variadic.clone(),
         return_type,
         body,
+        is_builtin: false,
         span: f.span,
     }
 }
@@ -426,7 +427,7 @@ fn specialize_fn(
 
 fn subst_ty(ty: &Ty, subst: &HashMap<String, Ty>) -> Ty {
     match ty {
-        Ty::Named(id, name) if *id == TypeId(0) => subst
+        Ty::GenericParam(name) => subst
             .get(name.as_str())
             .cloned()
             .unwrap_or_else(|| ty.clone()),
@@ -576,6 +577,7 @@ fn subst_stmt(
             variadic: f.variadic.clone(),
             return_type: subst_ty(&f.return_type, subst),
             body: subst_block(&f.body, subst, generic_fns),
+            is_builtin: f.is_builtin,
             span: f.span,
         }),
         TypedStmt::Break(s) => TypedStmt::Break(*s),
@@ -835,11 +837,10 @@ mod tests {
     }
 
     #[test]
-    fn contains_type_param_named_zero() {
-        assert!(contains_type_param(&Ty::Named(TypeId(0), "T".into())));
+    fn contains_type_param_generic_param() {
+        assert!(contains_type_param(&Ty::GenericParam("T".into())));
         assert!(!contains_type_param(&Ty::Named(TypeId(1), "Circle".into())));
-        assert!(contains_type_param(&Ty::Vec(Box::new(Ty::Named(
-            TypeId(0),
+        assert!(contains_type_param(&Ty::Vec(Box::new(Ty::GenericParam(
             "T".into()
         )))));
     }

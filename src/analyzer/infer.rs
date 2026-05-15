@@ -707,7 +707,7 @@ pub fn type_name_of(ty: &Ty) -> Option<String> {
         Ty::Float => Some("float".into()),
         Ty::Bool => Some("bool".into()),
         Ty::Str => Some("str".into()),
-        Ty::Named(_, name) => Some(name.clone()),
+        Ty::Named(_, name) | Ty::GenericParam(name) => Some(name.clone()),
         Ty::Vec(_) => Some("Vec".into()),
         Ty::Map(_, _) => Some("Map".into()),
         Ty::Set(_) => Some("Set".into()),
@@ -910,6 +910,7 @@ fn lower_stmt_shallow(
                 variadic: f.variadic.as_ref().map(|v| v.name.clone()),
                 return_type: ret,
                 body,
+                is_builtin: false,
                 span: f.span,
             })
         }
@@ -971,13 +972,12 @@ fn infer_binop(op: BinOp, lt: Ty, rt: Ty, span: &Span, errors: &mut Vec<Analysis
 }
 
 // ---------------------------------------------------------------------------
-// Generic substitution (replaces TypeId(0) wildcards with a concrete type)
+// Generic substitution (replaces GenericParam wildcards with a concrete type)
 // ---------------------------------------------------------------------------
 
 fn substitute_t(ty: &Ty, concrete: &Ty) -> Ty {
-    use crate::analyzer::ty::TypeId;
     match ty {
-        Ty::Named(id, _) if *id == TypeId(0) => concrete.clone(),
+        Ty::GenericParam(_) => concrete.clone(),
         Ty::Vec(inner) => Ty::Vec(Box::new(substitute_t(inner, concrete))),
         Ty::Set(inner) => Ty::Set(Box::new(substitute_t(inner, concrete))),
         Ty::Option(inner) => Ty::Option(Box::new(substitute_t(inner, concrete))),
@@ -1010,16 +1010,11 @@ pub fn check_assignable(expected: &Ty, found: &Ty, span: &Span, errors: &mut Vec
 }
 
 pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
-    use crate::analyzer::ty::TypeId;
     if matches!(expected, Ty::Unknown) || matches!(found, Ty::Unknown) {
         return true;
     }
-    // TypeId(0) is the sentinel for an unresolved generic param (T, U, etc.).
-    // Treat it as a wildcard so Vec[T] is compatible with Vec[U].
-    if matches!(expected, Ty::Named(id, _) if *id == TypeId(0)) {
-        return true;
-    }
-    if matches!(found, Ty::Named(id, _) if *id == TypeId(0)) {
+    // GenericParam is a wildcard: Vec[T] is compatible with Vec[U].
+    if matches!(expected, Ty::GenericParam(_)) || matches!(found, Ty::GenericParam(_)) {
         return true;
     }
     if *expected == Ty::Float && *found == Ty::Int {

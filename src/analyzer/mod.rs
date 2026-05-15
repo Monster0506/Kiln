@@ -287,12 +287,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 let params: Vec<(String, Ty)> = f
                     .params
                     .iter()
-                    .map(|p| {
-                        (
-                            p.name.clone(),
-                            resolve_type_expr(&p.ty, &env, &mut errors),
-                        )
-                    })
+                    .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                     .collect();
                 if has_generics {
                     env.pop_scope();
@@ -339,12 +334,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     let params: Vec<(String, Ty)> = f
                         .params
                         .iter()
-                        .map(|p| {
-                            (
-                                p.name.clone(),
-                                resolve_type_expr(&p.ty, &env, &mut errors),
-                            )
-                        })
+                        .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                         .collect();
                     if has_generics {
                         env.pop_scope();
@@ -397,12 +387,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     let params: Vec<(String, Ty)> = decl
                         .params
                         .iter()
-                        .map(|p| {
-                            (
-                                p.name.clone(),
-                                resolve_type_expr(&p.ty, &env, &mut errors),
-                            )
-                        })
+                        .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                         .collect();
                     let ret = resolve_type_expr(&decl.return_type, &env, &mut errors);
                     let qualified_fn = format!("{}_{}", s.name, decl.name);
@@ -423,12 +408,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 let fields: Vec<(String, Ty)> = s
                     .fields
                     .iter()
-                    .map(|f| {
-                        (
-                            f.name.clone(),
-                            resolve_type_expr(&f.ty, &env, &mut errors),
-                        )
-                    })
+                    .map(|f| (f.name.clone(), resolve_type_expr(&f.ty, &env, &mut errors)))
                     .collect();
                 registry.register_struct_fields(&s.name, fields);
             }
@@ -502,12 +482,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 let params: Vec<(String, Ty)> = method
                     .params
                     .iter()
-                    .map(|p| {
-                        (
-                            p.name.clone(),
-                            resolve_type_expr(&p.ty, &env, &mut errors),
-                        )
-                    })
+                    .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                     .collect();
                 let ret = resolve_type_expr(&method.return_type, &env, &mut errors);
                 let qualified_fn = format!("{}_{}", type_name, method.name);
@@ -529,12 +504,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 let params: Vec<(String, Ty)> = hook
                     .params
                     .iter()
-                    .map(|p| {
-                        (
-                            p.name.clone(),
-                            resolve_type_expr(&p.ty, &env, &mut errors),
-                        )
-                    })
+                    .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                     .collect();
                 let ret = hook
                     .return_type
@@ -580,15 +550,9 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         let params: Vec<(String, Ty)> = method
                             .params
                             .iter()
-                            .map(|p| {
-                                (
-                                    p.name.clone(),
-                                    resolve_type_expr(&p.ty, &env, &mut errors),
-                                )
-                            })
+                            .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                             .collect();
-                        let ret =
-                            resolve_type_expr(&method.return_type, &env, &mut errors);
+                        let ret = resolve_type_expr(&method.return_type, &env, &mut errors);
                         registry.register_interface_method(
                             &iface.name,
                             MethodEntry {
@@ -611,12 +575,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         };
                         let resolved_params: Vec<(String, Ty)> = params
                             .iter()
-                            .map(|p| {
-                                (
-                                    p.name.clone(),
-                                    resolve_type_expr(&p.ty, &env, &mut errors),
-                                )
-                            })
+                            .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                             .collect();
                         let ret = return_type
                             .as_ref()
@@ -705,6 +664,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     variadic: f.variadic.as_ref().map(|v| v.name.clone()),
                     return_type: ret,
                     body,
+                    is_builtin: f.annotations.iter().any(|a| a.name == "builtin"),
                     span: f.span,
                 }));
             }
@@ -850,6 +810,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         variadic: method.variadic.as_ref().map(|v| v.name.clone()),
                         return_type: ret,
                         body,
+                        is_builtin: false,
                         span: method.span,
                     });
                 }
@@ -932,8 +893,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                                     span: p.span,
                                 })
                                 .collect();
-                            let return_type =
-                                resolve_type_expr(&m.return_type, &env, &mut errors);
+                            let return_type = resolve_type_expr(&m.return_type, &env, &mut errors);
                             Some(TypedInterfaceMethod {
                                 name: m.name.clone(),
                                 params,

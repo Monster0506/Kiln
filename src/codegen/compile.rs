@@ -40,7 +40,7 @@ fn hook_qualified_name(type_name: &str, hook: &TypedHookDef) -> String {
         HookName::Named(n) => n.clone(),
         HookName::Op(op) => encode_op(op),
     };
-    format!("{}__hook__{}", type_name, suffix)
+    format!("{}_{}", type_name, suffix)
 }
 
 fn hook_method_key(hook: &TypedHookDef) -> String {
@@ -188,9 +188,6 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                         &mut cgx.module,
                     );
                     func_ids.insert(func_name.clone(), id);
-                    // Also register under "TypeName_methodname" so generic dispatch
-                    // (e.g. "int_to_str" after mono T=int) resolves to this FuncId.
-                    func_ids.insert(format!("{}_{}", type_name, method_key), id);
                     layouts.register_vtable_entry(&method_key, type_id, id);
                     let params = hook
                         .params

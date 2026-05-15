@@ -26,6 +26,7 @@ pub struct TypedFnDef {
     pub variadic: Option<String>,
     pub return_type: Ty,
     pub body: TypedBlock,
+    pub is_builtin: bool,
     pub span: Span,
 }
 

@@ -6,7 +6,7 @@ use crate::parser::ast::TypeExpr;
 pub fn resolve_type_expr(
     expr: &TypeExpr,
     env: &Env,
-//    registry: &TypeRegistry,
+    //    registry: &TypeRegistry,
     errors: &mut Vec<AnalysisError>,
 ) -> Ty {
     match expr {
@@ -35,6 +35,9 @@ pub fn resolve_type_expr(
                 ),
                 "Shared" => Ty::Shared(Box::new(nth(&resolved_generics, 0))),
                 other => match env.lookup(other) {
+                    Some(Symbol::Type { id, .. }) if *id == crate::analyzer::ty::TypeId(0) => {
+                        Ty::GenericParam(other.to_string())
+                    }
                     Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), other.to_string()),
                     Some(Symbol::Iface { id, .. }) => Ty::Interface(id.clone(), other.to_string()),
                     _ => {
@@ -67,10 +70,9 @@ pub fn resolve_type_expr(
                 .map(|v| resolve_type_expr(v, env, errors))
                 .collect(),
         ),
-        TypeExpr::Ref { inner, mutable, .. } => Ty::Ref(
-            Box::new(resolve_type_expr(inner, env, errors)),
-            *mutable,
-        ),
+        TypeExpr::Ref { inner, mutable, .. } => {
+            Ty::Ref(Box::new(resolve_type_expr(inner, env, errors)), *mutable)
+        }
         TypeExpr::GenSplice(_, span) => {
             errors.push(AnalysisError::UndefinedName {
                 name: "<gen-splice>".into(),

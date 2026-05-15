@@ -1,0 +1,85 @@
+# assoc_types.kn -- associated types with constraints in interfaces
+#
+# Associated types are type members of an interface.
+# They can carry their own interface constraints.
+
+interface Copyable {
+}
+
+interface Comparable {
+    hook <=>(other: Self) -> int
+}
+
+interface Displayable {
+    hook display() -> str
+}
+
+# ---- Iterator with a constrained associated type ----------------------------
+
+interface Iterator {
+    type Item: Copyable
+
+    hook next() -> Option[Item]
+}
+
+# ---- Graph with constrained node and edge types -----------------------------
+
+interface Graph {
+    type Node: Comparable, Displayable
+    type Edge: Displayable
+
+    hook nodes() -> Vec[Node]
+    hook edges() -> Vec[Edge]
+    hook neighbors(node: Node) -> Vec[Node]
+}
+
+# ---- Container with constrained element type --------------------------------
+
+interface SortedContainer {
+    type Item: Comparable
+
+    hook insert(item: Item)
+    hook min() -> Option[Item]
+    hook max() -> Option[Item]
+}
+
+# ---- Transformer with constrained input and output types --------------------
+
+interface Transformer {
+    type Input: Copyable
+    type Output: Displayable
+
+    hook transform(input: Input) -> Output
+}
+
+# ---- Concrete iterator implementing the constrained interface ---------------
+
+struct IntRange {
+    start: int
+    stop: int
+    current: int
+}
+
+impl Iterator for IntRange {
+    hook next() -> Option[int] {
+        if current >= stop {
+            return None
+        }
+        val: int = current
+        current = current + 1
+        return Some(val)
+    }
+}
+
+def collect_ints(iter: IntRange) -> Vec[int] {
+    result: Vec[int] = Vec.new()
+    v: Option[int] = iter.next()
+    while v != None {
+        result.add(v)
+        v = iter.next()
+    }
+    return result
+}
+
+def main() -> void {
+}

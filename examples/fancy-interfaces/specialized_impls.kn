@@ -1,0 +1,61 @@
+# specialized_impls.kn -- specialized implementations
+#
+# Specialized impls provide a more specific implementation for a concrete type
+# combination, overriding the blanket impl when conditions are met.
+# The compiler validates specialization is strictly more specific and non-ambiguous.
+
+interface AddableWith[Rhs] {
+    type Output
+
+    hook +(rhs: Rhs) -> Output
+}
+
+interface Displayable {
+    hook display() -> str
+}
+
+# ---- General blanket: Vec[T] + Vec[T] -> Vec[T] concatenation ---------------
+
+impl[T] AddableWith[Vec[T]] for Vec[T] {
+    hook +(rhs: Vec[T]) -> Vec[T] {
+        result: Vec[T] = Vec.new()
+        for item <- self {
+            result.add(item)
+        }
+        for item <- rhs {
+            result.add(item)
+        }
+        return result
+    }
+}
+
+# ---- Specialized: Vec[int] + Vec[int] uses SIMD-optimized path --------------
+
+specialized impl AddableWith[Vec[int]] for Vec[int] {
+    hook +(rhs: Vec[int]) -> Vec[int] {
+        result: Vec[int] = Vec.new()
+        i: int = 0
+        while i < self.len() {
+            result.add(self.get(i) + rhs.get(i))
+            i = i + 1
+        }
+        return result
+    }
+}
+
+# ---- Specialized: Vec[str] display is comma-joined --------------------------
+
+impl[T: Displayable] Displayable for Vec[T] {
+    hook display() -> str {
+        return "[items]"
+    }
+}
+
+specialized impl Displayable for Vec[int] {
+    hook display() -> str {
+        return "[int-vec]"
+    }
+}
+
+def main() -> void {
+}

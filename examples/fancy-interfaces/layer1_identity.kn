@@ -1,0 +1,73 @@
+# layer1_identity.kn -- construction and identity interfaces (Layer 1 operational core)
+
+interface Constructable {
+    hook new() -> Self
+}
+
+interface Zero {
+    hook zero() -> Self
+}
+
+interface One {
+    hook one() -> Self
+}
+
+interface Empty {
+    hook empty() -> Self
+}
+
+interface Copyable {
+}
+
+interface Clonable {
+    hook clone() -> Self
+}
+
+# ---- Concrete examples -------------------------------------------------------
+
+struct Counter {
+    value: int
+}
+
+impl Constructable for Counter {
+    hook new() -> Counter {
+        return Counter { value: 0 }
+    }
+}
+
+impl Zero for Counter {
+    hook zero() -> Counter {
+        return Counter { value: 0 }
+    }
+}
+
+impl One for Counter {
+    hook one() -> Counter {
+        return Counter { value: 1 }
+    }
+}
+
+impl Clonable for Counter {
+    hook clone() -> Counter {
+        return Counter { value: value }
+    }
+}
+
+struct StringBuffer {
+    data: str
+}
+
+impl Empty for StringBuffer {
+    hook empty() -> StringBuffer {
+        return StringBuffer { data: "" }
+    }
+}
+
+impl Clonable for StringBuffer {
+    hook clone() -> StringBuffer {
+        return StringBuffer { data: data }
+    }
+}
+
+def main() -> void {
+}

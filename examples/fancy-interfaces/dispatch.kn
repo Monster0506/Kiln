@@ -1,0 +1,139 @@
+# dispatch.kn -- static generic dispatch vs runtime interface dispatch
+#
+# Kiln supports both within the same unified interface system.
+
+interface Displayable {
+    hook display() -> str
+}
+
+interface Drawable {
+    hook draw() -> void
+    hook area() -> float
+}
+
+interface Copyable {
+}
+
+# ---- Static dispatch (monomorphized, zero-cost) -----------------------------
+
+def draw_static[T: Drawable](value: T) -> void {
+    print("area: {value.area()}")
+    value.draw()
+}
+
+def display_all[T: Displayable](items: Vec[T]) -> void {
+    for item <- items {
+        print(item.display())
+    }
+}
+
+# ---- Runtime interface dispatch (via vtable) --------------------------------
+
+struct Circle {
+    radius: float
+}
+
+struct Rectangle {
+    width: float
+    height: float
+}
+
+struct Triangle {
+    base: float
+    height: float
+}
+
+impl Drawable for Circle {
+    hook draw() -> void {
+        print("drawing circle r={radius}")
+    }
+
+    hook area() -> float {
+        return radius * radius * 3.14159
+    }
+}
+
+impl Drawable for Rectangle {
+    hook draw() -> void {
+        print("drawing rect {width}x{height}")
+    }
+
+    hook area() -> float {
+        return width * height
+    }
+}
+
+impl Drawable for Triangle {
+    hook draw() -> void {
+        print("drawing triangle b={base} h={height}")
+    }
+
+    hook area() -> float {
+        return base * height * 0.5
+    }
+}
+
+impl Displayable for Circle {
+    hook display() -> str {
+        return "Circle(r={radius})"
+    }
+}
+
+impl Displayable for Rectangle {
+    hook display() -> str {
+        return "Rect({width}x{height})"
+    }
+}
+
+impl Displayable for Triangle {
+    hook display() -> str {
+        return "Triangle(b={base}, h={height})"
+    }
+}
+
+# ---- Using interface type as runtime existential ----------------------------
+
+def render_all(shapes: Vec[Drawable]) -> void {
+    for shape <- shapes {
+        shape.draw()
+        print("area: {shape.area()}")
+    }
+}
+
+def total_area(shapes: Vec[Drawable]) -> float {
+    total: float = 0.0
+    for shape <- shapes {
+        total = total + shape.area()
+    }
+    return total
+}
+
+# ---- Runtime type introspection ---------------------------------------------
+
+def describe(shape: Drawable) -> str {
+    if isinstance(shape, Circle) {
+        return "it's a circle"
+    } elif isinstance(shape, Rectangle) {
+        return "it's a rectangle"
+    } else {
+        return "some other shape"
+    }
+}
+
+def main() -> void {
+    c: Circle = Circle { radius: 5.0 }
+    r: Rectangle = Rectangle { width: 3.0, height: 4.0 }
+    t: Triangle = Triangle { base: 6.0, height: 8.0 }
+
+    draw_static(c)
+    draw_static(r)
+
+    shapes: Vec[Drawable] = Vec.new()
+    shapes.add(c)
+    shapes.add(r)
+    shapes.add(t)
+
+    render_all(shapes)
+    total: float = total_area(shapes)
+    print("total area: {total}")
+}

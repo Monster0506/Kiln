@@ -1,0 +1,71 @@
+# layer1_unary.kn -- unary operation interfaces (Layer 1 operational core)
+
+interface Negatable {
+    hook -() -> Self
+}
+
+interface Normalizeable {
+    hook +() -> Self
+}
+
+interface Invertible {
+    hook !() -> Self
+}
+
+# ---- Concrete examples -------------------------------------------------------
+
+struct Vec2 {
+    x: float
+    y: float
+}
+
+impl Negatable for Vec2 {
+    hook -() -> Vec2 {
+        return Vec2 { x: 0.0 - x, y: 0.0 - y }
+    }
+}
+
+impl Normalizeable for Vec2 {
+    hook +() -> Vec2 {
+        len: float = x * x + y * y
+        return Vec2 { x: x / len, y: y / len }
+    }
+}
+
+struct BitFlags {
+    bits: int
+}
+
+impl Invertible for BitFlags {
+    hook !() -> BitFlags {
+        return BitFlags { bits: 0 - bits - 1 }
+    }
+}
+
+struct Predicate {
+    value: bool
+}
+
+impl Invertible for Predicate {
+    hook !() -> Predicate {
+        if value {
+            return Predicate { value: false }
+        }
+        return Predicate { value: true }
+    }
+}
+
+def negate_vec(v: Vec2) -> Vec2 {
+    return -v
+}
+
+def normalize_vec(v: Vec2) -> Vec2 {
+    return v.normalize()
+}
+
+def invert_flags(f: BitFlags) -> BitFlags {
+    return !f
+}
+
+def main() -> void {
+}

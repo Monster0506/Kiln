@@ -1,0 +1,65 @@
+# extension_impls.kn -- extension implementations for external types
+#
+# Extension impls add interface conformance to types defined in other modules.
+# They are explicitly scoped (must be imported to take effect),
+# preventing uncontrolled global ambiguity.
+
+interface Displayable {
+    hook display() -> str
+}
+
+interface Serializable {
+    hook to_json() -> str
+}
+
+interface Hashable {
+    hook hash() -> int
+}
+
+# ---- These types are hypothetically "external" (defined elsewhere) ----------
+
+struct ExternalPoint {
+    x: float
+    y: float
+}
+
+struct ExternalColor {
+    r: int
+    g: int
+    b: int
+}
+
+# ---- Extension impls add Displayable to the external types ------------------
+
+extension impl Displayable for ExternalPoint {
+    hook display() -> str {
+        return "({x}, {y})"
+    }
+}
+
+extension impl Displayable for ExternalColor {
+    hook display() -> str {
+        return "rgb({r}, {g}, {b})"
+    }
+}
+
+extension impl Serializable for ExternalPoint {
+    hook to_json() -> str {
+        return "x={x} y={y}"
+    }
+}
+
+extension impl Hashable for ExternalPoint {
+    hook hash() -> int {
+        xi: int = x * 1000.0
+        yi: int = y * 1000.0
+        return xi * 31 + yi
+    }
+}
+
+def print_point(p: ExternalPoint) -> void {
+    print(p.display())
+}
+
+def main() -> void {
+}

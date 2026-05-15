@@ -1,0 +1,96 @@
+# layer3_collection.kn -- collection and functional semantics (Layer 3)
+
+interface Iterator {
+    type Item: Copyable
+
+    hook next() -> Option[Item]
+}
+
+interface Iterable {
+    type Item
+    type Iter: Iterator
+
+    hook iter() -> Iter
+}
+
+interface Indexable {
+    type Item
+    type Index
+
+    hook [](index: Index) -> Item
+}
+
+interface Collection: Iterable {
+}
+
+interface Sequence:
+    Collection,
+    Indexable {
+}
+
+interface Copyable {
+}
+
+interface Comparable {
+    hook <=>(other: Self) -> int
+}
+
+# ---- Functional abstractions ------------------------------------------------
+
+interface Predicate[T]: Callable[(T), bool] {
+}
+
+interface Mapper[T, U]: Callable[(T), U] {
+}
+
+interface Callable[Args, Ret] {
+    hook ()(args: Args) -> Ret
+}
+
+# ---- A concrete sequence type -----------------------------------------------
+
+struct IntSlice {
+    data: Vec[int]
+    len: int
+}
+
+struct IntSliceIter {
+    slice: IntSlice
+    pos: int
+}
+
+impl Iterator for IntSliceIter {
+    hook next() -> Option[int] {
+        if pos >= slice.len {
+            return None
+        }
+        val: int = slice.data.get(pos)
+        pos = pos + 1
+        return Some(val)
+    }
+}
+
+impl Iterable for IntSlice {
+    hook iter() -> IntSliceIter {
+        return IntSliceIter { slice: self, pos: 0 }
+    }
+}
+
+impl Indexable for IntSlice {
+    hook [](index: int) -> int {
+        return data.get(index)
+    }
+}
+
+# ---- Generic algorithms that work on any Iterable ---------------------------
+
+def count[T: Iterable](col: T) -> int {
+    n: int = 0
+    for _ <- col.iter() {
+        n = n + 1
+    }
+    return n
+}
+
+def main() -> void {
+}

@@ -1,0 +1,62 @@
+# layer1_assign.kn -- compound-assign operation interfaces (Layer 1 operational core)
+#
+# Assign operations represent mutation and accumulation.
+# They are NOT equivalent to a = a op b.
+
+interface AddAssignableWith[Rhs] {
+    hook +=(rhs: Rhs)
+}
+
+interface SubtractAssignableWith[Rhs] {
+    hook -=(rhs: Rhs)
+}
+
+interface MultiplyAssignableWith[Rhs] {
+    hook *=(rhs: Rhs)
+}
+
+interface DivideAssignableWith[Rhs] {
+    hook /=(rhs: Rhs)
+}
+
+interface RemainderAssignableWith[Rhs] {
+    hook %=(rhs: Rhs)
+}
+
+# ---- Concrete example: accumulating counter ----------------------------------
+
+struct Counter {
+    value: int
+}
+
+impl AddAssignableWith[int] for Counter {
+    hook +=(rhs: int) {
+        value = value + rhs
+    }
+}
+
+impl SubtractAssignableWith[int] for Counter {
+    hook -=(rhs: int) {
+        value = value - rhs
+    }
+}
+
+# ---- Convenience shorthands --------------------------------------------------
+
+interface AddAssignable: AddAssignableWith[Self] {
+}
+
+interface SubtractAssignable: SubtractAssignableWith[Self] {
+}
+
+interface MultiplyAssignable: MultiplyAssignableWith[Self] {
+}
+
+interface DivideAssignable: DivideAssignableWith[Self] {
+}
+
+interface RemainderAssignable: RemainderAssignableWith[Self] {
+}
+
+def main() -> void {
+}

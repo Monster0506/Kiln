@@ -1,0 +1,52 @@
+# layer1_indexing.kn -- indexing interfaces (Layer 1 operational core)
+
+interface IndexableWith[Index] {
+    type Output
+
+    hook [](index: Index) -> Output
+}
+
+interface MutableIndexableWith[Index] {
+    type Output
+
+    hook []=(index: Index, value: Output)
+}
+
+# ---- Integer-indexed array wrapper ------------------------------------------
+
+struct IntArray {
+    data: Vec[int]
+}
+
+impl IndexableWith[int] for IntArray {
+    hook [](index: int) -> int {
+        return data.get(index)
+    }
+}
+
+impl MutableIndexableWith[int] for IntArray {
+    hook []=(index: int, value: int) {
+        data.set(index, value)
+    }
+}
+
+# ---- String-keyed map wrapper ------------------------------------------------
+
+struct StrMap {
+    data: Map[str, str]
+}
+
+impl IndexableWith[str] for StrMap {
+    hook [](index: str) -> str {
+        return data.get(index)
+    }
+}
+
+impl MutableIndexableWith[str] for StrMap {
+    hook []=(index: str, value: str) {
+        data.set(index, value)
+    }
+}
+
+def main() -> void {
+}

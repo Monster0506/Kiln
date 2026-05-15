@@ -1,0 +1,95 @@
+# layer1_callable_iter.kn -- Callable and Iterator interfaces with associated types
+
+interface Callable[Args, Ret] {
+    hook ()(args: Args) -> Ret
+}
+
+interface Iterator {
+    type Item: Copyable
+
+    hook next() -> Option[Item]
+}
+
+interface Into[T] {
+    hook into() -> T
+}
+
+interface From[T] {
+    hook from(value: T) -> Self
+}
+
+interface Displayable {
+    hook display() -> str
+}
+
+interface Debuggable {
+    hook debug() -> str
+}
+
+interface Hashable {
+    hook hash() -> int
+}
+
+# ---- A simple range iterator -------------------------------------------------
+
+struct RangeIter {
+    current: int
+    stop: int
+}
+
+impl Iterator for RangeIter {
+    hook next() -> Option[int] {
+        if current >= stop {
+            return None
+        }
+        result: int = current
+        current = current + 1
+        return Some(result)
+    }
+}
+
+# ---- A filter iterator wrapping another iterator ----------------------------
+
+struct Filtered {
+    inner: RangeIter
+    threshold: int
+}
+
+impl Iterator for Filtered {
+    hook next() -> Option[int] {
+        v: Option[int] = inner.next()
+        if v == None {
+            return None
+        }
+        x: int = v
+        if x > threshold {
+            return Some(x)
+        }
+        return None
+    }
+}
+
+# ---- From / Into conversions -------------------------------------------------
+
+struct Celsius {
+    degrees: float
+}
+
+struct Kelvin {
+    degrees: float
+}
+
+impl From[Celsius] for Kelvin {
+    hook from(value: Celsius) -> Kelvin {
+        return Kelvin { degrees: value.degrees + 273.15 }
+    }
+}
+
+impl Into[Kelvin] for Celsius {
+    hook into() -> Kelvin {
+        return Kelvin { degrees: degrees + 273.15 }
+    }
+}
+
+def main() -> void {
+}

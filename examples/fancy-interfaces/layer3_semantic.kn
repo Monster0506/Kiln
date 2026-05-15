@@ -1,0 +1,174 @@
+# layer3_semantic.kn -- semantic algebraic interfaces (Layer 3)
+#
+# These build on Layer 2 shorthands and Layer 1 primitives to express
+# mathematical structures: Semigroup, Monoid, Group, Ring, Field, Numeric.
+
+interface Addable: AddableWith[Self] {
+}
+
+interface Subtractable: SubtractableWith[Self] {
+}
+
+interface Multipliable: MultipliableWith[Self] {
+}
+
+interface Dividable: DividableWith[Self] {
+}
+
+interface AddableWith[Rhs] {
+    type Output
+
+    hook +(rhs: Rhs) -> Output
+}
+
+interface SubtractableWith[Rhs] {
+    type Output
+
+    hook -(rhs: Rhs) -> Output
+}
+
+interface MultipliableWith[Rhs] {
+    type Output
+
+    hook *(rhs: Rhs) -> Output
+}
+
+interface DividableWith[Rhs] {
+    type Output
+
+    hook /(rhs: Rhs) -> Output
+}
+
+interface Negatable {
+    hook -() -> Self
+}
+
+interface Zero {
+    hook zero() -> Self
+}
+
+interface One {
+    hook one() -> Self
+}
+
+interface ComparableWith[Rhs] {
+    hook <=>(rhs: Rhs) -> int
+}
+
+interface Comparable: ComparableWith[Self] {
+}
+
+# ---- Layer 3 semantic interfaces --------------------------------------------
+
+interface Semigroup: Addable {
+}
+
+interface Monoid:
+    Semigroup,
+    Zero {
+}
+
+interface Group:
+    Monoid,
+    Negatable {
+}
+
+interface Ring:
+    Group,
+    Multipliable,
+    One {
+}
+
+interface Field:
+    Ring,
+    Dividable {
+}
+
+interface Numeric:
+    Field,
+    Comparable {
+}
+
+# ---- A rational number type that forms a field ------------------------------
+
+struct Rational {
+    numer: int
+    denom: int
+}
+
+impl AddableWith[Rational] for Rational {
+    hook +(rhs: Rational) -> Rational {
+        n: int = numer * rhs.denom + rhs.numer * denom
+        d: int = denom * rhs.denom
+        return Rational { numer: n, denom: d }
+    }
+}
+
+impl SubtractableWith[Rational] for Rational {
+    hook -(rhs: Rational) -> Rational {
+        n: int = numer * rhs.denom - rhs.numer * denom
+        d: int = denom * rhs.denom
+        return Rational { numer: n, denom: d }
+    }
+}
+
+impl MultipliableWith[Rational] for Rational {
+    hook *(rhs: Rational) -> Rational {
+        return Rational { numer: numer * rhs.numer, denom: denom * rhs.denom }
+    }
+}
+
+impl DividableWith[Rational] for Rational {
+    hook /(rhs: Rational) -> Rational {
+        return Rational { numer: numer * rhs.denom, denom: denom * rhs.numer }
+    }
+}
+
+impl Negatable for Rational {
+    hook -() -> Rational {
+        return Rational { numer: 0 - numer, denom: denom }
+    }
+}
+
+impl Zero for Rational {
+    hook zero() -> Rational {
+        return Rational { numer: 0, denom: 1 }
+    }
+}
+
+impl One for Rational {
+    hook one() -> Rational {
+        return Rational { numer: 1, denom: 1 }
+    }
+}
+
+impl ComparableWith[Rational] for Rational {
+    hook <=>(rhs: Rational) -> int {
+        lhs_scaled: int = numer * rhs.denom
+        rhs_scaled: int = rhs.numer * denom
+        if lhs_scaled < rhs_scaled { return -1 }
+        if lhs_scaled > rhs_scaled { return 1 }
+        return 0
+    }
+}
+
+# ---- Generic functions that require algebraic structure ---------------------
+
+def sum[T: Monoid](items: Vec[T]) -> T {
+    acc: T = T.zero()
+    for item <- items {
+        acc = acc + item
+    }
+    return acc
+}
+
+def product[T: Ring](items: Vec[T]) -> T {
+    acc: T = T.one()
+    for item <- items {
+        acc = acc * item
+    }
+    return acc
+}
+
+def main() -> void {
+}

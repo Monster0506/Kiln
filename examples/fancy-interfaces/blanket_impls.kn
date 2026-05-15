@@ -1,0 +1,74 @@
+# blanket_impls.kn -- blanket implementations
+#
+# Blanket impls allow an interface to be automatically implemented
+# for all types satisfying a set of bounds.
+
+interface Displayable {
+    hook display() -> str
+}
+
+interface Debuggable {
+    hook debug() -> str
+}
+
+interface Copyable {
+}
+
+# ---- A wrapper type that is Displayable when T is Displayable ---------------
+
+struct Wrapper {
+    inner: int
+    label: str
+}
+
+impl Displayable for Wrapper {
+    hook display() -> str {
+        return "{label}({inner})"
+    }
+}
+
+# ---- Blanket impl: Vec[T] is Displayable when T is Displayable --------------
+#
+# impl[T: Displayable] Displayable for Vec[T]
+# This means: for any T that implements Displayable,
+# Vec[T] automatically implements Displayable.
+
+impl[T: Displayable] Displayable for Vec[T] {
+    hook display() -> str {
+        return "[...]"
+    }
+}
+
+# ---- Blanket impl: anything Displayable is also Debuggable ------------------
+
+impl[T: Displayable] Debuggable for T {
+    hook debug() -> str {
+        return "Debug({T.display()})"
+    }
+}
+
+# ---- Blanket impl for pairs -------------------------------------------------
+
+struct Pair {
+    first: int
+    second: int
+}
+
+impl Displayable for Pair {
+    hook display() -> str {
+        return "({first}, {second})"
+    }
+}
+
+def print_displayable[T: Displayable](val: T) -> void {
+    print(val.display())
+}
+
+def debug_all[T: Debuggable](items: Vec[T]) -> void {
+    for item <- items {
+        print(item.debug())
+    }
+}
+
+def main() -> void {
+}

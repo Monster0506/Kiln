@@ -1,0 +1,77 @@
+# layer1_comparison.kn -- heterogeneous comparison interfaces (Layer 1 operational core)
+
+interface EquatableWith[Rhs] {
+    hook ==(rhs: Rhs) -> bool
+}
+
+interface ComparableWith[Rhs] {
+    hook <=>(rhs: Rhs) -> int
+}
+
+# ---- Concrete example --------------------------------------------------------
+
+struct Temperature {
+    celsius: float
+}
+
+struct Fahrenheit {
+    degrees: float
+}
+
+impl EquatableWith[Temperature] for Temperature {
+    hook ==(rhs: Temperature) -> bool {
+        return celsius == rhs.celsius
+    }
+}
+
+impl ComparableWith[Temperature] for Temperature {
+    hook <=>(rhs: Temperature) -> int {
+        if celsius < rhs.celsius { return -1 }
+        if celsius > rhs.celsius { return 1 }
+        return 0
+    }
+}
+
+impl EquatableWith[Fahrenheit] for Temperature {
+    hook ==(rhs: Fahrenheit) -> bool {
+        converted: float = (rhs.degrees - 32.0) * 5.0 / 9.0
+        return celsius == converted
+    }
+}
+
+# ---- Self-comparable shorthand -----------------------------------------------
+
+interface Equatable: EquatableWith[Self] {
+}
+
+interface Comparable: ComparableWith[Self] {
+}
+
+struct Score {
+    points: int
+}
+
+impl EquatableWith[Score] for Score {
+    hook ==(rhs: Score) -> bool {
+        return points == rhs.points
+    }
+}
+
+impl ComparableWith[Score] for Score {
+    hook <=>(rhs: Score) -> int {
+        if points < rhs.points { return -1 }
+        if points > rhs.points { return 1 }
+        return 0
+    }
+}
+
+def max_score(a: Score, b: Score) -> Score {
+    cmp: int = a <=> b
+    if cmp >= 0 {
+        return a
+    }
+    return b
+}
+
+def main() -> void {
+}

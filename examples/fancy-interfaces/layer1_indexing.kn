@@ -1,16 +1,5 @@
 # layer1_indexing.kn -- indexing interfaces (Layer 1 operational core)
-
-interface IndexableWith[Index] {
-    type Output
-
-    hook [](index: Index) -> Output
-}
-
-interface MutableIndexableWith[Index] {
-    type Output
-
-    hook []=(index: Index, value: Output)
-}
+# IndexableWith and MutableIndexableWith are provided by the prelude.
 
 # ---- Integer-indexed array wrapper ------------------------------------------
 

@@ -1,7 +1,8 @@
 use crate::analyzer::error::AnalysisError;
 use crate::diagnostics::Span;
 use crate::parser::ast::{
-    EnumDef, Field, FnDef, HookDef, ImplBlock, InterfaceDef, InterfaceItemKind, StructDef, TypeExpr,
+    EnumDef, Field, FnDef, HookDef, ImplBlock, InterfaceDef, InterfaceItemKind, StructDef,
+    TypeExpr,
 };
 
 /// Check that `st` satisfies every interface it declares.
@@ -21,6 +22,7 @@ pub fn check_struct_conformance(
             &hooks,
             &iface_name,
             all_interfaces,
+            all_impls,
             &st.span,
             errors,
         );
@@ -44,16 +46,19 @@ pub fn check_enum_conformance(
             &hooks,
             &iface_name,
             all_interfaces,
+            all_impls,
             &en.span,
             errors,
         );
     }
 }
 
-/// Check that an impl block provides all required items from the interface it claims to implement.
+/// Check that an impl block provides all required items from the interface it claims to implement,
+/// including verifying associated-type bindings declared in the interface's extends clause.
 pub fn check_impl_completeness(
     impl_block: &ImplBlock,
     all_interfaces: &[InterfaceDef],
+    all_impls: &[ImplBlock],
     errors: &mut Vec<AnalysisError>,
 ) {
     let iface_name = type_expr_name(&impl_block.interface);
@@ -63,6 +68,7 @@ pub fn check_impl_completeness(
         None => return,
     };
 
+    // Check that required hooks/methods are present.
     for item in &iface.items {
         match &item.kind {
             InterfaceItemKind::Hook { name, default, .. } if default.is_none() => {
@@ -92,6 +98,120 @@ pub fn check_impl_completeness(
             _ => {}
         }
     }
+
+    // Check associated-type bindings in the extends clause.
+    for parent_ty in &iface.extends {
+        if let TypeExpr::Named {
+            name: parent_name,
+            bindings,
+            ..
+        } = parent_ty
+        {
+            if !bindings.is_empty() {
+                check_assoc_bindings(
+                    &type_name,
+                    parent_name,
+                    bindings,
+                    all_interfaces,
+                    all_impls,
+                    &impl_block.span,
+                    errors,
+                );
+            }
+        }
+    }
+}
+
+/// Verify that, for a type implementing an interface that extends `parent_iface` with
+/// `bindings` (e.g. `Output=Self`), the type's impl of `parent_iface` actually satisfies
+/// those bindings.
+///
+/// For each binding `(assoc_name, bound_ty)`:
+///   - Resolve `bound_ty` by substituting `Self` -> `type_name`.
+///   - Find the hook in `parent_iface` whose declared return type equals `assoc_name`.
+///   - Look up the return type of that hook in `type_name`'s impl of `parent_iface`.
+///   - Require that it equals the resolved binding type.
+fn check_assoc_bindings(
+    type_name: &str,
+    parent_iface_name: &str,
+    bindings: &[(String, TypeExpr)],
+    all_interfaces: &[InterfaceDef],
+    all_impls: &[ImplBlock],
+    span: &Span,
+    errors: &mut Vec<AnalysisError>,
+) {
+    let parent_iface = match all_interfaces.iter().find(|i| i.name == parent_iface_name) {
+        Some(i) => i,
+        None => return,
+    };
+
+    // Find the impl of parent_iface for type_name.
+    let impl_block = all_impls.iter().find(|b| {
+        type_expr_name(&b.for_type) == type_name
+            && type_expr_name(&b.interface) == parent_iface_name
+    });
+
+    for (assoc_name, bound_ty_expr) in bindings {
+        // Resolve bound type: substitute "Self" -> type_name.
+        let expected = resolve_binding_name(bound_ty_expr, type_name);
+
+        // Find which hook in parent_iface declares its return type as the assoc type name.
+        for item in &parent_iface.items {
+            let (hook_name, ret_ty_expr) = match &item.kind {
+                InterfaceItemKind::Hook {
+                    name,
+                    return_type: Some(ret),
+                    ..
+                } => (name, ret),
+                _ => continue,
+            };
+
+            let ret_ty_name = match ret_ty_expr {
+                TypeExpr::Named { name, .. } => name.as_str(),
+                _ => continue,
+            };
+
+            if ret_ty_name != assoc_name.as_str() {
+                continue;
+            }
+
+            // This hook defines the assoc type. Check the impl's version.
+            if let Some(b) = impl_block {
+                if let Some(h) = b.hooks.iter().find(|h| &h.name == hook_name) {
+                    let actual = h
+                        .return_type
+                        .as_ref()
+                        .map(|t| resolve_binding_name(t, type_name))
+                        .unwrap_or_else(|| "void".to_string());
+
+                    if actual != expected {
+                        errors.push(AnalysisError::MissingConformance {
+                            ty: type_name.to_string(),
+                            iface: parent_iface_name.to_string(),
+                            detail: format!(
+                                "associated type `{assoc_name}` must be `{expected}`, found `{actual}`"
+                            ),
+                            span: *span,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Resolve a binding type expression to a concrete name string, substituting `Self` -> `self_ty`.
+fn resolve_binding_name(ty: &TypeExpr, self_ty: &str) -> String {
+    match ty {
+        TypeExpr::Named { name, .. } => {
+            if name == "Self" {
+                self_ty.to_string()
+            } else {
+                name.clone()
+            }
+        }
+        _ => "<complex>".to_string(),
+    }
 }
 
 fn collect_impl_hooks(type_name: &str, iface_name: &str, all_impls: &[ImplBlock]) -> Vec<HookDef> {
@@ -112,6 +232,7 @@ fn check_against_iface(
     hooks: &[HookDef],
     iface_name: &str,
     all_interfaces: &[InterfaceDef],
+    all_impls: &[ImplBlock],
     span: &Span,
     errors: &mut Vec<AnalysisError>,
 ) {
@@ -130,6 +251,22 @@ fn check_against_iface(
 
     for parent in &iface.extends {
         let pname = type_expr_name(parent);
+
+        // Check associated-type bindings on this parent reference.
+        if let TypeExpr::Named { bindings, .. } = parent {
+            if !bindings.is_empty() {
+                check_assoc_bindings(
+                    type_name,
+                    &pname,
+                    bindings,
+                    all_interfaces,
+                    all_impls,
+                    span,
+                    errors,
+                );
+            }
+        }
+
         check_against_iface(
             type_name,
             fields,
@@ -137,6 +274,7 @@ fn check_against_iface(
             hooks,
             &pname,
             all_interfaces,
+            all_impls,
             span,
             errors,
         );
@@ -400,7 +538,7 @@ mod tests {
             span: s(),
         };
         let mut errs = vec![];
-        check_impl_completeness(&empty_impl, &[addable_iface()], &mut errs);
+        check_impl_completeness(&empty_impl, &[addable_iface()], &[], &mut errs);
         assert_eq!(
             errs.len(),
             1,
@@ -412,7 +550,7 @@ mod tests {
     fn ok_when_impl_block_has_required_hook() {
         let impl_block = addable_impl_for_point();
         let mut errs = vec![];
-        check_impl_completeness(&impl_block, &[addable_iface()], &mut errs);
+        check_impl_completeness(&impl_block, &[addable_iface()], &[], &mut errs);
         assert!(errs.is_empty(), "{errs:?}");
     }
 
@@ -428,7 +566,7 @@ mod tests {
             span: s(),
         };
         let mut errs = vec![];
-        check_impl_completeness(&empty_impl, &[printable_iface()], &mut errs);
+        check_impl_completeness(&empty_impl, &[printable_iface()], &[], &mut errs);
         assert_eq!(
             errs.len(),
             1,
@@ -460,7 +598,7 @@ mod tests {
             span: s(),
         };
         let mut errs = vec![];
-        check_impl_completeness(&impl_with_method, &[printable_iface()], &mut errs);
+        check_impl_completeness(&impl_with_method, &[printable_iface()], &[], &mut errs);
         assert!(errs.is_empty(), "{errs:?}");
     }
 
@@ -478,10 +616,163 @@ mod tests {
             span: s(),
         };
         let mut errs = vec![];
-        check_impl_completeness(&empty_impl, &[addable_iface()], &mut errs);
+        check_impl_completeness(&empty_impl, &[addable_iface()], &[], &mut errs);
         assert!(
             !errs.is_empty(),
             "empty impl block should fail completeness check"
         );
+    }
+
+    // ---- Binding enforcement tests -------------------------------------------
+
+    fn addable_with_iface() -> InterfaceDef {
+        // interface AddableWith[Rhs] { type Output; hook +(rhs: Rhs) -> Output }
+        InterfaceDef {
+            name: "AddableWith".into(),
+            generic_params: vec![GenericParam {
+                kind: GenericParamKind::Type,
+                name: "Rhs".into(),
+                variance: Variance::Invariant,
+                bounds: vec![],
+                span: s(),
+            }],
+            extends: vec![],
+            items: vec![
+                InterfaceItem {
+                    kind: InterfaceItemKind::AssocType {
+                        name: "Output".into(),
+                        bounds: vec![],
+                    },
+                    span: s(),
+                },
+                InterfaceItem {
+                    kind: InterfaceItemKind::Hook {
+                        name: HookName::Op("+".into()),
+                        params: vec![Param {
+                            name: "rhs".into(),
+                            ty: named("Rhs"),
+                            span: s(),
+                        }],
+                        return_type: Some(named("Output")),
+                        default: None,
+                    },
+                    span: s(),
+                },
+            ],
+            span: s(),
+        }
+    }
+
+    fn closed_addable_iface() -> InterfaceDef {
+        // interface Addable: AddableWith[Self, Output=Self] { hook +(rhs: Self) -> Self }
+        InterfaceDef {
+            name: "Addable".into(),
+            generic_params: vec![],
+            extends: vec![TypeExpr::Named {
+                name: "AddableWith".into(),
+                generics: vec![named("Self")],
+                bindings: vec![("Output".into(), named("Self"))],
+                span: s(),
+            }],
+            items: vec![InterfaceItem {
+                kind: InterfaceItemKind::Hook {
+                    name: HookName::Op("+".into()),
+                    params: vec![Param {
+                        name: "rhs".into(),
+                        ty: named("Self"),
+                        span: s(),
+                    }],
+                    return_type: Some(named("Self")),
+                    default: None,
+                },
+                span: s(),
+            }],
+            span: s(),
+        }
+    }
+
+    fn addable_with_impl_returning(for_ty: &str, ret: &str) -> ImplBlock {
+        // impl AddableWith[for_ty] for for_ty { hook +(rhs: for_ty) -> ret {} }
+        ImplBlock {
+            generic_params: vec![],
+            interface: TypeExpr::Named {
+                name: "AddableWith".into(),
+                generics: vec![named(for_ty)],
+                bindings: vec![],
+                span: s(),
+            },
+            for_type: named(for_ty),
+            methods: vec![],
+            hooks: vec![HookDef {
+                name: HookName::Op("+".into()),
+                params: vec![Param {
+                    name: "rhs".into(),
+                    ty: named(for_ty),
+                    span: s(),
+                }],
+                return_type: Some(named(ret)),
+                body: Block { stmts: vec![], span: s() },
+                span: s(),
+            }],
+            kind: ImplKind::Plain,
+            span: s(),
+        }
+    }
+
+    fn addable_impl_for(ty: &str) -> ImplBlock {
+        ImplBlock {
+            generic_params: vec![],
+            interface: named("Addable"),
+            for_type: named(ty),
+            methods: vec![],
+            hooks: vec![HookDef {
+                name: HookName::Op("+".into()),
+                params: vec![Param {
+                    name: "rhs".into(),
+                    ty: named(ty),
+                    span: s(),
+                }],
+                return_type: Some(named(ty)),
+                body: Block { stmts: vec![], span: s() },
+                span: s(),
+            }],
+            kind: ImplKind::Plain,
+            span: s(),
+        }
+    }
+
+    #[test]
+    fn binding_satisfied_when_output_equals_self() {
+        // impl AddableWith[MyNum] for MyNum { hook + -> MyNum } -- Output=MyNum matches Self=MyNum
+        let correct_with_impl = addable_with_impl_returning("MyNum", "MyNum");
+        let addable_impl = addable_impl_for("MyNum");
+        let mut errs = vec![];
+        check_impl_completeness(
+            &addable_impl,
+            &[closed_addable_iface(), addable_with_iface()],
+            &[correct_with_impl],
+            &mut errs,
+        );
+        assert!(errs.is_empty(), "Output=MyNum should satisfy Output=Self for MyNum: {errs:?}");
+    }
+
+    #[test]
+    fn binding_violated_when_output_differs_from_self() {
+        // impl AddableWith[MyNum] for MyNum { hook + -> str } -- Output=str, but Self=MyNum
+        let wrong_with_impl = addable_with_impl_returning("MyNum", "str");
+        let addable_impl = addable_impl_for("MyNum");
+        let mut errs = vec![];
+        check_impl_completeness(
+            &addable_impl,
+            &[closed_addable_iface(), addable_with_iface()],
+            &[wrong_with_impl],
+            &mut errs,
+        );
+        assert_eq!(errs.len(), 1, "Output=str violates Output=Self for MyNum: {errs:?}");
+        let detail = match &errs[0] {
+            AnalysisError::MissingConformance { detail, .. } => detail.clone(),
+            _ => panic!("wrong error kind: {:?}", errs[0]),
+        };
+        assert!(detail.contains("Output"), "error should mention assoc type name: {detail}");
     }
 }

@@ -2,12 +2,10 @@
 #
 # HKTs allow abstraction over type constructors, not just instantiated types.
 # F[_] denotes a type constructor that takes one type argument.
+#
+# Callable is provided by the prelude.
 
 interface Copyable {
-}
-
-interface Callable[Args, Ret] {
-    hook ()(args: Args) -> Ret
 }
 
 # ---- Functor: F[A] -> F[B] via a mapping function --------------------------

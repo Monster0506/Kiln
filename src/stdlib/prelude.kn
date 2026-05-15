@@ -32,7 +32,7 @@ def __kiln_float_to_str(f: float) -> str
 @builtin
 def __kiln_bool_to_str(b: bool) -> str
 
-# ---- Core identity and equality interfaces ----------------------------------
+# ---- Core marker and identity interfaces ------------------------------------
 
 interface Copy {}
 
@@ -51,7 +51,7 @@ interface Hash {
 }
 
 interface Ord {
-    hook <=>(other: Self) -> int
+    hook <=>(other: Self) -> Ordering
 }
 
 interface PartialOrd {
@@ -68,6 +68,18 @@ interface Display {
 
 interface Default {
     hook default() -> Self
+}
+
+interface Constructable {
+    hook new() -> Self
+}
+
+interface Empty {
+    hook empty() -> Self
+}
+
+interface Invertible {
+    hook !() -> Self
 }
 
 # ---- Arithmetic layer 1: heterogeneous typed relations ----------------------
@@ -102,7 +114,41 @@ interface EquatableWith[Rhs] {
 }
 
 interface ComparableWith[Rhs] {
-    hook <=>(rhs: Rhs) -> int
+    hook <=>(rhs: Rhs) -> Ordering
+}
+
+# ---- Assign operation interfaces --------------------------------------------
+
+interface AddAssignableWith[Rhs] {
+    hook +=(rhs: Rhs) -> void
+}
+
+interface SubtractAssignableWith[Rhs] {
+    hook -=(rhs: Rhs) -> void
+}
+
+interface MultiplyAssignableWith[Rhs] {
+    hook *=(rhs: Rhs) -> void
+}
+
+interface DivideAssignableWith[Rhs] {
+    hook /=(rhs: Rhs) -> void
+}
+
+interface RemainderAssignableWith[Rhs] {
+    hook %=(rhs: Rhs) -> void
+}
+
+# ---- Indexing interfaces ----------------------------------------------------
+
+interface IndexableWith[Index] {
+    type Output
+    hook [](index: Index) -> Output
+}
+
+interface MutableIndexableWith[Index] {
+    type Output
+    hook []=(index: Index, value: Output) -> void
 }
 
 # ---- Arithmetic layer 2: closed self-typed shorthands -----------------------
@@ -110,15 +156,19 @@ interface ComparableWith[Rhs] {
 interface Addable: AddableWith[Self, Output=Self] {
     hook +(rhs: Self) -> Self
 }
+
 interface Subtractable: SubtractableWith[Self, Output=Self] {
     hook -(rhs: Self) -> Self
 }
+
 interface Multiplicable: MultipliableWith[Self, Output=Self] {
     hook *(rhs: Self) -> Self
 }
+
 interface Divisible: DividableWith[Self, Output=Self] {
     hook /(rhs: Self) -> Self
 }
+
 interface Remainder: RemainderableWith[Self, Output=Self] {
     hook %(rhs: Self) -> Self
 }
@@ -126,6 +176,8 @@ interface Remainder: RemainderableWith[Self, Output=Self] {
 interface Negatable {
     hook -() -> Self
 }
+
+interface Comparable: ComparableWith[Self] {}
 
 # ---- Numeric property interfaces --------------------------------------------
 
@@ -151,24 +203,6 @@ interface Bitwise {
     hook ^(rhs: Self) -> Self
 }
 
-# ---- Numeric hierarchy ------------------------------------------------------
-
-interface Numeric:
-    Addable,
-    Subtractable,
-    Multiplicable,
-    Divisible,
-    Negatable,
-    Zero,
-    One {}
-
-interface Integral:
-    Numeric,
-    Remainder {}
-
-interface Fractional:
-    Numeric {}
-
 # ---- Algebraic structures ---------------------------------------------------
 
 interface Semigroup:
@@ -177,8 +211,6 @@ interface Semigroup:
 interface Monoid:
     Semigroup,
     Zero {}
-
-interface Comparable: ComparableWith[Self] {}
 
 interface Group:
     Monoid,
@@ -193,10 +225,64 @@ interface Field:
     Ring,
     Divisible {}
 
-# ---- Collection interfaces --------------------------------------------------
+# ---- Numeric hierarchy ------------------------------------------------------
 
-interface Iterable {}
+interface Numeric:
+    Field,
+    Comparable {}
+
+interface Integral:
+    Numeric,
+    Remainder {}
+
+interface Fractional:
+    Numeric {}
+
+# ---- Callable, iterator, and iteration hierarchy ----------------------------
+
+interface Callable[Args, Ret] {
+    hook ()(args: Args) -> Ret
+}
+
+interface Iterator {
+    type Item: Copy
+    hook next() -> Option[Item]
+}
+
+interface Iterable {
+    type Item
+    type Iter: Iterator
+    hook iter() -> Iter {}
+}
+
 interface Foldable {}
+
+# ---- Collection semantics ---------------------------------------------------
+
+interface Collection: Iterable {}
+
+interface Sequence:
+    Collection,
+    Indexable {}
+
+# ---- Functional abstractions ------------------------------------------------
+
+interface Predicate[T]: Callable[(T), bool] {}
+
+interface Mapper[T, U]: Callable[(T), U] {}
+
+# ---- Conversion -------------------------------------------------------------
+
+interface Into[T] {
+    hook into() -> T
+}
+
+interface From[T] {
+    hook from(value: T) -> Self
+}
+
+# ---- Indexable (legacy marker; IndexableWith is the fully-typed form) -------
+
 interface Indexable {}
 
 # ---- VecMethods interface ---------------------------------------------------
@@ -213,7 +299,7 @@ impl Clone for int { hook clone() -> int {} }
 impl Eq for int {}
 impl PartialEq for int { hook ==(other: int) -> bool {} }
 impl Hash for int { hook hash() -> int {} }
-impl Ord for int { hook <=>(other: int) -> int {} }
+impl Ord for int { hook <=>(other: int) -> Ordering {} }
 impl PartialOrd for int { hook <(other: int) -> bool {} }
 impl Debug for int { hook debug_str() -> str {} }
 impl Default for int { hook default() -> int {} }
@@ -237,6 +323,7 @@ impl Bitwise for int {
     hook |(rhs: int) -> int {}
     hook ^(rhs: int) -> int {}
 }
+impl Comparable for int {}
 impl Numeric for int {}
 impl Integral for int {}
 impl Semigroup for int {}
@@ -262,6 +349,7 @@ impl Zero for float { hook zero() -> float {} }
 impl One for float { hook one() -> float {} }
 impl Abs for float { hook abs() -> float {} }
 impl Signum for float { hook signum() -> float {} }
+impl Comparable for float {}
 impl Numeric for float {}
 impl Fractional for float {}
 impl Semigroup for float {}
@@ -273,7 +361,7 @@ impl Clone for bool { hook clone() -> bool {} }
 impl Eq for bool {}
 impl PartialEq for bool { hook ==(other: bool) -> bool {} }
 impl Hash for bool { hook hash() -> int {} }
-impl Ord for bool { hook <=>(other: bool) -> int {} }
+impl Ord for bool { hook <=>(other: bool) -> Ordering {} }
 impl PartialOrd for bool { hook <(other: bool) -> bool {} }
 impl Debug for bool { hook debug_str() -> str {} }
 impl Default for bool { hook default() -> bool {} }
@@ -284,7 +372,7 @@ impl Clone for str { hook clone() -> str {} }
 impl Eq for str {}
 impl PartialEq for str { hook ==(other: str) -> bool {} }
 impl Hash for str { hook hash() -> int {} }
-impl Ord for str { hook <=>(other: str) -> int {} }
+impl Ord for str { hook <=>(other: str) -> Ordering {} }
 impl PartialOrd for str { hook <(other: str) -> bool {} }
 impl Debug for str { hook debug_str() -> str {} }
 impl Default for str { hook default() -> str {} }
@@ -300,7 +388,7 @@ impl[T: Clone] Clone for Vec[T] { hook clone() -> Vec[T] {} }
 impl[T: Eq] Eq for Vec[T] {}
 impl[T: PartialEq] PartialEq for Vec[T] { hook ==(other: Vec[T]) -> bool {} }
 impl[T: Hash] Hash for Vec[T] { hook hash() -> int {} }
-impl[T: Ord] Ord for Vec[T] { hook <=>(other: Vec[T]) -> int {} }
+impl[T: Ord] Ord for Vec[T] { hook <=>(other: Vec[T]) -> Ordering {} }
 impl[T: PartialOrd] PartialOrd for Vec[T] { hook <(other: Vec[T]) -> bool {} }
 impl[T: Debug] Debug for Vec[T] { hook debug_str() -> str {} }
 impl Default for Vec[T] { hook default() -> Vec[T] {} }
@@ -316,7 +404,7 @@ impl[T: Clone] Clone for Option[T] { hook clone() -> Option[T] {} }
 impl[T: Eq] Eq for Option[T] {}
 impl[T: PartialEq] PartialEq for Option[T] { hook ==(other: Option[T]) -> bool {} }
 impl[T: Hash] Hash for Option[T] { hook hash() -> int {} }
-impl[T: Ord] Ord for Option[T] { hook <=>(other: Option[T]) -> int {} }
+impl[T: Ord] Ord for Option[T] { hook <=>(other: Option[T]) -> Ordering {} }
 impl[T: PartialOrd] PartialOrd for Option[T] { hook <(other: Option[T]) -> bool {} }
 impl[T: Debug] Debug for Option[T] { hook debug_str() -> str {} }
 impl[T: Display] Display for Option[T] { hook to_str() -> str {} }

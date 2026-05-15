@@ -1,35 +1,9 @@
 # layer3_collection.kn -- collection and functional semantics (Layer 3)
-# Iterable and Indexable are provided by the prelude.
-
-interface Iterator {
-    type Item: Copyable
-
-    hook next() -> Option[Item]
-}
-
-interface Collection: Iterable {
-}
-
-interface Sequence:
-    Collection,
-    Indexable {
-}
+#
+# Iterable, Indexable, Iterator, Collection, Sequence, Callable,
+# Predicate, Mapper, and Comparable are provided by the prelude.
 
 interface Copyable {
-}
-
-# Comparable is provided by the prelude.
-
-# ---- Functional abstractions ------------------------------------------------
-
-interface Predicate[T]: Callable[(T), bool] {
-}
-
-interface Mapper[T, U]: Callable[(T), U] {
-}
-
-interface Callable[Args, Ret] {
-    hook ()(args: Args) -> Ret
 }
 
 # ---- A concrete sequence type -----------------------------------------------

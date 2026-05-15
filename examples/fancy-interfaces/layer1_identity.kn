@@ -1,13 +1,5 @@
 # layer1_identity.kn -- construction and identity interfaces (Layer 1 operational core)
-# Zero and One are provided by the prelude.
-
-interface Constructable {
-    hook new() -> Self
-}
-
-interface Empty {
-    hook empty() -> Self
-}
+# Zero, One, Constructable, Empty are provided by the prelude.
 
 interface Copyable {
 }

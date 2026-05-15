@@ -1,22 +1,6 @@
 # layer1_callable_iter.kn -- Callable and Iterator interfaces with associated types
-
-interface Callable[Args, Ret] {
-    hook ()(args: Args) -> Ret
-}
-
-interface Iterator {
-    type Item: Copyable
-
-    hook next() -> Option[Item]
-}
-
-interface Into[T] {
-    hook into() -> T
-}
-
-interface From[T] {
-    hook from(value: T) -> Self
-}
+#
+# Callable, Iterator, Into, From are provided by the prelude.
 
 interface Displayable {
     hook display() -> str

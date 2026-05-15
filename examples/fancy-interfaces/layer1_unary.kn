@@ -1,12 +1,8 @@
 # layer1_unary.kn -- unary operation interfaces (Layer 1 operational core)
-# Negatable is provided by the prelude.
+# Negatable and Invertible are provided by the prelude.
 
 interface Normalizeable {
     hook +() -> Self
-}
-
-interface Invertible {
-    hook !() -> Self
 }
 
 # ---- Concrete examples -------------------------------------------------------
@@ -39,16 +35,16 @@ impl Invertible for BitFlags {
     }
 }
 
-struct Predicate {
+struct BoolWrapper {
     value: bool
 }
 
-impl Invertible for Predicate {
-    hook !() -> Predicate {
+impl Invertible for BoolWrapper {
+    hook !() -> BoolWrapper {
         if value {
-            return Predicate { value: false }
+            return BoolWrapper { value: false }
         }
-        return Predicate { value: true }
+        return BoolWrapper { value: true }
     }
 }
 

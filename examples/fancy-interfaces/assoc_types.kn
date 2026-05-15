@@ -6,21 +6,13 @@
 interface Copyable {
 }
 
-# Comparable is provided by the prelude.
+# Comparable, Iterator are provided by the prelude.
+
+# ---- Graph with constrained node and edge types -----------------------------
 
 interface Displayable {
     hook display() -> str
 }
-
-# ---- Iterator with a constrained associated type ----------------------------
-
-interface Iterator {
-    type Item: Copyable
-
-    hook next() -> Option[Item]
-}
-
-# ---- Graph with constrained node and edge types -----------------------------
 
 interface Graph {
     type Node: Comparable, Displayable

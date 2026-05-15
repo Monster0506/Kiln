@@ -60,8 +60,11 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
         "Divisible",
         "Remainder",
         "Bitwise",
+        "Comparable",
         "Numeric",
         "Integral",
+        "Semigroup",
+        "Monoid",
     ] {
         registry.register_conformance("int", iface, unc());
     }
@@ -84,8 +87,10 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
         "Subtractable",
         "Multiplicable",
         "Divisible",
+        "Comparable",
         "Fractional",
         "Numeric",
+        "Semigroup",
     ] {
         registry.register_conformance("float", iface, unc());
     }
@@ -97,6 +102,7 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
         "Eq",
         "Hash",
         "Ord",
+        "Comparable",
         "PartialEq",
         "PartialOrd",
         "Debug",
@@ -112,6 +118,7 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
         "Eq",
         "Hash",
         "Ord",
+        "Comparable",
         "PartialEq",
         "PartialOrd",
         "Debug",
@@ -120,10 +127,10 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
         "Semigroup",
         "Monoid",
         "Addable",
+        "Indexable",
     ] {
         registry.register_conformance("str", iface, unc());
     }
-    registry.register_conformance("str", "Indexable", unc());
 
     // Vec[T] -- conditional on T
     for (iface, bound) in &[
@@ -848,7 +855,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             }
 
             Item::ImplBlock(impl_block) => {
-                conformance::check_impl_completeness(impl_block, &interfaces, &mut errors);
+                conformance::check_impl_completeness(impl_block, &interfaces, &all_impls, &mut errors);
                 if impl_block.kind == ImplKind::Plain {
                     let key_ty = match &impl_block.for_type {
                         TypeExpr::Named { name, generics, .. } => {

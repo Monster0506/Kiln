@@ -733,6 +733,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             }
 
             Item::ImplBlock(impl_block) => {
+                conformance::check_impl_completeness(impl_block, &interfaces, &mut errors);
                 let type_name = match &impl_block.for_type {
                     TypeExpr::Named { name, .. } => name.clone(),
                     _ => "Unknown".to_string(),

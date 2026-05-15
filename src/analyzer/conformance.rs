@@ -50,6 +50,50 @@ pub fn check_enum_conformance(
     }
 }
 
+/// Check that an impl block provides all required items from the interface it claims to implement.
+pub fn check_impl_completeness(
+    impl_block: &ImplBlock,
+    all_interfaces: &[InterfaceDef],
+    errors: &mut Vec<AnalysisError>,
+) {
+    let iface_name = type_expr_name(&impl_block.interface);
+    let type_name = type_expr_name(&impl_block.for_type);
+    let iface = match all_interfaces.iter().find(|i| i.name == iface_name) {
+        Some(i) => i,
+        None => return,
+    };
+
+    for item in &iface.items {
+        match &item.kind {
+            InterfaceItemKind::Hook { name, default, .. } if default.is_none() => {
+                if !impl_block.hooks.iter().any(|h| &h.name == name) {
+                    let hook_label = match name {
+                        crate::parser::ast::HookName::Op(s) => s.clone(),
+                        crate::parser::ast::HookName::Named(s) => s.clone(),
+                    };
+                    errors.push(AnalysisError::MissingConformance {
+                        ty: type_name.clone(),
+                        iface: iface_name.clone(),
+                        detail: format!("impl block missing required hook `{hook_label}`"),
+                        span: impl_block.span,
+                    });
+                }
+            }
+            InterfaceItemKind::Method(sig) if sig.body.stmts.is_empty() => {
+                if !impl_block.methods.iter().any(|m| m.name == sig.name) {
+                    errors.push(AnalysisError::MissingConformance {
+                        ty: type_name.clone(),
+                        iface: iface_name.clone(),
+                        detail: format!("impl block missing required method `{}`", sig.name),
+                        span: impl_block.span,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn collect_impl_hooks(type_name: &str, iface_name: &str, all_impls: &[ImplBlock]) -> Vec<HookDef> {
     for impl_block in all_impls {
         let impl_type = type_expr_name(&impl_block.for_type);
@@ -315,6 +359,128 @@ mod tests {
             errs.len(),
             1,
             "should detect missing hook even in empty impl block"
+        );
+    }
+
+    fn printable_iface() -> InterfaceDef {
+        InterfaceDef {
+            name: "Printable".into(),
+            generic_params: vec![],
+            extends: vec![],
+            items: vec![InterfaceItem {
+                kind: InterfaceItemKind::Method(FnDef {
+                    annotations: vec![],
+                    name: "print".into(),
+                    generic_params: vec![],
+                    params: vec![],
+                    variadic: None,
+                    return_type: named("void"),
+                    body: Block {
+                        stmts: vec![],
+                        span: s(),
+                    },
+                    span: s(),
+                }),
+                span: s(),
+            }],
+            span: s(),
+        }
+    }
+
+    #[test]
+    fn error_when_impl_block_missing_required_hook() {
+        let empty_impl = ImplBlock {
+            generic_params: vec![],
+            interface: named("Addable"),
+            for_type: named("Point"),
+            methods: vec![],
+            hooks: vec![],
+            kind: ImplKind::Plain,
+            span: s(),
+        };
+        let mut errs = vec![];
+        check_impl_completeness(&empty_impl, &[addable_iface()], &mut errs);
+        assert_eq!(
+            errs.len(),
+            1,
+            "expected error for missing hook in impl block"
+        );
+    }
+
+    #[test]
+    fn ok_when_impl_block_has_required_hook() {
+        let impl_block = addable_impl_for_point();
+        let mut errs = vec![];
+        check_impl_completeness(&impl_block, &[addable_iface()], &mut errs);
+        assert!(errs.is_empty(), "{errs:?}");
+    }
+
+    #[test]
+    fn error_when_impl_block_missing_required_method() {
+        let empty_impl = ImplBlock {
+            generic_params: vec![],
+            interface: named("Printable"),
+            for_type: named("Point"),
+            methods: vec![],
+            hooks: vec![],
+            kind: ImplKind::Plain,
+            span: s(),
+        };
+        let mut errs = vec![];
+        check_impl_completeness(&empty_impl, &[printable_iface()], &mut errs);
+        assert_eq!(
+            errs.len(),
+            1,
+            "expected error for missing method in impl block"
+        );
+    }
+
+    #[test]
+    fn ok_when_impl_block_has_required_method() {
+        let impl_with_method = ImplBlock {
+            generic_params: vec![],
+            interface: named("Printable"),
+            for_type: named("Point"),
+            methods: vec![FnDef {
+                annotations: vec![],
+                name: "print".into(),
+                generic_params: vec![],
+                params: vec![],
+                variadic: None,
+                return_type: named("void"),
+                body: Block {
+                    stmts: vec![],
+                    span: s(),
+                },
+                span: s(),
+            }],
+            hooks: vec![],
+            kind: ImplKind::Plain,
+            span: s(),
+        };
+        let mut errs = vec![];
+        check_impl_completeness(&impl_with_method, &[printable_iface()], &mut errs);
+        assert!(errs.is_empty(), "{errs:?}");
+    }
+
+    #[test]
+    fn regression_bug4_impl_block_completeness_validated() {
+        // Bug 4: impl blocks were type-checked but never validated for completeness
+        // against the interface. An empty impl block should error.
+        let empty_impl = ImplBlock {
+            generic_params: vec![],
+            interface: named("Addable"),
+            for_type: named("Point"),
+            methods: vec![],
+            hooks: vec![],
+            kind: ImplKind::Plain,
+            span: s(),
+        };
+        let mut errs = vec![];
+        check_impl_completeness(&empty_impl, &[addable_iface()], &mut errs);
+        assert!(
+            !errs.is_empty(),
+            "empty impl block should fail completeness check"
         );
     }
 }

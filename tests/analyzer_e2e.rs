@@ -347,3 +347,53 @@ def main() -> void {
         "Wrapper with Display impl should allow interpolation: {errs:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Bug 5: ImplKind propagation and enforcement
+// ---------------------------------------------------------------------------
+
+#[test]
+fn duplicate_plain_impl_is_error() {
+    let errs = run(r#"
+interface Greet {
+    hook greet() -> str
+}
+
+struct Dog {}
+
+impl Greet for Dog {
+    hook greet() -> str { return "woof" }
+}
+
+impl Greet for Dog {
+    hook greet() -> str { return "bark" }
+}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "duplicate plain impl for same type+interface should be an error"
+    );
+}
+
+#[test]
+fn specialized_impl_alongside_plain_impl_is_ok() {
+    let errs = run(r#"
+interface Greet {
+    hook greet() -> str
+}
+
+struct Dog {}
+
+impl Greet for Dog {
+    hook greet() -> str { return "woof" }
+}
+
+specialized impl Greet for Dog {
+    hook greet() -> str { return "bark" }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "specialized impl alongside plain impl should not be an error: {errs:?}"
+    );
+}

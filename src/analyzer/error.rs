@@ -46,6 +46,13 @@ pub enum AnalysisError {
 
     #[error("{span}: no matching overload for `{name}`")]
     NoMatchingOverload { name: String, span: Span },
+
+    #[error("{span}: duplicate plain impl of `{iface}` for `{ty}`")]
+    DuplicateImpl {
+        ty: String,
+        iface: String,
+        span: Span,
+    },
 }
 
 impl AnalysisError {
@@ -61,6 +68,7 @@ impl AnalysisError {
             AnalysisError::BoundViolation { .. } => "E008",
             AnalysisError::PrivateField { .. } => "E009",
             AnalysisError::NoMatchingOverload { .. } => "E010",
+            AnalysisError::DuplicateImpl { .. } => "E011",
         }
     }
 
@@ -76,6 +84,7 @@ impl AnalysisError {
             AnalysisError::BoundViolation { .. } => "type error",
             AnalysisError::PrivateField { .. } => "visibility error",
             AnalysisError::NoMatchingOverload { .. } => "type error",
+            AnalysisError::DuplicateImpl { .. } => "impl error",
         }
     }
 
@@ -115,6 +124,9 @@ impl AnalysisError {
             AnalysisError::NoMatchingOverload { name, .. } => {
                 format!("no matching overload for `{name}`")
             }
+            AnalysisError::DuplicateImpl { ty, iface, .. } => {
+                format!("duplicate plain impl of `{iface}` for `{ty}`")
+            }
         }
     }
 
@@ -130,6 +142,7 @@ impl AnalysisError {
             AnalysisError::BoundViolation { span, .. } => *span,
             AnalysisError::PrivateField { span, .. } => *span,
             AnalysisError::NoMatchingOverload { span, .. } => *span,
+            AnalysisError::DuplicateImpl { span, .. } => *span,
         }
     }
 }

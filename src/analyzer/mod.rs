@@ -24,7 +24,7 @@ use crate::analyzer::typed_ast::{
     TypedInterfaceDef, TypedInterfaceMethod, TypedItem, TypedParam, TypedStructDef,
 };
 use crate::diagnostics::Span;
-use crate::parser::ast::{HookName, Item, SourceFile, TypeExpr};
+use crate::parser::ast::{HookName, ImplKind, Item, SourceFile, TypeExpr};
 
 fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
     use ty::ConformanceEntry as CE;
@@ -612,6 +612,8 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
     // Pass 2: check each item and produce typed items.
     let mut typed_items: Vec<TypedItem> = Vec::new();
+    let mut plain_impls_seen: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
     for item in &source.items {
         match item {
             Item::Function(f) => {
@@ -734,6 +736,28 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
             Item::ImplBlock(impl_block) => {
                 conformance::check_impl_completeness(impl_block, &interfaces, &mut errors);
+                if impl_block.kind == ImplKind::Plain {
+                    let key_ty = match &impl_block.for_type {
+                        TypeExpr::Named { name, .. } => name.clone(),
+                        _ => String::new(),
+                    };
+                    let key_iface = match &impl_block.interface {
+                        TypeExpr::Named { name, .. } => name.clone(),
+                        _ => String::new(),
+                    };
+                    if !key_ty.is_empty() && !key_iface.is_empty() {
+                        let key = (key_ty.clone(), key_iface.clone());
+                        if plain_impls_seen.contains(&key) {
+                            errors.push(error::AnalysisError::DuplicateImpl {
+                                ty: key_ty,
+                                iface: key_iface,
+                                span: impl_block.span,
+                            });
+                        } else {
+                            plain_impls_seen.insert(key);
+                        }
+                    }
+                }
                 let type_name = match &impl_block.for_type {
                     TypeExpr::Named { name, .. } => name.clone(),
                     _ => "Unknown".to_string(),
@@ -885,6 +909,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 typed_items.push(TypedItem::ImplBlock(TypedImplBlock {
                     interface: interface_name,
                     for_type: type_name,
+                    kind: impl_block.kind.clone(),
                     methods: typed_methods,
                     hooks: typed_hooks,
                     span: impl_block.span,

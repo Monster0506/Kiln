@@ -1,6 +1,6 @@
 use crate::analyzer::ty::Ty;
 use crate::diagnostics::Span;
-use crate::parser::ast::{BinOp, HookName, UnOp};
+use crate::parser::ast::{BinOp, HookName, ImplKind, UnOp};
 
 // -- Top-level ---------------------------------------------------------------
 
@@ -72,6 +72,7 @@ pub struct TypedEnumVariant {
 pub struct TypedImplBlock {
     pub interface: String,
     pub for_type: String,
+    pub kind: ImplKind,
     pub methods: Vec<TypedFnDef>,
     pub hooks: Vec<TypedHookDef>,
     pub span: Span,

@@ -204,6 +204,33 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
         },
     );
 
+    let ord_id = registry.register(
+        "Ordering".into(),
+        TypeKind::Enum {
+            variant_names: vec!["Less".into(), "Equal".into(), "Greater".into()],
+        },
+    );
+    env.define(
+        "Ordering",
+        Symbol::Type {
+            id: ord_id,
+            span: s,
+        },
+    );
+    for iface in &[
+        "Copy",
+        "Clone",
+        "Eq",
+        "Hash",
+        "Ord",
+        "PartialEq",
+        "PartialOrd",
+        "Debug",
+        "Display",
+    ] {
+        registry.register_conformance("Ordering", iface, unc());
+    }
+
     // len, panic, assert, clock_ms: no interface requirements
     // (print/println are defined in the prelude as def print[T: Display])
     let fns: &[(&str, &[Ty], Ty)] = &[
@@ -1056,9 +1083,80 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
     let constraints = constrain::collect_constraints(&typed_file);
     errors.extend(solve::solve(&constraints, &registry));
 
+    // Pass 4: object safety — check that interfaces used as dynamic types are object-safe.
+    {
+        use crate::parser::ast::InterfaceItemKind;
+        // Compute which interfaces are NOT object-safe: any method that returns Self
+        // or has Self in a parameter type position makes the interface non-object-safe.
+        let non_object_safe: std::collections::HashMap<String, String> = interfaces
+            .iter()
+            .filter_map(|iface| {
+                for iitem in &iface.items {
+                    if let InterfaceItemKind::Method(m) = &iitem.kind {
+                        if type_expr_uses_self(&m.return_type)
+                            || m.params.iter().any(|p| type_expr_uses_self(&p.ty))
+                        {
+                            return Some((iface.name.clone(), m.name.clone()));
+                        }
+                    }
+                }
+                None
+            })
+            .collect();
+        // Scan all function params in the typed file for dynamic interface types.
+        for item in &typed_file.items {
+            match item {
+                TypedItem::Function(f) => {
+                    check_params_object_safe(&f.params, &non_object_safe, &mut errors, f.span);
+                }
+                TypedItem::ImplBlock(ib) => {
+                    for m in &ib.methods {
+                        check_params_object_safe(&m.params, &non_object_safe, &mut errors, m.span);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     if errors.is_empty() {
         Ok(typed_file)
     } else {
         Err(errors)
+    }
+}
+
+fn type_expr_uses_self(ty: &TypeExpr) -> bool {
+    match ty {
+        TypeExpr::Named { name, generics, .. } => {
+            name == "Self" || generics.iter().any(type_expr_uses_self)
+        }
+        TypeExpr::Projection { base, .. } => base == "Self",
+        TypeExpr::Union(vs, _) => vs.iter().any(type_expr_uses_self),
+        TypeExpr::Tuple(ts, _) => ts.iter().any(type_expr_uses_self),
+        TypeExpr::Callable { params, ret, .. } => {
+            params.iter().any(type_expr_uses_self) || type_expr_uses_self(ret)
+        }
+        TypeExpr::Ref { inner, .. } => type_expr_uses_self(inner),
+        TypeExpr::GenSplice(..) => false,
+    }
+}
+
+fn check_params_object_safe(
+    params: &[typed_ast::TypedParam],
+    non_object_safe: &std::collections::HashMap<String, String>,
+    errors: &mut Vec<error::AnalysisError>,
+    span: Span,
+) {
+    for p in params {
+        if let ty::Ty::Interface(_, ref iface_name) = p.ty {
+            if let Some(method_name) = non_object_safe.get(iface_name) {
+                errors.push(error::AnalysisError::NonObjectSafeInterface {
+                    iface: iface_name.clone(),
+                    method: method_name.clone(),
+                    span,
+                });
+            }
+        }
     }
 }

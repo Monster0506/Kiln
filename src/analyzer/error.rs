@@ -53,6 +53,13 @@ pub enum AnalysisError {
         iface: String,
         span: Span,
     },
+
+    #[error("{span}: interface `{iface}` is not object-safe (method `{method}` uses `Self`)")]
+    NonObjectSafeInterface {
+        iface: String,
+        method: String,
+        span: Span,
+    },
 }
 
 impl AnalysisError {
@@ -69,6 +76,7 @@ impl AnalysisError {
             AnalysisError::PrivateField { .. } => "E009",
             AnalysisError::NoMatchingOverload { .. } => "E010",
             AnalysisError::DuplicateImpl { .. } => "E011",
+            AnalysisError::NonObjectSafeInterface { .. } => "E012",
         }
     }
 
@@ -85,6 +93,7 @@ impl AnalysisError {
             AnalysisError::PrivateField { .. } => "visibility error",
             AnalysisError::NoMatchingOverload { .. } => "type error",
             AnalysisError::DuplicateImpl { .. } => "impl error",
+            AnalysisError::NonObjectSafeInterface { .. } => "object safety error",
         }
     }
 
@@ -127,6 +136,9 @@ impl AnalysisError {
             AnalysisError::DuplicateImpl { ty, iface, .. } => {
                 format!("duplicate plain impl of `{iface}` for `{ty}`")
             }
+            AnalysisError::NonObjectSafeInterface { iface, method, .. } => {
+                format!("interface `{iface}` is not object-safe (method `{method}` uses `Self`)")
+            }
         }
     }
 
@@ -143,6 +155,7 @@ impl AnalysisError {
             AnalysisError::PrivateField { span, .. } => *span,
             AnalysisError::NoMatchingOverload { span, .. } => *span,
             AnalysisError::DuplicateImpl { span, .. } => *span,
+            AnalysisError::NonObjectSafeInterface { span, .. } => *span,
         }
     }
 }

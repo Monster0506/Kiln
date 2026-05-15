@@ -73,6 +73,11 @@ pub fn resolve_type_expr(
         TypeExpr::Ref { inner, mutable, .. } => {
             Ty::Ref(Box::new(resolve_type_expr(inner, env, errors)), *mutable)
         }
+        TypeExpr::Projection { base, assoc, .. } => {
+            // `Base.Assoc` — treated as an opaque generic param for now.
+            // Full projection resolution requires type-level evaluation.
+            Ty::GenericParam(format!("{base}.{assoc}"))
+        }
         TypeExpr::GenSplice(_, span) => {
             errors.push(AnalysisError::UndefinedName {
                 name: "<gen-splice>".into(),

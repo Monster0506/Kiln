@@ -424,3 +424,57 @@ impl Add for Vec2 {
         "Output assoc type should be in scope inside impl block: {errs:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 8: Ordering builtin type
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ordering_type_is_defined() {
+    let errs = run(r#"
+def compare(a: int, b: int) -> Ordering {
+    return a <=> b
+}
+"#);
+    let has_undefined_ordering = errs
+        .iter()
+        .any(|e| e.contains("undefined") && e.contains("Ordering"));
+    assert!(
+        !has_undefined_ordering,
+        "Ordering should be a defined builtin type: {errs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 10: Object safety checking
+// ---------------------------------------------------------------------------
+
+#[test]
+fn non_object_safe_interface_as_dynamic_type_is_error() {
+    let errs = run(r#"
+interface Cloneable {
+    def clone() -> Self {}
+}
+
+def process(x: Cloneable) -> void {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "using non-object-safe interface (method returns Self) as dynamic type should be an error: {errs:?}"
+    );
+}
+
+#[test]
+fn object_safe_interface_as_dynamic_type_is_ok() {
+    let errs = run(r#"
+interface Printable {
+    def print() -> void {}
+}
+
+def process(x: Printable) -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "using object-safe interface as dynamic type should be fine: {errs:?}"
+    );
+}

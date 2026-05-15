@@ -333,6 +333,17 @@ impl Parser {
                     });
                 }
 
+                // Check for associated type projection: `Base.Assoc`
+                if self.eat(&TokenKind::Dot) {
+                    let assoc = self.expect_ident()?;
+                    let end = self.peek_span();
+                    return Ok(TypeExpr::Projection {
+                        base: name,
+                        assoc,
+                        span: Span::new(start.start, end.start),
+                    });
+                }
+
                 let mut generics = Vec::new();
                 if self.eat(&TokenKind::LBracket) {
                     while self.peek() != &TokenKind::RBracket {
@@ -392,11 +403,20 @@ impl Parser {
                 let end = self.peek_span();
                 params.push(GenericParam {
                     kind: GenericParamKind::Lifetime,
+                    variance: Variance::Invariant,
                     name,
                     bounds,
                     span: Span::new(start.start, end.start),
                 });
             } else {
+                // Optional variance annotation: `+T` (covariant) or `-T` (contravariant).
+                let variance = if self.eat(&TokenKind::Plus) {
+                    Variance::Covariant
+                } else if self.eat(&TokenKind::Minus) {
+                    Variance::Contravariant
+                } else {
+                    Variance::Invariant
+                };
                 let name = self.expect_ident()?;
                 // Check for higher-kinded type constructor syntax: F[_]
                 let param_kind = if self.peek() == &TokenKind::LBracket {
@@ -423,6 +443,7 @@ impl Parser {
                 let end = self.peek_span();
                 params.push(GenericParam {
                     kind: param_kind,
+                    variance,
                     name,
                     bounds,
                     span: Span::new(start.start, end.start),

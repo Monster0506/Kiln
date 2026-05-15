@@ -36,6 +36,12 @@ pub enum TypeExpr {
         inner: Box<TypeExpr>,
         span: Span,
     },
+    /// `Base.Assoc` — associated type projection, e.g. `Self.Item`, `I.Output`
+    Projection {
+        base: String,
+        assoc: String,
+        span: Span,
+    },
     /// `<<expr>>` type splice inside a gen block
     GenSplice(Box<Expr>, Span),
 }
@@ -48,6 +54,7 @@ impl TypeExpr {
             TypeExpr::Tuple(_, span) => *span,
             TypeExpr::Callable { span, .. } => *span,
             TypeExpr::Ref { span, .. } => *span,
+            TypeExpr::Projection { span, .. } => *span,
             TypeExpr::GenSplice(_, span) => *span,
         }
     }
@@ -65,10 +72,23 @@ pub enum GenericParamKind {
     TypeConstructor,
 }
 
+/// Variance annotation on a generic type parameter.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Variance {
+    /// `+T` — covariant: `F[Sub]` is a subtype of `F[Super]`
+    Covariant,
+    /// `-T` — contravariant: `F[Super]` is a subtype of `F[Sub]`
+    Contravariant,
+    /// No annotation — invariant (default)
+    Invariant,
+}
+
 #[derive(Debug, Clone)]
 pub struct GenericParam {
     pub kind: GenericParamKind,
     pub name: String,
+    /// Variance annotation (`+T`, `-T`, or none for invariant).
+    pub variance: Variance,
     /// Bounds: `T: Ord, Addable` yields `["Ord", "Addable"]`; lifetime params have at most one.
     pub bounds: Vec<String>,
     pub span: Span,

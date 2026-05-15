@@ -119,6 +119,7 @@ mod tests {
                     return_type: TypeExpr::Named {
                         name: "int".into(),
                         generics: vec![],
+                        bindings: vec![],
                         span: s(),
                     },
                     body: Block {

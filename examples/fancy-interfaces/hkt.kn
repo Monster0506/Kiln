@@ -35,9 +35,9 @@ interface Traversable[F[_]]: Functor[F] {
     def traverse[G[_]: Applicative, A, B](fa: F[A], f: Callable[(A), G[B]]) -> G[F[B]] {}
 }
 
-# ---- Foldable: reduction to a summary value ---------------------------------
+# ---- FoldableF: reduction to a summary value (HKT variant) ------------------
 
-interface Foldable[F[_]] {
+interface FoldableF[F[_]] {
     def fold_left[A, B](fa: F[A], init: B, f: Callable[(B, A), B]) -> B {}
     def fold_right[A, B](fa: F[A], init: B, f: Callable[(A, B), B]) -> B {}
 }

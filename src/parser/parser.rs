@@ -345,8 +345,23 @@ impl Parser {
                 }
 
                 let mut generics = Vec::new();
+                let mut bindings = Vec::new();
                 if self.eat(&TokenKind::LBracket) {
                     while self.peek() != &TokenKind::RBracket {
+                        // Peek ahead: `Ident Eq` means a named binding like `Output=Self`
+                        if matches!(self.peek(), TokenKind::Ident(_)) {
+                            let saved_pos = self.pos;
+                            let binding_name = self.expect_ident()?;
+                            if self.eat(&TokenKind::Eq) {
+                                let binding_ty = self.parse_type()?;
+                                bindings.push((binding_name, binding_ty));
+                                self.eat(&TokenKind::Comma);
+                                continue;
+                            } else {
+                                // Not a binding — backtrack and parse as a generic type
+                                self.pos = saved_pos;
+                            }
+                        }
                         generics.push(self.parse_type()?);
                         self.eat(&TokenKind::Comma);
                     }
@@ -356,6 +371,7 @@ impl Parser {
                 Ok(TypeExpr::Named {
                     name,
                     generics,
+                    bindings,
                     span: Span::new(start.start, end.start),
                 })
             }
@@ -364,6 +380,7 @@ impl Parser {
                 Ok(TypeExpr::Named {
                     name: "void".to_string(),
                     generics: vec![],
+                    bindings: vec![],
                     span: start,
                 })
             }
@@ -839,6 +856,18 @@ impl Parser {
                 self.advance();
                 self.expect(TokenKind::RParen)?;
                 Ok(HookName::Op("()".into()))
+            }
+            TokenKind::Amp => {
+                self.advance();
+                Ok(HookName::Op("&".into()))
+            }
+            TokenKind::Pipe => {
+                self.advance();
+                Ok(HookName::Op("|".into()))
+            }
+            TokenKind::Caret => {
+                self.advance();
+                Ok(HookName::Op("^".into()))
             }
             TokenKind::Ident(name) => {
                 self.advance();

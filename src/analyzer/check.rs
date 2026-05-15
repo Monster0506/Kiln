@@ -375,6 +375,7 @@ mod tests {
         TypeExpr::Named {
             name: "int".into(),
             generics: vec![],
+            bindings: vec![],
             span: s(),
         }
     }
@@ -382,6 +383,7 @@ mod tests {
         TypeExpr::Named {
             name: "bool".into(),
             generics: vec![],
+            bindings: vec![],
             span: s(),
         }
     }

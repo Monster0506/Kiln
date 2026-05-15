@@ -82,6 +82,7 @@ pub enum TokenKind {
     LArrow,    // `<-`
     Question,  // `?`
     Amp,       // `&`
+    Caret,     // `^`
     At,        // `@`
     PlusEq,    // `+=`
     MinusEq,   // `-=`

@@ -45,6 +45,28 @@ interface Iter {
 }
 
 // ---------------------------------------------------------------------------
+// 8: Associated type bindings (Name=Type) in generic arg lists
+// ---------------------------------------------------------------------------
+
+#[test]
+fn assoc_type_binding_parses_in_extends() {
+    parse_ok(
+        r#"
+interface Addable: AddableWith[Self, Output=Self] {}
+"#,
+    );
+}
+
+#[test]
+fn assoc_type_binding_parses_mixed_with_positional() {
+    parse_ok(
+        r#"
+interface Foo: SomeTrait[int, Output=str] {}
+"#,
+    );
+}
+
+// ---------------------------------------------------------------------------
 // 9: Variance annotations (+T, -T) in generic param lists
 // ---------------------------------------------------------------------------
 

@@ -1,23 +1,10 @@
 # layer3_collection.kn -- collection and functional semantics (Layer 3)
+# Iterable and Indexable are provided by the prelude.
 
 interface Iterator {
     type Item: Copyable
 
     hook next() -> Option[Item]
-}
-
-interface Iterable {
-    type Item
-    type Iter: Iterator
-
-    hook iter() -> Iter
-}
-
-interface Indexable {
-    type Item
-    type Index
-
-    hook [](index: Index) -> Item
 }
 
 interface Collection: Iterable {
@@ -31,9 +18,7 @@ interface Sequence:
 interface Copyable {
 }
 
-interface Comparable {
-    hook <=>(other: Self) -> int
-}
+# Comparable is provided by the prelude.
 
 # ---- Functional abstractions ------------------------------------------------
 

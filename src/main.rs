@@ -3,7 +3,6 @@ use kiln_compiler::analyzer::analyze;
 use kiln_compiler::codegen::{compile::compile, context::CodegenContext, emit};
 use kiln_compiler::diagnostics::SourceMap;
 use kiln_compiler::lexer::Lexer;
-use kiln_compiler::parse_prelude;
 use kiln_compiler::parser::Parser as KilnParser;
 use std::fs;
 use std::path::PathBuf;
@@ -82,10 +81,6 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
         }
         std::process::exit(1);
     });
-
-    let mut ast = ast;
-    let prelude = parse_prelude();
-    ast.items = prelude.items.into_iter().chain(ast.items).collect();
 
     let typed_file = analyze(&ast).unwrap_or_else(|errs| {
         for e in &errs {
@@ -185,10 +180,6 @@ fn main() {
                 std::process::exit(1);
             });
 
-            let mut ast = ast;
-            let prelude = parse_prelude();
-            ast.items = prelude.items.into_iter().chain(ast.items).collect();
-
             match kiln_compiler::analyzer::analyze(&ast) {
                 Ok(_) => println!("ok"),
                 Err(errs) => {
@@ -231,9 +222,6 @@ fn main() {
                     }
                     std::process::exit(1);
                 });
-                let mut ast = ast;
-                let prelude = parse_prelude();
-                ast.items = prelude.items.into_iter().chain(ast.items).collect();
                 let typed_file = analyze(&ast).unwrap_or_else(|errs| {
                     for e in &errs {
                         let snippet = map.render_diagnostic(&src, e.span(), &path);

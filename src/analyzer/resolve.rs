@@ -14,6 +14,7 @@ pub fn resolve_type_expr(
             name,
             generics,
             span,
+            ..
         } => {
             let resolved_generics: Vec<Ty> = generics
                 .iter()
@@ -110,6 +111,7 @@ mod tests {
             &TypeExpr::Named {
                 name: name.into(),
                 generics: vec![],
+                bindings: vec![],
                 span: s(),
             },
             &env,
@@ -146,8 +148,10 @@ mod tests {
                 generics: vec![TypeExpr::Named {
                     name: "int".into(),
                     generics: vec![],
+                    bindings: vec![],
                     span: s(),
                 }],
+                bindings: vec![],
                 span: s(),
             },
             &env,
@@ -164,6 +168,7 @@ mod tests {
             &TypeExpr::Named {
                 name: "Ghost".into(),
                 generics: vec![],
+                bindings: vec![],
                 span: s(),
             },
             &env,

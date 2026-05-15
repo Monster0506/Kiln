@@ -1,12 +1,5 @@
 # layer1_comparison.kn -- heterogeneous comparison interfaces (Layer 1 operational core)
-
-interface EquatableWith[Rhs] {
-    hook ==(rhs: Rhs) -> bool
-}
-
-interface ComparableWith[Rhs] {
-    hook <=>(rhs: Rhs) -> int
-}
+# EquatableWith and ComparableWith are provided by the prelude.
 
 # ---- Concrete example --------------------------------------------------------
 
@@ -40,11 +33,9 @@ impl EquatableWith[Fahrenheit] for Temperature {
 }
 
 # ---- Self-comparable shorthand -----------------------------------------------
+# Comparable is provided by the prelude.
 
 interface Equatable: EquatableWith[Self] {
-}
-
-interface Comparable: ComparableWith[Self] {
 }
 
 struct Score {

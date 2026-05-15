@@ -13,10 +13,12 @@ pub struct AnnotationUse {
 
 #[derive(Debug, Clone)]
 pub enum TypeExpr {
-    /// `int`, `str`, `MyStruct`, `Vec[T]`
+    /// `int`, `str`, `MyStruct`, `Vec[T]`, `AddableWith[Self, Output=Self]`
     Named {
         name: String,
         generics: Vec<TypeExpr>,
+        /// Named associated-type bindings, e.g. `Output = Self` in `AddableWith[Self, Output=Self]`.
+        bindings: Vec<(String, TypeExpr)>,
         span: Span,
     },
     /// `A | B`

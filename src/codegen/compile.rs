@@ -292,7 +292,11 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
         if block_needs_term(&builder) {
             if has_return_val {
                 let ret_ty = return_clif_type.unwrap_or(types::I64);
-                let zero = builder.ins().iconst(ret_ty, 0);
+                let zero = if ret_ty == types::F64 {
+                    builder.ins().f64const(0.0)
+                } else {
+                    builder.ins().iconst(ret_ty, 0)
+                };
                 builder.ins().return_(&[zero]);
             } else {
                 builder.ins().return_(&[]);

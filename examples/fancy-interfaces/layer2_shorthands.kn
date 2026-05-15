@@ -2,53 +2,8 @@
 #
 # Closed shorthands restrict heterogeneous interfaces to Self op Self -> Self.
 # They are the common case for numeric and algebraic types.
-
-interface AddableWith[Rhs] {
-    type Output
-
-    hook +(rhs: Rhs) -> Output
-}
-
-interface SubtractableWith[Rhs] {
-    type Output
-
-    hook -(rhs: Rhs) -> Output
-}
-
-interface MultipliableWith[Rhs] {
-    type Output
-
-    hook *(rhs: Rhs) -> Output
-}
-
-interface DividableWith[Rhs] {
-    type Output
-
-    hook /(rhs: Rhs) -> Output
-}
-
-interface RemainderableWith[Rhs] {
-    type Output
-
-    hook %(rhs: Rhs) -> Output
-}
-
-# ---- Layer 2: closed shorthands ---------------------------------------------
-
-interface Addable: AddableWith[Self] {
-}
-
-interface Subtractable: SubtractableWith[Self] {
-}
-
-interface Multipliable: MultipliableWith[Self] {
-}
-
-interface Dividable: DividableWith[Self] {
-}
-
-interface Remainderable: RemainderableWith[Self] {
-}
+# AddableWith, SubtractableWith, MultipliableWith, DividableWith, RemainderableWith,
+# Addable, Subtractable, Multiplicable, Divisible, and Remainder are from the prelude.
 
 # ---- Concrete example: a 2D vector that forms a group under addition --------
 

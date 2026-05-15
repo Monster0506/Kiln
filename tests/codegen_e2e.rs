@@ -2,16 +2,13 @@ use kiln_compiler::{
     analyzer::analyze,
     codegen::{compile::compile, context::CodegenContext, emit::emit_object},
     lexer::Lexer,
-    parse_prelude,
     parser::Parser,
 };
 
 /// Parse, analyze, and compile a Kiln source string, returning the object bytes.
 fn compile_source(src: &str) -> Vec<u8> {
     let tokens = Lexer::new(src).tokenize().expect("lex failed");
-    let mut ast = Parser::new(tokens).parse_file().expect("parse failed");
-    let prelude = parse_prelude();
-    ast.items = prelude.items.into_iter().chain(ast.items).collect();
+    let ast = Parser::new(tokens).parse_file().expect("parse failed");
     let typed = analyze(&ast).expect("analyze failed");
     let mut cgx = CodegenContext::new("e2e_test");
     compile(&typed, &mut cgx).expect("compile failed");

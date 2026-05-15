@@ -1,8 +1,5 @@
 # layer1_unary.kn -- unary operation interfaces (Layer 1 operational core)
-
-interface Negatable {
-    hook -() -> Self
-}
+# Negatable is provided by the prelude.
 
 interface Normalizeable {
     hook +() -> Self

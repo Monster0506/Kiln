@@ -328,6 +328,7 @@ mod tests {
         TypeExpr::Named {
             name: n.into(),
             generics: vec![],
+            bindings: vec![],
             span: s(),
         }
     }

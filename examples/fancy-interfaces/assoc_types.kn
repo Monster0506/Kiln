@@ -6,9 +6,7 @@
 interface Copyable {
 }
 
-interface Comparable {
-    hook <=>(other: Self) -> int
-}
+# Comparable is provided by the prelude.
 
 interface Displayable {
     hook display() -> str
@@ -75,7 +73,7 @@ def collect_ints(iter: IntRange) -> Vec[int] {
     result: Vec[int] = Vec.new()
     mut v: Option[int] = iter.next()
     while v != None {
-        result.add(v)
+        result.add(v?)
         v = iter.next()
     }
     return result

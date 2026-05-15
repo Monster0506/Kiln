@@ -2,36 +2,8 @@
 #
 # Operators are typed relations: A op B -> C
 # The associated Output type captures the result type.
-
-interface AddableWith[Rhs] {
-    type Output
-
-    hook +(rhs: Rhs) -> Output
-}
-
-interface SubtractableWith[Rhs] {
-    type Output
-
-    hook -(rhs: Rhs) -> Output
-}
-
-interface MultipliableWith[Rhs] {
-    type Output
-
-    hook *(rhs: Rhs) -> Output
-}
-
-interface DividableWith[Rhs] {
-    type Output
-
-    hook /(rhs: Rhs) -> Output
-}
-
-interface RemainderableWith[Rhs] {
-    type Output
-
-    hook %(rhs: Rhs) -> Output
-}
+# AddableWith, SubtractableWith, MultipliableWith, DividableWith, RemainderableWith
+# are provided by the prelude.
 
 # ---- Example: Vec2 + scalar -> Vec2, Vec2 + Vec2 -> Vec2 --------------------
 

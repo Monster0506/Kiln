@@ -2,92 +2,9 @@
 #
 # These build on Layer 2 shorthands and Layer 1 primitives to express
 # mathematical structures: Semigroup, Monoid, Group, Ring, Field, Numeric.
-
-interface Addable: AddableWith[Self] {
-}
-
-interface Subtractable: SubtractableWith[Self] {
-}
-
-interface Multipliable: MultipliableWith[Self] {
-}
-
-interface Dividable: DividableWith[Self] {
-}
-
-interface AddableWith[Rhs] {
-    type Output
-
-    hook +(rhs: Rhs) -> Output
-}
-
-interface SubtractableWith[Rhs] {
-    type Output
-
-    hook -(rhs: Rhs) -> Output
-}
-
-interface MultipliableWith[Rhs] {
-    type Output
-
-    hook *(rhs: Rhs) -> Output
-}
-
-interface DividableWith[Rhs] {
-    type Output
-
-    hook /(rhs: Rhs) -> Output
-}
-
-interface Negatable {
-    hook -() -> Self
-}
-
-interface Zero {
-    hook zero() -> Self
-}
-
-interface One {
-    hook one() -> Self
-}
-
-interface ComparableWith[Rhs] {
-    hook <=>(rhs: Rhs) -> int
-}
-
-interface Comparable: ComparableWith[Self] {
-}
-
-# ---- Layer 3 semantic interfaces --------------------------------------------
-
-interface Semigroup: Addable {
-}
-
-interface Monoid:
-    Semigroup,
-    Zero {
-}
-
-interface Group:
-    Monoid,
-    Negatable {
-}
-
-interface Ring:
-    Group,
-    Multipliable,
-    One {
-}
-
-interface Field:
-    Ring,
-    Dividable {
-}
-
-interface Numeric:
-    Field,
-    Comparable {
-}
+# All of the above, plus AddableWith, SubtractableWith, MultipliableWith,
+# DividableWith, Negatable, Zero, One, ComparableWith, Comparable, Addable,
+# Subtractable, Multiplicable, Divisible, and Numeric are from the prelude.
 
 # ---- A rational number type that forms a field ------------------------------
 

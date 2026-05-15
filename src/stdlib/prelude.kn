@@ -1,6 +1,9 @@
 # Kiln standard library prelude.
 # Types marked @builtin have compiler-internal implementations; the declarations
 # here are the source of truth for their interfaces and source locations.
+
+# ---- Builtin struct declarations --------------------------------------------
+
 @builtin
 struct Vec[T] {
     def new() -> Vec[T]
@@ -12,9 +15,7 @@ struct Vec[T] {
     def clear() -> void
 }
 
-interface Display {
-    hook to_str() -> str
-}
+# ---- Builtin function declarations ------------------------------------------
 
 @builtin
 def __kiln_print(s: str) -> void
@@ -30,6 +31,300 @@ def __kiln_float_to_str(f: float) -> str
 
 @builtin
 def __kiln_bool_to_str(b: bool) -> str
+
+# ---- Core identity and equality interfaces ----------------------------------
+
+interface Copy {}
+
+interface Clone {
+    hook clone() -> Self
+}
+
+interface Eq {}
+
+interface PartialEq {
+    hook ==(other: Self) -> bool
+}
+
+interface Hash {
+    hook hash() -> int
+}
+
+interface Ord {
+    hook <=>(other: Self) -> int
+}
+
+interface PartialOrd {
+    hook <(other: Self) -> bool
+}
+
+interface Debug {
+    hook debug_str() -> str
+}
+
+interface Display {
+    hook to_str() -> str
+}
+
+interface Default {
+    hook default() -> Self
+}
+
+# ---- Arithmetic layer 1: heterogeneous typed relations ----------------------
+
+interface AddableWith[Rhs] {
+    type Output
+    hook +(rhs: Rhs) -> Output
+}
+
+interface SubtractableWith[Rhs] {
+    type Output
+    hook -(rhs: Rhs) -> Output
+}
+
+interface MultipliableWith[Rhs] {
+    type Output
+    hook *(rhs: Rhs) -> Output
+}
+
+interface DividableWith[Rhs] {
+    type Output
+    hook /(rhs: Rhs) -> Output
+}
+
+interface RemainderableWith[Rhs] {
+    type Output
+    hook %(rhs: Rhs) -> Output
+}
+
+interface EquatableWith[Rhs] {
+    hook ==(rhs: Rhs) -> bool
+}
+
+interface ComparableWith[Rhs] {
+    hook <=>(rhs: Rhs) -> int
+}
+
+# ---- Arithmetic layer 2: closed self-typed shorthands -----------------------
+
+interface Addable: AddableWith[Self, Output=Self] {
+    hook +(rhs: Self) -> Self
+}
+interface Subtractable: SubtractableWith[Self, Output=Self] {
+    hook -(rhs: Self) -> Self
+}
+interface Multiplicable: MultipliableWith[Self, Output=Self] {
+    hook *(rhs: Self) -> Self
+}
+interface Divisible: DividableWith[Self, Output=Self] {
+    hook /(rhs: Self) -> Self
+}
+interface Remainder: RemainderableWith[Self, Output=Self] {
+    hook %(rhs: Self) -> Self
+}
+
+interface Negatable {
+    hook -() -> Self
+}
+
+# ---- Numeric property interfaces --------------------------------------------
+
+interface Zero {
+    hook zero() -> Self
+}
+
+interface One {
+    hook one() -> Self
+}
+
+interface Abs {
+    hook abs() -> Self
+}
+
+interface Signum {
+    hook signum() -> Self
+}
+
+interface Bitwise {
+    hook &(rhs: Self) -> Self
+    hook |(rhs: Self) -> Self
+    hook ^(rhs: Self) -> Self
+}
+
+# ---- Numeric hierarchy ------------------------------------------------------
+
+interface Numeric:
+    Addable,
+    Subtractable,
+    Multiplicable,
+    Divisible,
+    Negatable,
+    Zero,
+    One {}
+
+interface Integral:
+    Numeric,
+    Remainder {}
+
+interface Fractional:
+    Numeric {}
+
+# ---- Algebraic structures ---------------------------------------------------
+
+interface Semigroup:
+    Addable {}
+
+interface Monoid:
+    Semigroup,
+    Zero {}
+
+interface Comparable: ComparableWith[Self] {}
+
+interface Group:
+    Monoid,
+    Negatable {}
+
+interface Ring:
+    Group,
+    Multiplicable,
+    One {}
+
+interface Field:
+    Ring,
+    Divisible {}
+
+# ---- Collection interfaces --------------------------------------------------
+
+interface Iterable {}
+interface Foldable {}
+interface Indexable {}
+
+# ---- VecMethods interface ---------------------------------------------------
+
+interface VecMethods {
+    def pop() -> void {}
+    def is_empty() -> bool {}
+}
+
+# ---- Conformance: int -------------------------------------------------------
+
+impl Copy for int {}
+impl Clone for int { hook clone() -> int {} }
+impl Eq for int {}
+impl PartialEq for int { hook ==(other: int) -> bool {} }
+impl Hash for int { hook hash() -> int {} }
+impl Ord for int { hook <=>(other: int) -> int {} }
+impl PartialOrd for int { hook <(other: int) -> bool {} }
+impl Debug for int { hook debug_str() -> str {} }
+impl Default for int { hook default() -> int {} }
+impl AddableWith[int] for int { hook +(rhs: int) -> int {} }
+impl SubtractableWith[int] for int { hook -(rhs: int) -> int {} }
+impl MultipliableWith[int] for int { hook *(rhs: int) -> int {} }
+impl DividableWith[int] for int { hook /(rhs: int) -> int {} }
+impl RemainderableWith[int] for int { hook %(rhs: int) -> int {} }
+impl Addable for int { hook +(rhs: int) -> int {} }
+impl Subtractable for int { hook -(rhs: int) -> int {} }
+impl Multiplicable for int { hook *(rhs: int) -> int {} }
+impl Divisible for int { hook /(rhs: int) -> int {} }
+impl Remainder for int { hook %(rhs: int) -> int {} }
+impl Negatable for int { hook -() -> int {} }
+impl Zero for int { hook zero() -> int {} }
+impl One for int { hook one() -> int {} }
+impl Abs for int { hook abs() -> int {} }
+impl Signum for int { hook signum() -> int {} }
+impl Bitwise for int {
+    hook &(rhs: int) -> int {}
+    hook |(rhs: int) -> int {}
+    hook ^(rhs: int) -> int {}
+}
+impl Numeric for int {}
+impl Integral for int {}
+impl Semigroup for int {}
+impl Monoid for int {}
+
+# ---- Conformance: float -----------------------------------------------------
+
+impl Clone for float { hook clone() -> float {} }
+impl PartialEq for float { hook ==(other: float) -> bool {} }
+impl PartialOrd for float { hook <(other: float) -> bool {} }
+impl Debug for float { hook debug_str() -> str {} }
+impl Default for float { hook default() -> float {} }
+impl AddableWith[float] for float { hook +(rhs: float) -> float {} }
+impl SubtractableWith[float] for float { hook -(rhs: float) -> float {} }
+impl MultipliableWith[float] for float { hook *(rhs: float) -> float {} }
+impl DividableWith[float] for float { hook /(rhs: float) -> float {} }
+impl Addable for float { hook +(rhs: float) -> float {} }
+impl Subtractable for float { hook -(rhs: float) -> float {} }
+impl Multiplicable for float { hook *(rhs: float) -> float {} }
+impl Divisible for float { hook /(rhs: float) -> float {} }
+impl Negatable for float { hook -() -> float {} }
+impl Zero for float { hook zero() -> float {} }
+impl One for float { hook one() -> float {} }
+impl Abs for float { hook abs() -> float {} }
+impl Signum for float { hook signum() -> float {} }
+impl Numeric for float {}
+impl Fractional for float {}
+impl Semigroup for float {}
+
+# ---- Conformance: bool ------------------------------------------------------
+
+impl Copy for bool {}
+impl Clone for bool { hook clone() -> bool {} }
+impl Eq for bool {}
+impl PartialEq for bool { hook ==(other: bool) -> bool {} }
+impl Hash for bool { hook hash() -> int {} }
+impl Ord for bool { hook <=>(other: bool) -> int {} }
+impl PartialOrd for bool { hook <(other: bool) -> bool {} }
+impl Debug for bool { hook debug_str() -> str {} }
+impl Default for bool { hook default() -> bool {} }
+
+# ---- Conformance: str -------------------------------------------------------
+
+impl Clone for str { hook clone() -> str {} }
+impl Eq for str {}
+impl PartialEq for str { hook ==(other: str) -> bool {} }
+impl Hash for str { hook hash() -> int {} }
+impl Ord for str { hook <=>(other: str) -> int {} }
+impl PartialOrd for str { hook <(other: str) -> bool {} }
+impl Debug for str { hook debug_str() -> str {} }
+impl Default for str { hook default() -> str {} }
+impl AddableWith[str] for str { hook +(rhs: str) -> str {} }
+impl Addable for str { hook +(rhs: str) -> str {} }
+impl Semigroup for str {}
+impl Monoid for str {}
+impl Indexable for str {}
+
+# ---- Conformance: Vec[T] ----------------------------------------------------
+
+impl[T: Clone] Clone for Vec[T] { hook clone() -> Vec[T] {} }
+impl[T: Eq] Eq for Vec[T] {}
+impl[T: PartialEq] PartialEq for Vec[T] { hook ==(other: Vec[T]) -> bool {} }
+impl[T: Hash] Hash for Vec[T] { hook hash() -> int {} }
+impl[T: Ord] Ord for Vec[T] { hook <=>(other: Vec[T]) -> int {} }
+impl[T: PartialOrd] PartialOrd for Vec[T] { hook <(other: Vec[T]) -> bool {} }
+impl[T: Debug] Debug for Vec[T] { hook debug_str() -> str {} }
+impl Default for Vec[T] { hook default() -> Vec[T] {} }
+impl Semigroup for Vec[T] {}
+impl Monoid for Vec[T] {}
+impl Iterable for Vec[T] {}
+impl Foldable for Vec[T] {}
+impl Indexable for Vec[T] {}
+
+# ---- Conformance: Option[T] -------------------------------------------------
+
+impl[T: Clone] Clone for Option[T] { hook clone() -> Option[T] {} }
+impl[T: Eq] Eq for Option[T] {}
+impl[T: PartialEq] PartialEq for Option[T] { hook ==(other: Option[T]) -> bool {} }
+impl[T: Hash] Hash for Option[T] { hook hash() -> int {} }
+impl[T: Ord] Ord for Option[T] { hook <=>(other: Option[T]) -> int {} }
+impl[T: PartialOrd] PartialOrd for Option[T] { hook <(other: Option[T]) -> bool {} }
+impl[T: Debug] Debug for Option[T] { hook debug_str() -> str {} }
+impl[T: Display] Display for Option[T] { hook to_str() -> str {} }
+impl Default for Option[T] { hook default() -> Option[T] {} }
+impl Iterable for Option[T] {}
+impl Foldable for Option[T] {}
+
+# ---- Conformance: Display ---------------------------------------------------
 
 impl Display for int {
     hook to_str() -> str {
@@ -55,15 +350,6 @@ impl Display for str {
     }
 }
 
-def print[T: Display](item: T) -> void {
-    __kiln_print(item.to_str())
-}
-
-def println[T: Display](item: T) -> void {
-    __kiln_println(item.to_str())
-}
-
-
 impl[T: Display] Display for Vec[T] {
     hook to_str() -> str {
         mut res: str = "["
@@ -73,39 +359,35 @@ impl[T: Display] Display for Vec[T] {
             item: T = self.get(i)
             if i > 0 { res = res + ", " }
             res = res + item.to_str()
-            i=i+1
+            i = i + 1
         }
-
         return res + "]"
     }
 }
 
+# ---- Standard functions -----------------------------------------------------
+
+def print[T: Display](item: T) -> void {
+    __kiln_print(item.to_str())
+}
+
+def println[T: Display](item: T) -> void {
+    __kiln_println(item.to_str())
+}
+
+# ---- Vec utility methods ----------------------------------------------------
+
 impl VecMethods for Vec[T] {
-    def pop() -> T {
-        return self.remove(self.len() - 1)
-    }
-
-
-    def contains(item: T) -> bool {
-        for i <- self {
-            if (item == i) { return true }
-        }
-
-        return false
+    def pop() -> void {
+        self.remove(self.len() - 1)
     }
 
     def is_empty() -> bool {
         return self.len() == 0
     }
-
-    def first() -> T {
-        return self.get(0)
-    }
-
-    def last() -> T {
-        return self.get(self.len() - 1)
-    }
 }
+
+# ---- Range utilities --------------------------------------------------------
 
 def range(start: int, stop: int) -> Vec[int] {
     mut result: Vec[int] = Vec.new()
@@ -117,10 +399,9 @@ def range(start: int, stop: int) -> Vec[int] {
     return result
 }
 
-
 def range(start: float, stop: float, step: float) -> Vec[float] {
     mut result: Vec[float] = Vec.new()
-    mut i: float= start
+    mut i: float = start
     while i < stop {
         result.add(i)
         i = i + step

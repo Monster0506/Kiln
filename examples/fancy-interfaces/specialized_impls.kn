@@ -3,12 +3,7 @@
 # Specialized impls provide a more specific implementation for a concrete type
 # combination, overriding the blanket impl when conditions are met.
 # The compiler validates specialization is strictly more specific and non-ambiguous.
-
-interface AddableWith[Rhs] {
-    type Output
-
-    hook +(rhs: Rhs) -> Output
-}
+# AddableWith is provided by the prelude.
 
 interface Displayable {
     hook display() -> str

@@ -280,7 +280,23 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
 }
 
 /// Analyze `source`, producing a `TypedFile` or a list of errors.
+///
+/// The stdlib prelude is always prepended before user items.
 pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
+    let prelude = crate::stdlib::parse_prelude();
+    let combined_items: Vec<_> = prelude
+        .items
+        .into_iter()
+        .chain(source.items.iter().cloned())
+        .collect();
+    let combined = SourceFile {
+        items: combined_items,
+        span: source.span,
+    };
+    analyze_inner(&combined)
+}
+
+fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
     let mut errors: Vec<AnalysisError> = Vec::new();
     let mut env = Env::new();
     let mut registry = ty::TypeRegistry::new();

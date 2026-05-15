@@ -192,6 +192,7 @@ impl<'src> Lexer<'src> {
                     Ok(Token::new(TokenKind::Amp, start, self.pos))
                 }
             }
+            Some('^') => Ok(Token::new(TokenKind::Caret, start, self.pos)),
             Some(c) => Err(LexError::UnexpectedChar {
                 ch: c,
                 span: Span::new(start, self.pos),

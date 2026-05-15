@@ -975,7 +975,10 @@ fn infer_binop(op: BinOp, lt: Ty, rt: Ty, span: &Span, errors: &mut Vec<Analysis
         // Spaceship returns an integer ordering value (-1, 0, 1), not a bool.
         Spaceship => match (&lt, &rt) {
             (Ty::Unknown, _) | (_, Ty::Unknown) => Ty::Unknown,
-            (Ty::Named(_, _), _) | (_, Ty::Named(_, _)) | (Ty::GenericParam(_), _) | (_, Ty::GenericParam(_)) => Ty::Int,
+            (Ty::Named(_, _), _)
+            | (_, Ty::Named(_, _))
+            | (Ty::GenericParam(_), _)
+            | (_, Ty::GenericParam(_)) => Ty::Int,
             _ => Ty::Int,
         },
         And | Or => {

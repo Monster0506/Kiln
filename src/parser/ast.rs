@@ -61,6 +61,8 @@ pub enum GenericParamKind {
     Type,
     /// A lifetime parameter: `scope a`, `scope b: a`
     Lifetime,
+    /// A type constructor parameter: `F[_]` (higher-kinded type)
+    TypeConstructor,
 }
 
 #[derive(Debug, Clone)]
@@ -184,6 +186,8 @@ pub enum InterfaceItemKind {
     },
     /// Regular method with optional default body
     Method(FnDef),
+    /// Associated type declaration: `type Item` or `type Item: Copyable, Comparable`
+    AssocType { name: String, bounds: Vec<String> },
 }
 
 /// The name of a hook, either a symbol or an identifier.
@@ -202,6 +206,13 @@ pub struct InterfaceDef {
     pub span: Span,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImplKind {
+    Plain,
+    Specialized,
+    Extension,
+}
+
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
     /// Optional generic params for conditional conformance: `impl[T: Display] Display for Vec[T]`
@@ -210,6 +221,7 @@ pub struct ImplBlock {
     pub for_type: TypeExpr,
     pub methods: Vec<FnDef>,
     pub hooks: Vec<HookDef>,
+    pub kind: ImplKind,
     pub span: Span,
 }
 

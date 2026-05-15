@@ -408,3 +408,85 @@ fn parse_tricky_match() {
 fn parse_tricky_control() {
     parse_file("examples/tricky_control.kn");
 }
+
+// ---- fancy-interfaces --------------------------------------------------------
+
+#[test]
+fn parse_fancy_layer1_arithmetic() {
+    parse_file("examples/fancy-interfaces/layer1_arithmetic.kn");
+}
+
+#[test]
+fn parse_fancy_layer1_comparison() {
+    parse_file("examples/fancy-interfaces/layer1_comparison.kn");
+}
+
+#[test]
+fn parse_fancy_layer1_assign() {
+    parse_file("examples/fancy-interfaces/layer1_assign.kn");
+}
+
+#[test]
+fn parse_fancy_layer1_unary() {
+    parse_file("examples/fancy-interfaces/layer1_unary.kn");
+}
+
+#[test]
+fn parse_fancy_layer1_indexing() {
+    parse_file("examples/fancy-interfaces/layer1_indexing.kn");
+}
+
+#[test]
+fn parse_fancy_layer1_callable_iter() {
+    parse_file("examples/fancy-interfaces/layer1_callable_iter.kn");
+}
+
+#[test]
+fn parse_fancy_layer1_identity() {
+    parse_file("examples/fancy-interfaces/layer1_identity.kn");
+}
+
+#[test]
+fn parse_fancy_layer2_shorthands() {
+    parse_file("examples/fancy-interfaces/layer2_shorthands.kn");
+}
+
+#[test]
+fn parse_fancy_layer3_semantic() {
+    parse_file("examples/fancy-interfaces/layer3_semantic.kn");
+}
+
+#[test]
+fn parse_fancy_layer3_collection() {
+    parse_file("examples/fancy-interfaces/layer3_collection.kn");
+}
+
+#[test]
+fn parse_fancy_blanket_impls() {
+    parse_file("examples/fancy-interfaces/blanket_impls.kn");
+}
+
+#[test]
+fn parse_fancy_specialized_impls() {
+    parse_file("examples/fancy-interfaces/specialized_impls.kn");
+}
+
+#[test]
+fn parse_fancy_extension_impls() {
+    parse_file("examples/fancy-interfaces/extension_impls.kn");
+}
+
+#[test]
+fn parse_fancy_assoc_types() {
+    parse_file("examples/fancy-interfaces/assoc_types.kn");
+}
+
+#[test]
+fn parse_fancy_hkt() {
+    parse_file("examples/fancy-interfaces/hkt.kn");
+}
+
+#[test]
+fn parse_fancy_dispatch() {
+    parse_file("examples/fancy-interfaces/dispatch.kn");
+}

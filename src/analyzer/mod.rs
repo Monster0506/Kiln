@@ -592,6 +592,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         );
                     }
                     InterfaceItemKind::Field { .. } => {}
+                    InterfaceItemKind::AssocType { .. } => {}
                 }
             }
         }

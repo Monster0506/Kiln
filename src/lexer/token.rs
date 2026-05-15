@@ -83,6 +83,11 @@ pub enum TokenKind {
     Question,  // `?`
     Amp,       // `&`
     At,        // `@`
+    PlusEq,    // `+=`
+    MinusEq,   // `-=`
+    StarEq,    // `*=`
+    SlashEq,   // `/=`
+    PercentEq, // `%=`
 
     // Punctuation
     LParen,

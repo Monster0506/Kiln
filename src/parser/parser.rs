@@ -143,7 +143,17 @@ impl Parser {
             TokenKind::Struct => Ok(Item::Struct(self.parse_struct(annotations)?)),
             TokenKind::Enum => Ok(Item::Enum(self.parse_enum(annotations)?)),
             TokenKind::Interface => Ok(Item::Interface(self.parse_interface()?)),
-            TokenKind::Impl => Ok(Item::ImplBlock(self.parse_impl()?)),
+            TokenKind::Impl => Ok(Item::ImplBlock(self.parse_impl(ImplKind::Plain)?)),
+            TokenKind::Ident(ref s) if s == "specialized" || s == "extension" => {
+                let kind = if s == "specialized" {
+                    ImplKind::Specialized
+                } else {
+                    ImplKind::Extension
+                };
+                self.advance();
+                self.expect(TokenKind::Impl)?;
+                Ok(Item::ImplBlock(self.parse_impl_body(kind)?))
+            }
             TokenKind::Annotation => Ok(Item::AnnotationDef(self.parse_annotation_def()?)),
             TokenKind::Processor => Ok(Item::ProcessorDef(self.parse_processor_def()?)),
             TokenKind::Type => Ok(Item::TypeAlias(self.parse_type_alias()?)),
@@ -364,13 +374,6 @@ impl Parser {
         }
     }
 
-    fn peek_at(&self, offset: usize) -> &TokenKind {
-        self.tokens
-            .get(self.pos + offset)
-            .map(|t| &t.kind)
-            .unwrap_or(&TokenKind::Eof)
-    }
-
     fn parse_generic_params(&mut self) -> Result<Vec<GenericParam>, ParseError> {
         if !self.eat(&TokenKind::LBracket) {
             return Ok(vec![]);
@@ -395,31 +398,23 @@ impl Parser {
                 });
             } else {
                 let name = self.expect_ident()?;
+                // Check for higher-kinded type constructor syntax: F[_]
+                let param_kind = if self.peek() == &TokenKind::LBracket {
+                    self.advance();
+                    // Consume the wildcard `_` (or any ident)
+                    self.expect_ident()?;
+                    self.expect(TokenKind::RBracket)?;
+                    GenericParamKind::TypeConstructor
+                } else {
+                    GenericParamKind::Type
+                };
+                // Generic params use `+` to separate multiple bounds.
+                // Commas always start the next param. Read one bound, then
+                // continue with `+` for additional bounds.
                 let bounds = if self.eat(&TokenKind::Colon) {
                     let mut bs = vec![self.expect_ident()?];
-                    // Continue consuming bounds while the next tokens are `, Ident` where
-                    // the ident is NOT followed by `:` (which would start a new param).
-                    // Also stop if `, scope` (lifetime param follows).
-                    loop {
-                        if self.peek() != &TokenKind::Comma {
-                            break;
-                        }
-                        // 1-ahead is Comma; 2-ahead tells us what follows.
-                        let next = self.peek_at(1);
-                        if matches!(next, TokenKind::Scope) {
-                            break;
-                        }
-                        if let TokenKind::Ident(_) = next {
-                            // If the token after the ident is `:`, it's a new param.
-                            if self.peek_at(2) == &TokenKind::Colon {
-                                break;
-                            }
-                            // Otherwise treat the ident as another bound.
-                            self.advance(); // consume `,`
-                            bs.push(self.expect_ident()?);
-                        } else {
-                            break;
-                        }
+                    while self.eat(&TokenKind::Plus) {
+                        bs.push(self.expect_ident()?);
                     }
                     bs
                 } else {
@@ -427,7 +422,7 @@ impl Parser {
                 };
                 let end = self.peek_span();
                 params.push(GenericParam {
-                    kind: GenericParamKind::Type,
+                    kind: param_kind,
                     name,
                     bounds,
                     span: Span::new(start.start, end.start),
@@ -746,17 +741,45 @@ impl Parser {
                 self.advance();
                 Ok(HookName::Op("+".into()))
             }
+            TokenKind::PlusEq => {
+                self.advance();
+                Ok(HookName::Op("+=".into()))
+            }
             TokenKind::Minus => {
                 self.advance();
                 Ok(HookName::Op("-".into()))
+            }
+            TokenKind::MinusEq => {
+                self.advance();
+                Ok(HookName::Op("-=".into()))
             }
             TokenKind::Star => {
                 self.advance();
                 Ok(HookName::Op("*".into()))
             }
+            TokenKind::StarEq => {
+                self.advance();
+                Ok(HookName::Op("*=".into()))
+            }
             TokenKind::Slash => {
                 self.advance();
                 Ok(HookName::Op("/".into()))
+            }
+            TokenKind::SlashEq => {
+                self.advance();
+                Ok(HookName::Op("/=".into()))
+            }
+            TokenKind::Percent => {
+                self.advance();
+                Ok(HookName::Op("%".into()))
+            }
+            TokenKind::PercentEq => {
+                self.advance();
+                Ok(HookName::Op("%=".into()))
+            }
+            TokenKind::Bang => {
+                self.advance();
+                Ok(HookName::Op("!".into()))
             }
             TokenKind::EqEq => {
                 self.advance();
@@ -785,7 +808,16 @@ impl Parser {
             TokenKind::LBracket => {
                 self.advance();
                 self.expect(TokenKind::RBracket)?;
-                Ok(HookName::Op("[]".into()))
+                if self.eat(&TokenKind::Eq) {
+                    Ok(HookName::Op("[]=".into()))
+                } else {
+                    Ok(HookName::Op("[]".into()))
+                }
+            }
+            TokenKind::LParen => {
+                self.advance();
+                self.expect(TokenKind::RParen)?;
+                Ok(HookName::Op("()".into()))
             }
             TokenKind::Ident(name) => {
                 self.advance();
@@ -861,6 +893,31 @@ impl Parser {
                         span,
                     }
                 }
+                TokenKind::Type => {
+                    self.advance();
+                    let assoc_name = self.expect_ident()?;
+                    let bounds = if self.eat(&TokenKind::Colon) {
+                        let mut bs = vec![self.expect_ident()?];
+                        while self.eat(&TokenKind::Comma) {
+                            if let TokenKind::Ident(_) = self.peek() {
+                                bs.push(self.expect_ident()?);
+                            } else {
+                                break;
+                            }
+                        }
+                        bs
+                    } else {
+                        vec![]
+                    };
+                    let end = self.peek_span().start;
+                    InterfaceItem {
+                        kind: InterfaceItemKind::AssocType {
+                            name: assoc_name,
+                            bounds,
+                        },
+                        span: Span::new(item_start, end),
+                    }
+                }
                 TokenKind::Ident(_) => {
                     let field_name = self.expect_ident()?;
                     self.expect(TokenKind::Colon)?;
@@ -931,9 +988,13 @@ impl Parser {
         })
     }
 
-    fn parse_impl(&mut self) -> Result<ImplBlock, ParseError> {
-        let start = self.peek_span().start;
+    fn parse_impl(&mut self, kind: ImplKind) -> Result<ImplBlock, ParseError> {
         self.expect(TokenKind::Impl)?;
+        self.parse_impl_body(kind)
+    }
+
+    fn parse_impl_body(&mut self, kind: ImplKind) -> Result<ImplBlock, ParseError> {
+        let start = self.peek_span().start;
         let generic_params = self.parse_generic_params()?;
         let interface = self.parse_type_atom()?;
         self.expect(TokenKind::For)?;
@@ -962,6 +1023,7 @@ impl Parser {
             for_type,
             methods,
             hooks,
+            kind,
             span: Span::new(start, end),
         })
     }
@@ -1114,6 +1176,22 @@ impl Parser {
                         value,
                         span: Span::new(start.start, end),
                     })
+                } else if let Some(bin_op) = compound_assign_op(self.peek()) {
+                    self.advance();
+                    let rhs = self.parse_expr(0)?;
+                    let rhs_span = rhs.span();
+                    let value = Expr::BinOp {
+                        op: bin_op,
+                        left: Box::new(expr.clone()),
+                        right: Box::new(rhs),
+                        span: rhs_span,
+                    };
+                    let end = self.peek_span().start;
+                    Ok(Stmt::Assign {
+                        target: expr,
+                        value,
+                        span: Span::new(start.start, end),
+                    })
                 } else {
                     Ok(Stmt::Expr(expr))
                 }
@@ -1250,6 +1328,24 @@ impl Parser {
 
         if self.eat(&TokenKind::Eq) {
             let value = self.parse_expr(0)?;
+            let end = self.peek_span().start;
+            return Ok(Stmt::Assign {
+                target: lhs,
+                value,
+                span: Span::new(start.start, end),
+            });
+        }
+
+        if let Some(bin_op) = compound_assign_op(self.peek()) {
+            self.advance();
+            let rhs = self.parse_expr(0)?;
+            let rhs_span = rhs.span();
+            let value = Expr::BinOp {
+                op: bin_op,
+                left: Box::new(lhs.clone()),
+                right: Box::new(rhs),
+                span: rhs_span,
+            };
             let end = self.peek_span().start;
             return Ok(Stmt::Assign {
                 target: lhs,
@@ -1816,6 +1912,17 @@ impl Parser {
     }
 }
 
+fn compound_assign_op(tok: &TokenKind) -> Option<BinOp> {
+    match tok {
+        TokenKind::PlusEq => Some(BinOp::Add),
+        TokenKind::MinusEq => Some(BinOp::Sub),
+        TokenKind::StarEq => Some(BinOp::Mul),
+        TokenKind::SlashEq => Some(BinOp::Div),
+        TokenKind::PercentEq => Some(BinOp::Mod),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2355,6 +2462,42 @@ export { Point, distance }
                 }
                 other => panic!("{other:?}"),
             },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_compound_assign_stmt() {
+        let src = "def f() -> void { x += 1 }";
+        let file = parse(src).unwrap();
+        match &file.items[0] {
+            Item::Function(f) => {
+                assert!(
+                    matches!(&f.body.stmts[0], Stmt::Assign { .. }),
+                    "expected Assign, got {:?}",
+                    &f.body.stmts[0]
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_hkt_generic_params_correct_arity() {
+        let src = "def traverse[G[_]: Applicative, A, B](fa: int) -> int {}";
+        let file = parse(src).unwrap();
+        match &file.items[0] {
+            Item::Function(f) => {
+                assert_eq!(f.generic_params.len(), 3, "expected 3 params: G, A, B");
+                assert_eq!(f.generic_params[0].name, "G");
+                assert!(matches!(
+                    f.generic_params[0].kind,
+                    GenericParamKind::TypeConstructor
+                ));
+                assert_eq!(f.generic_params[0].bounds, vec!["Applicative"]);
+                assert_eq!(f.generic_params[1].name, "A");
+                assert_eq!(f.generic_params[2].name, "B");
+            }
             other => panic!("{other:?}"),
         }
     }

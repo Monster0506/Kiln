@@ -99,8 +99,20 @@ impl<'src> Lexer<'src> {
             Some(',') => Ok(Token::new(TokenKind::Comma, start, self.pos)),
             Some(':') => Ok(Token::new(TokenKind::Colon, start, self.pos)),
             Some('.') => Ok(Token::new(TokenKind::Dot, start, self.pos)),
-            Some('+') => Ok(Token::new(TokenKind::Plus, start, self.pos)),
-            Some('/') => Ok(Token::new(TokenKind::Slash, start, self.pos)),
+            Some('+') => {
+                if self.eat('=') {
+                    Ok(Token::new(TokenKind::PlusEq, start, self.pos))
+                } else {
+                    Ok(Token::new(TokenKind::Plus, start, self.pos))
+                }
+            }
+            Some('/') => {
+                if self.eat('=') {
+                    Ok(Token::new(TokenKind::SlashEq, start, self.pos))
+                } else {
+                    Ok(Token::new(TokenKind::Slash, start, self.pos))
+                }
+            }
             Some('?') => Ok(Token::new(TokenKind::Question, start, self.pos)),
             Some('@') => Ok(Token::new(TokenKind::At, start, self.pos)),
             Some('!') => {
@@ -110,8 +122,20 @@ impl<'src> Lexer<'src> {
                     Ok(Token::new(TokenKind::Bang, start, self.pos))
                 }
             }
-            Some('*') => Ok(Token::new(TokenKind::Star, start, self.pos)),
-            Some('%') => Ok(Token::new(TokenKind::Percent, start, self.pos)),
+            Some('*') => {
+                if self.eat('=') {
+                    Ok(Token::new(TokenKind::StarEq, start, self.pos))
+                } else {
+                    Ok(Token::new(TokenKind::Star, start, self.pos))
+                }
+            }
+            Some('%') => {
+                if self.eat('=') {
+                    Ok(Token::new(TokenKind::PercentEq, start, self.pos))
+                } else {
+                    Ok(Token::new(TokenKind::Percent, start, self.pos))
+                }
+            }
             Some('|') => {
                 if self.eat('|') {
                     Ok(Token::new(TokenKind::PipePipe, start, self.pos))
@@ -122,6 +146,8 @@ impl<'src> Lexer<'src> {
             Some('-') => {
                 if self.eat('>') {
                     Ok(Token::new(TokenKind::Arrow, start, self.pos))
+                } else if self.eat('=') {
+                    Ok(Token::new(TokenKind::MinusEq, start, self.pos))
                 } else {
                     Ok(Token::new(TokenKind::Minus, start, self.pos))
                 }

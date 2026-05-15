@@ -32,11 +32,18 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
                 return true;
             }
             let entries = registry.get_conformances(name, iface);
-            if entries.is_empty() {
-                return false;
+            if !entries.is_empty() {
+                return true;
             }
-            // For a concrete named type, bounds in entries are always empty.
-            true
+            // For shorthand operator interfaces, a user-defined type satisfies the
+            // constraint if it has any impl for the heterogeneous (*With) variant.
+            // E.g. `AddableWith[X]` implies `Addable` for the purposes of operator use.
+            if let Some(with_iface) = operator_shorthand_to_with(iface) {
+                if !registry.get_conformances(name, with_iface).is_empty() {
+                    return true;
+                }
+            }
+            false
         }
 
         Ty::GenericParam(_) => {
@@ -93,6 +100,22 @@ fn satisfies_map(key: &Ty, val: &Ty, iface: &str, registry: &TypeRegistry) -> bo
             _ => false,
         }
     })
+}
+
+/// Maps a shorthand operator interface to its heterogeneous `*With` variant.
+/// User-defined types implementing `AddableWith[X]` satisfy the `Addable` bound.
+fn operator_shorthand_to_with(iface: &str) -> Option<&'static str> {
+    match iface {
+        "Addable" => Some("AddableWith"),
+        "Subtractable" => Some("SubtractableWith"),
+        "Multiplicable" => Some("MultipliableWith"),
+        "Divisible" => Some("DividableWith"),
+        "Remainder" => Some("RemainderableWith"),
+        "Negatable" => None,
+        "PartialEq" => Some("EquatableWith"),
+        "PartialOrd" | "Ord" => Some("ComparableWith"),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------

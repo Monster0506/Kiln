@@ -73,7 +73,7 @@ impl Iterator for IntRange {
 
 def collect_ints(iter: IntRange) -> Vec[int] {
     result: Vec[int] = Vec.new()
-    v: Option[int] = iter.next()
+    mut v: Option[int] = iter.next()
     while v != None {
         result.add(v)
         v = iter.next()

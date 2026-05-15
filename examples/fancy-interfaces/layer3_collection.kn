@@ -85,7 +85,7 @@ impl Indexable for IntSlice {
 # ---- Generic algorithms that work on any Iterable ---------------------------
 
 def count[T: Iterable](col: T) -> int {
-    n: int = 0
+    mut n: int = 0
     for _ <- col.iter() {
         n = n + 1
     }

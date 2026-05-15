@@ -1,6 +1,7 @@
 use kiln_compiler::analyzer::analyze;
 use kiln_compiler::lexer::Lexer;
 use kiln_compiler::parser::Parser;
+use std::fs;
 
 fn run(src: &str) -> Vec<String> {
     let tokens = Lexer::new(src).tokenize().expect("lex failed");
@@ -16,6 +17,111 @@ fn run(src: &str) -> Vec<String> {
 
 fn has_bound_violation(errs: &[String]) -> bool {
     errs.iter().any(|e| e.contains("does not implement"))
+}
+
+fn analyze_file(path: &str) -> Vec<String> {
+    let src = fs::read_to_string(path).unwrap_or_else(|e| panic!("failed to read {path}: {e}"));
+    run(&src)
+}
+
+// ---------------------------------------------------------------------------
+// Fancy-interface examples: full analyzer pass
+// ---------------------------------------------------------------------------
+
+#[test]
+fn analyze_fancy_layer1_arithmetic() {
+    let errs = analyze_file("examples/fancy-interfaces/layer1_arithmetic.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_layer1_comparison() {
+    let errs = analyze_file("examples/fancy-interfaces/layer1_comparison.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_layer1_assign() {
+    let errs = analyze_file("examples/fancy-interfaces/layer1_assign.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_layer1_unary() {
+    let errs = analyze_file("examples/fancy-interfaces/layer1_unary.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_layer1_indexing() {
+    let errs = analyze_file("examples/fancy-interfaces/layer1_indexing.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_layer1_callable_iter() {
+    let errs = analyze_file("examples/fancy-interfaces/layer1_callable_iter.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_layer1_identity() {
+    let errs = analyze_file("examples/fancy-interfaces/layer1_identity.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_layer2_shorthands() {
+    let errs = analyze_file("examples/fancy-interfaces/layer2_shorthands.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_layer3_semantic() {
+    let errs = analyze_file("examples/fancy-interfaces/layer3_semantic.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_layer3_collection() {
+    let errs = analyze_file("examples/fancy-interfaces/layer3_collection.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_blanket_impls() {
+    let errs = analyze_file("examples/fancy-interfaces/blanket_impls.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_specialized_impls() {
+    let errs = analyze_file("examples/fancy-interfaces/specialized_impls.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_extension_impls() {
+    let errs = analyze_file("examples/fancy-interfaces/extension_impls.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_assoc_types() {
+    let errs = analyze_file("examples/fancy-interfaces/assoc_types.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_hkt() {
+    let errs = analyze_file("examples/fancy-interfaces/hkt.kn");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn analyze_fancy_dispatch() {
+    let errs = analyze_file("examples/fancy-interfaces/dispatch.kn");
+    assert!(errs.is_empty(), "{errs:?}");
 }
 
 #[test]

@@ -155,7 +155,7 @@ impl ComparableWith[Rational] for Rational {
 # ---- Generic functions that require algebraic structure ---------------------
 
 def sum[T: Monoid](items: Vec[T]) -> T {
-    acc: T = T.zero()
+    mut acc: T = T.zero()
     for item <- items {
         acc = acc + item
     }
@@ -163,7 +163,7 @@ def sum[T: Monoid](items: Vec[T]) -> T {
 }
 
 def product[T: Ring](items: Vec[T]) -> T {
-    acc: T = T.one()
+    mut acc: T = T.one()
     for item <- items {
         acc = acc * item
     }

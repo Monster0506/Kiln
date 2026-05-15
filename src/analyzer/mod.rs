@@ -231,6 +231,28 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
         registry.register_conformance("Ordering", iface, unc());
     }
 
+    // None is the unit variant of Option[T]; treat it as Option[Unknown] so
+    // comparisons like `v != None` type-check without knowing T.
+    env.define(
+        "None",
+        Symbol::Var {
+            ty: Ty::Option(Box::new(Ty::Unknown)),
+            mutable: false,
+            span: s,
+        },
+    );
+    // Some wraps a value into Option[T].
+    env.define(
+        "Some",
+        Symbol::Fn {
+            generic_params: vec!["T".into()],
+            generic_bounds: vec![],
+            params: vec![("value".into(), Ty::GenericParam("T".into()))],
+            ret: Ty::Option(Box::new(Ty::GenericParam("T".into()))),
+            span: s,
+        },
+    );
+
     // len, panic, assert, clock_ms: no interface requirements
     // (print/println are defined in the prelude as def print[T: Display])
     let fns: &[(&str, &[Ty], Ty)] = &[
@@ -617,12 +639,28 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             for iitem in &iface.items {
                 match &iitem.kind {
                     InterfaceItemKind::Method(method) => {
+                        let has_method_generics = !method.generic_params.is_empty();
+                        if has_method_generics {
+                            env.push_scope();
+                            for gp in &method.generic_params {
+                                env.define(
+                                    &gp.name,
+                                    Symbol::Type {
+                                        id: TypeId(0),
+                                        span: gp.span,
+                                    },
+                                );
+                            }
+                        }
                         let params: Vec<(String, Ty)> = method
                             .params
                             .iter()
                             .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                             .collect();
                         let ret = resolve_type_expr(&method.return_type, &env, &mut errors);
+                        if has_method_generics {
+                            env.pop_scope();
+                        }
                         registry.register_interface_method(
                             &iface.name,
                             MethodEntry {
@@ -797,11 +835,33 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 conformance::check_impl_completeness(impl_block, &interfaces, &mut errors);
                 if impl_block.kind == ImplKind::Plain {
                     let key_ty = match &impl_block.for_type {
-                        TypeExpr::Named { name, .. } => name.clone(),
+                        TypeExpr::Named { name, generics, .. } => {
+                            if generics.is_empty() {
+                                name.clone()
+                            } else {
+                                format!("{}[{}]", name, generics.len())
+                            }
+                        }
                         _ => String::new(),
                     };
                     let key_iface = match &impl_block.interface {
-                        TypeExpr::Named { name, .. } => name.clone(),
+                        TypeExpr::Named { name, generics, .. } => {
+                            if generics.is_empty() {
+                                name.clone()
+                            } else {
+                                // Include a fingerprint of generic args so that
+                                // `AddableWith[int]` and `AddableWith[float]` do not
+                                // collide as duplicate impls for the same type.
+                                let args: Vec<String> = generics
+                                    .iter()
+                                    .map(|g| match g {
+                                        TypeExpr::Named { name: n, .. } => n.clone(),
+                                        _ => "_".to_string(),
+                                    })
+                                    .collect();
+                                format!("{}[{}]", name, args.join(","))
+                            }
+                        }
                         _ => String::new(),
                     };
                     if !key_ty.is_empty() && !key_iface.is_empty() {
@@ -890,6 +950,13 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
                 let self_ty = resolve_type_expr(&impl_block.for_type, &env, &mut errors);
 
+                // Collect the struct's field names/types so they can be placed directly
+                // in scope inside each method/hook body (field access without `self.`).
+                let struct_fields: Vec<(String, Ty)> = registry
+                    .get_struct_fields(&type_name)
+                    .map(|fs| fs.to_vec())
+                    .unwrap_or_default();
+
                 let mut typed_methods: Vec<TypedFnDef> = Vec::new();
                 for method in &impl_block.methods {
                     env.push_scope();
@@ -901,6 +968,16 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             span: impl_block.span,
                         },
                     );
+                    for (fname, fty) in &struct_fields {
+                        env.define(
+                            fname,
+                            Symbol::Var {
+                                ty: fty.clone(),
+                                mutable: true,
+                                span: impl_block.span,
+                            },
+                        );
+                    }
                     let ret = resolve_type_expr(&method.return_type, &env, &mut errors);
                     let mut params: Vec<TypedParam> = Vec::new();
                     for p in &method.params {
@@ -949,6 +1026,16 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             span: impl_block.span,
                         },
                     );
+                    for (fname, fty) in &struct_fields {
+                        env.define(
+                            fname,
+                            Symbol::Var {
+                                ty: fty.clone(),
+                                mutable: true,
+                                span: impl_block.span,
+                            },
+                        );
+                    }
                     let ret = hook
                         .return_type
                         .as_ref()
@@ -1036,32 +1123,43 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         );
                     }
                 }
-                let typed_methods: Vec<TypedInterfaceMethod> = iface
-                    .items
-                    .iter()
-                    .filter_map(|iitem| {
-                        if let InterfaceItemKind::Method(m) = &iitem.kind {
-                            let params: Vec<TypedParam> = m
-                                .params
-                                .iter()
-                                .map(|p| TypedParam {
-                                    name: p.name.clone(),
-                                    ty: resolve_type_expr(&p.ty, &env, &mut errors),
-                                    span: p.span,
-                                })
-                                .collect();
-                            let return_type = resolve_type_expr(&m.return_type, &env, &mut errors);
-                            Some(TypedInterfaceMethod {
-                                name: m.name.clone(),
-                                params,
-                                return_type,
-                                span: m.span,
-                            })
-                        } else {
-                            None
+                let mut typed_methods: Vec<TypedInterfaceMethod> = Vec::new();
+                for iitem in &iface.items {
+                    if let InterfaceItemKind::Method(m) = &iitem.kind {
+                        let has_method_generics = !m.generic_params.is_empty();
+                        if has_method_generics {
+                            env.push_scope();
+                            for gp in &m.generic_params {
+                                env.define(
+                                    &gp.name,
+                                    Symbol::Type {
+                                        id: TypeId(0),
+                                        span: gp.span,
+                                    },
+                                );
+                            }
                         }
-                    })
-                    .collect();
+                        let params: Vec<TypedParam> = m
+                            .params
+                            .iter()
+                            .map(|p| TypedParam {
+                                name: p.name.clone(),
+                                ty: resolve_type_expr(&p.ty, &env, &mut errors),
+                                span: p.span,
+                            })
+                            .collect();
+                        let return_type = resolve_type_expr(&m.return_type, &env, &mut errors);
+                        if has_method_generics {
+                            env.pop_scope();
+                        }
+                        typed_methods.push(TypedInterfaceMethod {
+                            name: m.name.clone(),
+                            params,
+                            return_type,
+                            span: m.span,
+                        });
+                    }
+                }
                 env.pop_scope();
                 typed_items.push(TypedItem::Interface(TypedInterfaceDef {
                     name: iface.name.clone(),

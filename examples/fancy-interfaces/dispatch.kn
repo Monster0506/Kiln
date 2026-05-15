@@ -101,7 +101,7 @@ def render_all(shapes: Vec[Drawable]) -> void {
 }
 
 def total_area(shapes: Vec[Drawable]) -> float {
-    total: float = 0.0
+    mut total: float = 0.0
     for shape <- shapes {
         total = total + shape.area()
     }

@@ -34,7 +34,7 @@ impl[T] AddableWith[Vec[T]] for Vec[T] {
 specialized impl AddableWith[Vec[int]] for Vec[int] {
     hook +(rhs: Vec[int]) -> Vec[int] {
         result: Vec[int] = Vec.new()
-        i: int = 0
+        mut i: int = 0
         while i < self.len() {
             result.add(self.get(i) + rhs.get(i))
             i = i + 1

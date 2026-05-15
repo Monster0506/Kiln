@@ -46,6 +46,7 @@ pub fn infer_typed_expr(
                     // Overloaded function used as first-class value — ambiguous without a call.
                     Ty::Unknown
                 }
+                Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), name.clone()),
                 _ => {
                     errors.push(AnalysisError::UndefinedName {
                         name: name.clone(),
@@ -94,26 +95,34 @@ pub fn infer_typed_expr(
             let to = infer_typed_expr(operand, env, registry, errors);
             let ty = match op {
                 UnOp::Neg => {
-                    if !matches!(to.ty, Ty::Int | Ty::Float | Ty::Unknown) {
-                        errors.push(AnalysisError::TypeMismatch {
-                            expected: "int or float".into(),
-                            found: to.ty.to_string(),
-                            span: *s,
-                        });
-                        Ty::Unknown
-                    } else {
-                        to.ty.clone()
+                    match &to.ty {
+                        Ty::Int | Ty::Float | Ty::Unknown => to.ty.clone(),
+                        // User-defined types may implement Negatable via a hook.
+                        Ty::Named(_, _) | Ty::GenericParam(_) => Ty::Unknown,
+                        _ => {
+                            errors.push(AnalysisError::TypeMismatch {
+                                expected: "int or float".into(),
+                                found: to.ty.to_string(),
+                                span: *s,
+                            });
+                            Ty::Unknown
+                        }
                     }
                 }
                 UnOp::Not => {
-                    if !matches!(to.ty, Ty::Bool | Ty::Unknown) {
-                        errors.push(AnalysisError::TypeMismatch {
-                            expected: "bool".into(),
-                            found: to.ty.to_string(),
-                            span: *s,
-                        });
+                    match &to.ty {
+                        Ty::Bool | Ty::Unknown => Ty::Bool,
+                        // User-defined types may implement a bitwise-not hook (returns same type).
+                        Ty::Named(_, _) | Ty::GenericParam(_) => Ty::Unknown,
+                        _ => {
+                            errors.push(AnalysisError::TypeMismatch {
+                                expected: "bool".into(),
+                                found: to.ty.to_string(),
+                                span: *s,
+                            });
+                            Ty::Bool
+                        }
                     }
-                    Ty::Bool
                 }
             };
             mk(
@@ -947,6 +956,12 @@ fn infer_binop(op: BinOp, lt: Ty, rt: Ty, span: &Span, errors: &mut Vec<Analysis
             // str + str is string concatenation via Addable
             (Ty::Str, Ty::Str) if matches!(op, Add) => Ty::Str,
             (Ty::Unknown, _) | (_, Ty::Unknown) => Ty::Unknown,
+            // User-defined types may implement operator hooks; let the constraint
+            // solver check conformance rather than emitting a type error here.
+            (Ty::Named(_, _), _)
+            | (_, Ty::Named(_, _))
+            | (Ty::GenericParam(_), _)
+            | (_, Ty::GenericParam(_)) => Ty::Unknown,
             _ => {
                 errors.push(AnalysisError::TypeMismatch {
                     expected: "numeric types".into(),
@@ -956,7 +971,13 @@ fn infer_binop(op: BinOp, lt: Ty, rt: Ty, span: &Span, errors: &mut Vec<Analysis
                 Ty::Unknown
             }
         },
-        Eq | Ne | Lt | Gt | LtEq | GtEq | Spaceship => Ty::Bool,
+        Eq | Ne | Lt | Gt | LtEq | GtEq => Ty::Bool,
+        // Spaceship returns an integer ordering value (-1, 0, 1), not a bool.
+        Spaceship => match (&lt, &rt) {
+            (Ty::Unknown, _) | (_, Ty::Unknown) => Ty::Unknown,
+            (Ty::Named(_, _), _) | (_, Ty::Named(_, _)) | (Ty::GenericParam(_), _) | (_, Ty::GenericParam(_)) => Ty::Int,
+            _ => Ty::Int,
+        },
         And | Or => {
             if !matches!(lt, Ty::Bool | Ty::Unknown) || !matches!(rt, Ty::Bool | Ty::Unknown) {
                 errors.push(AnalysisError::TypeMismatch {

@@ -51,8 +51,8 @@ extension impl Serializable for ExternalPoint {
 
 extension impl Hashable for ExternalPoint {
     hook hash() -> int {
-        xi: int = x * 1000.0
-        yi: int = y * 1000.0
+        xi: int = (x * 1000.0) as int
+        yi: int = (y * 1000.0) as int
         return xi * 31 + yi
     }
 }

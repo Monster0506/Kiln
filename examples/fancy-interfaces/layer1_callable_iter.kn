@@ -61,7 +61,7 @@ impl Iterator for Filtered {
         if v == None {
             return None
         }
-        x: int = v
+        x: int = v?
         if x > threshold {
             return Some(x)
         }

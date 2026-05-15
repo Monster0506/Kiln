@@ -1,22 +1,24 @@
 use crate::analyzer::error::AnalysisError;
 use crate::diagnostics::Span;
 use crate::parser::ast::{
-    EnumDef, Field, FnDef, HookDef, InterfaceDef, InterfaceItemKind, StructDef, TypeExpr,
+    EnumDef, Field, FnDef, HookDef, ImplBlock, InterfaceDef, InterfaceItemKind, StructDef, TypeExpr,
 };
 
 /// Check that `st` satisfies every interface it declares.
 pub fn check_struct_conformance(
     st: &StructDef,
     all_interfaces: &[InterfaceDef],
+    all_impls: &[ImplBlock],
     errors: &mut Vec<AnalysisError>,
 ) {
     for iface_ty in &st.interfaces {
         let iface_name = type_expr_name(iface_ty);
+        let hooks = collect_impl_hooks(&st.name, &iface_name, all_impls);
         check_against_iface(
             &st.name,
             &st.fields,
             &st.methods,
-            &[],
+            &hooks,
             &iface_name,
             all_interfaces,
             &st.span,
@@ -29,21 +31,34 @@ pub fn check_struct_conformance(
 pub fn check_enum_conformance(
     en: &EnumDef,
     all_interfaces: &[InterfaceDef],
+    all_impls: &[ImplBlock],
     errors: &mut Vec<AnalysisError>,
 ) {
     for iface_ty in &en.interfaces {
         let iface_name = type_expr_name(iface_ty);
+        let hooks = collect_impl_hooks(&en.name, &iface_name, all_impls);
         check_against_iface(
             &en.name,
             &[],
             &en.methods,
-            &[],
+            &hooks,
             &iface_name,
             all_interfaces,
             &en.span,
             errors,
         );
     }
+}
+
+fn collect_impl_hooks(type_name: &str, iface_name: &str, all_impls: &[ImplBlock]) -> Vec<HookDef> {
+    for impl_block in all_impls {
+        let impl_type = type_expr_name(&impl_block.for_type);
+        let impl_iface = type_expr_name(&impl_block.interface);
+        if impl_type == type_name && impl_iface == iface_name {
+            return impl_block.hooks.clone();
+        }
+    }
+    vec![]
 }
 
 fn check_against_iface(
@@ -159,6 +174,59 @@ mod tests {
         }
     }
 
+    fn addable_iface() -> InterfaceDef {
+        InterfaceDef {
+            name: "Addable".into(),
+            generic_params: vec![],
+            extends: vec![],
+            items: vec![InterfaceItem {
+                kind: InterfaceItemKind::Hook {
+                    name: HookName::Op("+".into()),
+                    params: vec![],
+                    return_type: None,
+                    default: None,
+                },
+                span: s(),
+            }],
+            span: s(),
+        }
+    }
+
+    fn point_struct() -> StructDef {
+        StructDef {
+            annotations: vec![],
+            is_builtin: false,
+            name: "Point".into(),
+            generic_params: vec![],
+            interfaces: vec![named("Addable")],
+            fields: vec![],
+            methods: vec![],
+            decls: vec![],
+            span: s(),
+        }
+    }
+
+    fn addable_impl_for_point() -> ImplBlock {
+        ImplBlock {
+            generic_params: vec![],
+            interface: named("Addable"),
+            for_type: named("Point"),
+            methods: vec![],
+            hooks: vec![HookDef {
+                name: HookName::Op("+".into()),
+                params: vec![],
+                return_type: None,
+                body: Block {
+                    stmts: vec![],
+                    span: s(),
+                },
+                span: s(),
+            }],
+            kind: ImplKind::Plain,
+            span: s(),
+        }
+    }
+
     #[test]
     fn ok_when_required_field_present() {
         let st = StructDef {
@@ -180,7 +248,7 @@ mod tests {
             span: s(),
         };
         let mut errs = vec![];
-        check_struct_conformance(&st, &[exception_iface()], &mut errs);
+        check_struct_conformance(&st, &[exception_iface()], &[], &mut errs);
         assert!(errs.is_empty(), "{errs:?}");
     }
 
@@ -198,7 +266,55 @@ mod tests {
             span: s(),
         };
         let mut errs = vec![];
-        check_struct_conformance(&st, &[exception_iface()], &mut errs);
+        check_struct_conformance(&st, &[exception_iface()], &[], &mut errs);
         assert_eq!(errs.len(), 1);
+    }
+
+    #[test]
+    fn error_when_required_hook_missing() {
+        let st = point_struct();
+        let mut errs = vec![];
+        check_struct_conformance(&st, &[addable_iface()], &[], &mut errs);
+        assert_eq!(errs.len(), 1, "expected one error for missing hook");
+        let detail = match &errs[0] {
+            AnalysisError::MissingConformance { detail, .. } => detail.clone(),
+            _ => panic!("wrong error kind: {:?}", errs[0]),
+        };
+        assert!(
+            detail.contains('+'),
+            "detail should mention the hook name: {detail}"
+        );
+    }
+
+    #[test]
+    fn ok_when_required_hook_provided_in_impl_block() {
+        let st = point_struct();
+        let impl_block = addable_impl_for_point();
+        let mut errs = vec![];
+        check_struct_conformance(&st, &[addable_iface()], &[impl_block], &mut errs);
+        assert!(errs.is_empty(), "{errs:?}");
+    }
+
+    #[test]
+    fn regression_bug3_hook_conformance_validated() {
+        // Bug 3: check_struct_conformance always passed &[] for hooks, so a
+        // completely empty impl block would not produce any error for missing hooks.
+        let st = point_struct();
+        let empty_impl = ImplBlock {
+            generic_params: vec![],
+            interface: named("Addable"),
+            for_type: named("Point"),
+            methods: vec![],
+            hooks: vec![],
+            kind: ImplKind::Plain,
+            span: s(),
+        };
+        let mut errs = vec![];
+        check_struct_conformance(&st, &[addable_iface()], &[empty_impl], &mut errs);
+        assert_eq!(
+            errs.len(),
+            1,
+            "should detect missing hook even in empty impl block"
+        );
     }
 }

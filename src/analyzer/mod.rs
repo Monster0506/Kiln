@@ -540,6 +540,18 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
         })
         .collect();
 
+    let all_impls: Vec<_> = source
+        .items
+        .iter()
+        .filter_map(|i| {
+            if let Item::ImplBlock(b) = i {
+                Some(b.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
     // Pass 1e: register interface method/hook signatures for use by infer.rs.
     for item in &source.items {
         if let Item::Interface(iface) = item {
@@ -672,7 +684,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
             Item::Struct(s) => {
                 if !s.is_builtin {
-                    conformance::check_struct_conformance(s, &interfaces, &mut errors);
+                    conformance::check_struct_conformance(s, &interfaces, &all_impls, &mut errors);
                 }
                 let fields: Vec<TypedField> = s
                     .fields
@@ -693,7 +705,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             }
 
             Item::Enum(e) => {
-                conformance::check_enum_conformance(e, &interfaces, &mut errors);
+                conformance::check_enum_conformance(e, &interfaces, &all_impls, &mut errors);
                 let variants: Vec<TypedEnumVariant> = e
                     .variants
                     .iter()

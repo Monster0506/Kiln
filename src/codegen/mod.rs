@@ -7,6 +7,7 @@ pub mod fns;
 pub mod match_;
 pub mod memory;
 pub mod mono;
+pub mod names;
 pub mod stmts;
 pub mod strings;
 pub mod structs;

@@ -40,6 +40,75 @@ def main() -> void {}
 }
 
 #[test]
+fn compile_user_type_with_addable_and_normalizeable() {
+    // Regression: hook +(rhs) and hook +() both used to encode to TypeName_add,
+    // causing a duplicate-function panic. After the arity-aware fix they should
+    // register as TypeName_add (binary) and TypeName_pos (unary) respectively.
+    let src = r#"
+struct Vec2 {
+    x: float
+    y: float
+}
+impl Addable for Vec2 {
+    hook +(rhs: Vec2) -> Vec2 {
+        return Vec2 { x: x + rhs.x, y: y + rhs.y }
+    }
+}
+impl Normalizeable for Vec2 {
+    hook +() -> Vec2 {
+        len: float = x * x + y * y
+        return Vec2 { x: x / len, y: y / len }
+    }
+}
+def main() -> void {}
+"#;
+    let bytes = compile_source(src);
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn compile_user_type_unary_neg_dispatches() {
+    let src = r#"
+struct Vec2 {
+    x: float
+    y: float
+}
+impl Negatable for Vec2 {
+    hook -() -> Vec2 {
+        return Vec2 { x: 0.0 - x, y: 0.0 - y }
+    }
+}
+def negate(v: Vec2) -> Vec2 {
+    return -v
+}
+def main() -> void {}
+"#;
+    let bytes = compile_source(src);
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn compile_user_type_binary_add_dispatches() {
+    let src = r#"
+struct Vec2 {
+    x: float
+    y: float
+}
+impl Addable for Vec2 {
+    hook +(rhs: Vec2) -> Vec2 {
+        return Vec2 { x: x + rhs.x, y: y + rhs.y }
+    }
+}
+def add_vecs(a: Vec2, b: Vec2) -> Vec2 {
+    return a + b
+}
+def main() -> void {}
+"#;
+    let bytes = compile_source(src);
+    assert!(!bytes.is_empty());
+}
+
+#[test]
 fn kiln_build_subcommand_exists() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_kiln"))
         .args(["build", "--help"])

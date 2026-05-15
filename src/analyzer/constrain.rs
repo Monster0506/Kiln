@@ -15,6 +15,7 @@ use crate::parser::ast::BinOp;
 pub enum ConstraintReason {
     Operator(BinOp),
     UnaryNeg,
+    UnaryPos,
     Interpolation,
     GenericBoundCheck {
         param: String,
@@ -28,6 +29,7 @@ impl ConstraintReason {
         match self {
             ConstraintReason::Operator(op) => format!(" (required by operator `{op:?}`)"),
             ConstraintReason::UnaryNeg => " (required by unary `-`)".into(),
+            ConstraintReason::UnaryPos => " (required by unary `+`)".into(),
             ConstraintReason::Interpolation => " (required by string interpolation)".into(),
             ConstraintReason::GenericBoundCheck {
                 param,
@@ -166,6 +168,14 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
                     iface: "Negatable".into(),
                     span: expr.span,
                     reason: ConstraintReason::UnaryNeg,
+                });
+            }
+            if matches!(op, crate::parser::ast::UnOp::Pos) {
+                out.push(Constraint {
+                    ty: operand.ty.clone(),
+                    iface: "Normalizeable".into(),
+                    span: expr.span,
+                    reason: ConstraintReason::UnaryPos,
                 });
             }
         }

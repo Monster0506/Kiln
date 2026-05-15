@@ -97,11 +97,11 @@ pub fn infer_typed_expr(
                 UnOp::Neg => {
                     match &to.ty {
                         Ty::Int | Ty::Float | Ty::Unknown => to.ty.clone(),
-                        // User-defined types may implement Negatable via a hook.
-                        Ty::Named(_, _) | Ty::GenericParam(_) => Ty::Unknown,
+                        // Any named type may implement Negatable via a hook.
+                        t if type_name_of(t).is_some() => Ty::Unknown,
                         _ => {
                             errors.push(AnalysisError::TypeMismatch {
-                                expected: "int or float".into(),
+                                expected: "int, float, or Negatable".into(),
                                 found: to.ty.to_string(),
                                 span: *s,
                             });
@@ -112,15 +112,30 @@ pub fn infer_typed_expr(
                 UnOp::Not => {
                     match &to.ty {
                         Ty::Bool | Ty::Unknown => Ty::Bool,
-                        // User-defined types may implement a bitwise-not hook (returns same type).
-                        Ty::Named(_, _) | Ty::GenericParam(_) => Ty::Unknown,
+                        // Any named type may implement a bitwise-not hook.
+                        t if type_name_of(t).is_some() => Ty::Unknown,
                         _ => {
                             errors.push(AnalysisError::TypeMismatch {
-                                expected: "bool".into(),
+                                expected: "bool or hook !".into(),
                                 found: to.ty.to_string(),
                                 span: *s,
                             });
                             Ty::Bool
+                        }
+                    }
+                }
+                UnOp::Pos => {
+                    match &to.ty {
+                        Ty::Int | Ty::Float | Ty::Unknown => to.ty.clone(),
+                        // Any named type may implement a pos hook.
+                        t if type_name_of(t).is_some() => Ty::Unknown,
+                        _ => {
+                            errors.push(AnalysisError::TypeMismatch {
+                                expected: "numeric or hook +".into(),
+                                found: to.ty.to_string(),
+                                span: *s,
+                            });
+                            Ty::Unknown
                         }
                     }
                 }
@@ -722,7 +737,14 @@ pub fn type_name_of(ty: &Ty) -> Option<String> {
         Ty::Set(_) => Some("Set".into()),
         Ty::Option(_) => Some("Option".into()),
         Ty::Shared(_) => Some("Shared".into()),
-        _ => None,
+        // These types have no single dispatch name.
+        Ty::Void
+        | Ty::Unknown
+        | Ty::Tuple(_)
+        | Ty::Callable(_, _)
+        | Ty::Ref(_, _)
+        | Ty::Union(_)
+        | Ty::Interface(_, _) => None,
     }
 }
 
@@ -953,18 +975,17 @@ fn infer_binop(op: BinOp, lt: Ty, rt: Ty, span: &Span, errors: &mut Vec<Analysis
             (Ty::Int, Ty::Int) => Ty::Int,
             (Ty::Float, Ty::Float) => Ty::Float,
             (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ty::Float,
-            // str + str is string concatenation via Addable
-            (Ty::Str, Ty::Str) if matches!(op, Add) => Ty::Str,
             (Ty::Unknown, _) | (_, Ty::Unknown) => Ty::Unknown,
-            // User-defined types may implement operator hooks; let the constraint
-            // solver check conformance rather than emitting a type error here.
+            // Any type with a name and matching operands may implement the operator
+            // via hooks; let conformance checking catch actual violations later.
             (Ty::Named(_, _), _)
             | (_, Ty::Named(_, _))
             | (Ty::GenericParam(_), _)
             | (_, Ty::GenericParam(_)) => Ty::Unknown,
+            (l, r) if l == r && type_name_of(l).is_some() => l.clone(),
             _ => {
                 errors.push(AnalysisError::TypeMismatch {
-                    expected: "numeric types".into(),
+                    expected: "numeric or operator-overloaded types".into(),
                     found: format!("{lt} and {rt}"),
                     span: *span,
                 });

@@ -1090,6 +1090,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     );
                     env.pop_scope();
                     typed_hooks.push(TypedHookDef {
+                        is_static: hook.annotations.iter().any(|a| a.name == "static"),
                         name: hook.name.clone(),
                         params,
                         return_type: ret,

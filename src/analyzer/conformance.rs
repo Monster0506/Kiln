@@ -99,18 +99,20 @@ pub fn check_impl_completeness(
         }
     }
 
-    // Check associated-type bindings in the extends clause.
+    // Check parent interfaces transitively, using ALL hooks/methods from ALL
+    // impl blocks for this type so that hooks split across multiple impl blocks
+    // (e.g. hook lives in impl WithHook rather than impl Wrapper) are found.
+    let all_hooks = collect_all_hooks_for_type(&type_name, all_impls);
+    let all_methods = collect_all_methods_for_type(&type_name, all_impls);
+
     for parent_ty in &iface.extends {
-        if let TypeExpr::Named {
-            name: parent_name,
-            bindings,
-            ..
-        } = parent_ty
-        {
+        let pname = type_expr_name(parent_ty);
+
+        if let TypeExpr::Named { bindings, .. } = parent_ty {
             if !bindings.is_empty() {
                 check_assoc_bindings(
                     &type_name,
-                    parent_name,
+                    &pname,
                     bindings,
                     all_interfaces,
                     all_impls,
@@ -119,6 +121,18 @@ pub fn check_impl_completeness(
                 );
             }
         }
+
+        check_against_iface(
+            &type_name,
+            &[],
+            &all_methods,
+            &all_hooks,
+            &pname,
+            all_interfaces,
+            all_impls,
+            &impl_block.span,
+            errors,
+        );
     }
 }
 
@@ -225,6 +239,22 @@ fn collect_impl_hooks(type_name: &str, iface_name: &str, all_impls: &[ImplBlock]
     vec![]
 }
 
+fn collect_all_hooks_for_type(type_name: &str, all_impls: &[ImplBlock]) -> Vec<HookDef> {
+    all_impls
+        .iter()
+        .filter(|b| type_expr_name(&b.for_type) == type_name)
+        .flat_map(|b| b.hooks.iter().cloned())
+        .collect()
+}
+
+fn collect_all_methods_for_type(type_name: &str, all_impls: &[ImplBlock]) -> Vec<FnDef> {
+    all_impls
+        .iter()
+        .filter(|b| type_expr_name(&b.for_type) == type_name)
+        .flat_map(|b| b.methods.iter().cloned())
+        .collect()
+}
+
 fn check_against_iface(
     type_name: &str,
     fields: &[Field],
@@ -267,11 +297,16 @@ fn check_against_iface(
             }
         }
 
+        // Merge hooks from the current impl with hooks from the parent's own
+        // impl block, so that either source can satisfy the parent's requirements.
+        let mut parent_hooks = hooks.to_vec();
+        parent_hooks.extend(collect_impl_hooks(type_name, &pname, all_impls));
+
         check_against_iface(
             type_name,
             fields,
             methods,
-            hooks,
+            &parent_hooks,
             &pname,
             all_interfaces,
             all_impls,
@@ -364,6 +399,7 @@ mod tests {
             extends: vec![],
             items: vec![InterfaceItem {
                 kind: InterfaceItemKind::Hook {
+                    annotations: vec![],
                     name: HookName::Op("+".into()),
                     params: vec![],
                     return_type: None,
@@ -396,6 +432,7 @@ mod tests {
             for_type: named("Point"),
             methods: vec![],
             hooks: vec![HookDef {
+                annotations: vec![],
                 name: HookName::Op("+".into()),
                 params: vec![],
                 return_type: None,
@@ -647,6 +684,7 @@ mod tests {
                 },
                 InterfaceItem {
                     kind: InterfaceItemKind::Hook {
+                        annotations: vec![],
                         name: HookName::Op("+".into()),
                         params: vec![Param {
                             name: "rhs".into(),
@@ -676,6 +714,7 @@ mod tests {
             }],
             items: vec![InterfaceItem {
                 kind: InterfaceItemKind::Hook {
+                    annotations: vec![],
                     name: HookName::Op("+".into()),
                     params: vec![Param {
                         name: "rhs".into(),
@@ -704,6 +743,7 @@ mod tests {
             for_type: named(for_ty),
             methods: vec![],
             hooks: vec![HookDef {
+                annotations: vec![],
                 name: HookName::Op("+".into()),
                 params: vec![Param {
                     name: "rhs".into(),
@@ -726,6 +766,7 @@ mod tests {
             for_type: named(ty),
             methods: vec![],
             hooks: vec![HookDef {
+                annotations: vec![],
                 name: HookName::Op("+".into()),
                 params: vec![Param {
                     name: "rhs".into(),
@@ -739,6 +780,148 @@ mod tests {
             kind: ImplKind::Plain,
             span: s(),
         }
+    }
+
+    // ---- Parent-impl hook merge tests ------------------------------------------
+
+    fn with_hook_iface() -> InterfaceDef {
+        // interface WithHook { hook do_thing() -> void }
+        InterfaceDef {
+            name: "WithHook".into(),
+            generic_params: vec![],
+            extends: vec![],
+            items: vec![InterfaceItem {
+                kind: InterfaceItemKind::Hook {
+                    annotations: vec![],
+                    name: HookName::Named("do_thing".into()),
+                    params: vec![],
+                    return_type: None,
+                    default: None,
+                },
+                span: s(),
+            }],
+            span: s(),
+        }
+    }
+
+    fn wrapper_iface() -> InterfaceDef {
+        // interface Wrapper: WithHook {}
+        InterfaceDef {
+            name: "Wrapper".into(),
+            generic_params: vec![],
+            extends: vec![named("WithHook")],
+            items: vec![],
+            span: s(),
+        }
+    }
+
+    fn foo_struct() -> StructDef {
+        StructDef {
+            annotations: vec![],
+            is_builtin: false,
+            name: "Foo".into(),
+            generic_params: vec![],
+            interfaces: vec![named("Wrapper")],
+            fields: vec![],
+            methods: vec![],
+            decls: vec![],
+            span: s(),
+        }
+    }
+
+    fn with_hook_impl_for_foo() -> ImplBlock {
+        // impl WithHook for Foo { hook do_thing() {} }
+        ImplBlock {
+            generic_params: vec![],
+            interface: named("WithHook"),
+            for_type: named("Foo"),
+            methods: vec![],
+            hooks: vec![HookDef {
+                annotations: vec![],
+                name: HookName::Named("do_thing".into()),
+                params: vec![],
+                return_type: None,
+                body: Block { stmts: vec![], span: s() },
+                span: s(),
+            }],
+            kind: ImplKind::Plain,
+            span: s(),
+        }
+    }
+
+    #[test]
+    fn parent_iface_hooks_satisfied_by_separate_impl() {
+        // struct Foo: Wrapper {}  +  impl WithHook for Foo { hook do_thing {} }
+        // The hook lives in the parent-interface impl, not the child impl.
+        // Conformance check should locate it and pass.
+        let st = foo_struct();
+        let ifaces = vec![wrapper_iface(), with_hook_iface()];
+        let impls = vec![with_hook_impl_for_foo()];
+        let mut errs = vec![];
+        check_struct_conformance(&st, &ifaces, &impls, &mut errs);
+        assert!(
+            errs.is_empty(),
+            "hook in parent-iface impl should satisfy parent requirement: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn parent_iface_hooks_still_fail_when_missing() {
+        // Same setup but no impl at all -- must still error.
+        let st = foo_struct();
+        let ifaces = vec![wrapper_iface(), with_hook_iface()];
+        let mut errs = vec![];
+        check_struct_conformance(&st, &ifaces, &[], &mut errs);
+        assert!(
+            !errs.is_empty(),
+            "missing hook should still produce an error"
+        );
+    }
+
+    #[test]
+    fn check_impl_completeness_walks_parent_interfaces() {
+        // impl Wrapper for Foo {} -- empty, but Wrapper: WithHook requires do_thing.
+        // check_impl_completeness must walk parent interfaces and error when
+        // do_thing is not provided in any impl block for Foo.
+        let empty_wrapper_impl = ImplBlock {
+            generic_params: vec![],
+            interface: named("Wrapper"),
+            for_type: named("Foo"),
+            methods: vec![],
+            hooks: vec![],
+            kind: ImplKind::Plain,
+            span: s(),
+        };
+        let ifaces = vec![wrapper_iface(), with_hook_iface()];
+        let mut errs = vec![];
+        check_impl_completeness(&empty_wrapper_impl, &ifaces, &[], &mut errs);
+        assert!(
+            !errs.is_empty(),
+            "check_impl_completeness must error when parent-required hook is missing"
+        );
+    }
+
+    #[test]
+    fn check_impl_completeness_walks_parent_interfaces_satisfied_by_separate_impl() {
+        // impl Wrapper for Foo {} + impl WithHook for Foo { hook do_thing {} }
+        // check_impl_completeness should pass because do_thing exists in another impl.
+        let empty_wrapper_impl = ImplBlock {
+            generic_params: vec![],
+            interface: named("Wrapper"),
+            for_type: named("Foo"),
+            methods: vec![],
+            hooks: vec![],
+            kind: ImplKind::Plain,
+            span: s(),
+        };
+        let ifaces = vec![wrapper_iface(), with_hook_iface()];
+        let impls = vec![with_hook_impl_for_foo()];
+        let mut errs = vec![];
+        check_impl_completeness(&empty_wrapper_impl, &ifaces, &impls, &mut errs);
+        assert!(
+            errs.is_empty(),
+            "parent hook satisfied by separate impl should pass: {errs:?}"
+        );
     }
 
     #[test]

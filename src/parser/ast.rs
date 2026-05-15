@@ -201,6 +201,7 @@ pub enum InterfaceItemKind {
     Field { name: String, ty: TypeExpr },
     /// Hook signature or with default body
     Hook {
+        annotations: Vec<AnnotationUse>,
         name: HookName,
         params: Vec<Param>,
         return_type: Option<TypeExpr>,
@@ -249,6 +250,7 @@ pub struct ImplBlock {
 
 #[derive(Debug, Clone)]
 pub struct HookDef {
+    pub annotations: Vec<AnnotationUse>,
     pub name: HookName,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
@@ -512,6 +514,7 @@ pub enum BinOp {
 pub enum UnOp {
     Neg,
     Not,
+    Pos,
 }
 
 // -- Patterns -----------------------------------------------------------------

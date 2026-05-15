@@ -32,6 +32,9 @@ def __kiln_float_to_str(f: float) -> str
 @builtin
 def __kiln_bool_to_str(b: bool) -> str
 
+@builtin
+def __kiln_str_concat(a: str, b: str) -> str
+
 # ---- Core marker and identity interfaces ------------------------------------
 
 interface Copy {}
@@ -67,19 +70,26 @@ interface Display {
 }
 
 interface Default {
+    @static
     hook default() -> Self
 }
 
 interface Constructable {
+    @static
     hook new() -> Self
 }
 
 interface Empty {
+    @static
     hook empty() -> Self
 }
 
 interface Invertible {
     hook !() -> Self
+}
+
+interface Normalizeable {
+    hook +() -> Self
 }
 
 # ---- Arithmetic layer 1: heterogeneous typed relations ----------------------
@@ -182,10 +192,12 @@ interface Comparable: ComparableWith[Self] {}
 # ---- Numeric property interfaces --------------------------------------------
 
 interface Zero {
+    @static
     hook zero() -> Self
 }
 
 interface One {
+    @static
     hook one() -> Self
 }
 
@@ -281,9 +293,9 @@ interface From[T] {
     hook from(value: T) -> Self
 }
 
-# ---- Indexable (legacy marker; IndexableWith is the fully-typed form) -------
+# ---- Indexable: integer-indexed shorthand -----------------------------------
 
-interface Indexable {}
+interface Indexable: IndexableWith[int] {}
 
 # ---- VecMethods interface ---------------------------------------------------
 
@@ -302,7 +314,7 @@ impl Hash for int { hook hash() -> int {} }
 impl Ord for int { hook <=>(other: int) -> Ordering {} }
 impl PartialOrd for int { hook <(other: int) -> bool {} }
 impl Debug for int { hook debug_str() -> str {} }
-impl Default for int { hook default() -> int {} }
+impl Default for int { @static hook default() -> int {} }
 impl AddableWith[int] for int { hook +(rhs: int) -> int {} }
 impl SubtractableWith[int] for int { hook -(rhs: int) -> int {} }
 impl MultipliableWith[int] for int { hook *(rhs: int) -> int {} }
@@ -314,8 +326,8 @@ impl Multiplicable for int { hook *(rhs: int) -> int {} }
 impl Divisible for int { hook /(rhs: int) -> int {} }
 impl Remainder for int { hook %(rhs: int) -> int {} }
 impl Negatable for int { hook -() -> int {} }
-impl Zero for int { hook zero() -> int {} }
-impl One for int { hook one() -> int {} }
+impl Zero for int { @static hook zero() -> int {} }
+impl One for int { @static hook one() -> int {} }
 impl Abs for int { hook abs() -> int {} }
 impl Signum for int { hook signum() -> int {} }
 impl Bitwise for int {
@@ -335,7 +347,7 @@ impl Clone for float { hook clone() -> float {} }
 impl PartialEq for float { hook ==(other: float) -> bool {} }
 impl PartialOrd for float { hook <(other: float) -> bool {} }
 impl Debug for float { hook debug_str() -> str {} }
-impl Default for float { hook default() -> float {} }
+impl Default for float { @static hook default() -> float {} }
 impl AddableWith[float] for float { hook +(rhs: float) -> float {} }
 impl SubtractableWith[float] for float { hook -(rhs: float) -> float {} }
 impl MultipliableWith[float] for float { hook *(rhs: float) -> float {} }
@@ -345,10 +357,11 @@ impl Subtractable for float { hook -(rhs: float) -> float {} }
 impl Multiplicable for float { hook *(rhs: float) -> float {} }
 impl Divisible for float { hook /(rhs: float) -> float {} }
 impl Negatable for float { hook -() -> float {} }
-impl Zero for float { hook zero() -> float {} }
-impl One for float { hook one() -> float {} }
+impl Zero for float { @static hook zero() -> float {} }
+impl One for float { @static hook one() -> float {} }
 impl Abs for float { hook abs() -> float {} }
 impl Signum for float { hook signum() -> float {} }
+impl ComparableWith[float] for float { hook <=>(other: float) -> Ordering {} }
 impl Comparable for float {}
 impl Numeric for float {}
 impl Fractional for float {}
@@ -364,7 +377,7 @@ impl Hash for bool { hook hash() -> int {} }
 impl Ord for bool { hook <=>(other: bool) -> Ordering {} }
 impl PartialOrd for bool { hook <(other: bool) -> bool {} }
 impl Debug for bool { hook debug_str() -> str {} }
-impl Default for bool { hook default() -> bool {} }
+impl Default for bool { @static hook default() -> bool {} }
 
 # ---- Conformance: str -------------------------------------------------------
 
@@ -375,11 +388,13 @@ impl Hash for str { hook hash() -> int {} }
 impl Ord for str { hook <=>(other: str) -> Ordering {} }
 impl PartialOrd for str { hook <(other: str) -> bool {} }
 impl Debug for str { hook debug_str() -> str {} }
-impl Default for str { hook default() -> str {} }
-impl AddableWith[str] for str { hook +(rhs: str) -> str {} }
-impl Addable for str { hook +(rhs: str) -> str {} }
+impl Default for str { @static hook default() -> str { return '' } }
+impl AddableWith[str] for str { hook +(rhs: str) -> str { return __kiln_str_concat(self, rhs) } }
+impl Addable for str { hook +(rhs: str) -> str { return __kiln_str_concat(self, rhs) } }
+impl Zero for str { @static hook zero() -> str { return '' } }
 impl Semigroup for str {}
 impl Monoid for str {}
+impl IndexableWith[int] for str { hook [](index: int) -> str {} }
 impl Indexable for str {}
 
 # ---- Conformance: Vec[T] ----------------------------------------------------
@@ -391,11 +406,14 @@ impl[T: Hash] Hash for Vec[T] { hook hash() -> int {} }
 impl[T: Ord] Ord for Vec[T] { hook <=>(other: Vec[T]) -> Ordering {} }
 impl[T: PartialOrd] PartialOrd for Vec[T] { hook <(other: Vec[T]) -> bool {} }
 impl[T: Debug] Debug for Vec[T] { hook debug_str() -> str {} }
-impl Default for Vec[T] { hook default() -> Vec[T] {} }
+impl Default for Vec[T] { @static hook default() -> Vec[T] {} }
+impl[T] Addable for Vec[T] { hook +(rhs: Vec[T]) -> Vec[T] {} }
+impl Zero for Vec[T] { @static hook zero() -> Vec[T] {} }
 impl Semigroup for Vec[T] {}
 impl Monoid for Vec[T] {}
 impl Iterable for Vec[T] {}
 impl Foldable for Vec[T] {}
+impl[T] IndexableWith[int] for Vec[T] { hook [](index: int) -> T {} }
 impl Indexable for Vec[T] {}
 
 # ---- Conformance: Option[T] -------------------------------------------------
@@ -408,7 +426,7 @@ impl[T: Ord] Ord for Option[T] { hook <=>(other: Option[T]) -> Ordering {} }
 impl[T: PartialOrd] PartialOrd for Option[T] { hook <(other: Option[T]) -> bool {} }
 impl[T: Debug] Debug for Option[T] { hook debug_str() -> str {} }
 impl[T: Display] Display for Option[T] { hook to_str() -> str {} }
-impl Default for Option[T] { hook default() -> Option[T] {} }
+impl Default for Option[T] { @static hook default() -> Option[T] {} }
 impl Iterable for Option[T] {}
 impl Foldable for Option[T] {}
 

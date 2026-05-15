@@ -1,5 +1,6 @@
 use crate::analyzer::constrain::Constraint;
 use crate::analyzer::error::AnalysisError;
+use crate::analyzer::infer::type_name_of;
 use crate::analyzer::ty::{Ty, TypeRegistry};
 
 /// Returns `true` if `ty` satisfies `iface` according to the registry.
@@ -9,56 +10,47 @@ use crate::analyzer::ty::{Ty, TypeRegistry};
 /// the element/key/value type against the entry's bounds.
 pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
     match ty {
-        Ty::Unknown => true,
+        // These always pass: errors elsewhere already cover them.
+        Ty::Unknown | Ty::GenericParam(_) | Ty::Interface(_, _) => true,
 
-        Ty::Int => !registry.get_conformances("int", iface).is_empty(),
-        Ty::Float => !registry.get_conformances("float", iface).is_empty(),
-        Ty::Bool => !registry.get_conformances("bool", iface).is_empty(),
-        Ty::Str => !registry.get_conformances("str", iface).is_empty(),
-        Ty::Void => false,
+        // Structural types with no registered conformance.
+        Ty::Void | Ty::Tuple(_) | Ty::Callable(_, _) | Ty::Ref(_, _) | Ty::Union(_) => false,
 
+        // Container types recurse over their element/key types.
         Ty::Vec(inner) => satisfies_generic_one("Vec", inner, iface, registry),
         Ty::Set(inner) => satisfies_generic_one("Set", inner, iface, registry),
         Ty::Option(inner) => satisfies_generic_one("Option", inner, iface, registry),
         Ty::Shared(inner) => satisfies_generic_one("Shared", inner, iface, registry),
-
         Ty::Map(key, val) => satisfies_map(key, val, iface, registry),
 
-        Ty::Named(_, name) => {
-            // If the name has no entry in the TypeRegistry it is a generic type
-            // parameter placeholder (e.g. `T` in `def f[T: Eq](...)`). Those are
-            // already checked at call-site via explicit bounds, so we pass them here.
-            if registry.lookup_by_name(name).is_none() {
-                return true;
+        // All remaining concrete types (primitives + user-defined Named) look up
+        // conformances by name. Named types additionally check operator shorthand
+        // variants. Adding a new primitive only requires updating type_name_of.
+        _ => {
+            let Some(name) = type_name_of(ty) else {
+                return false;
+            };
+            if let Ty::Named(_, _) = ty {
+                // Generic placeholder names have no TypeRegistry entry; treat as passing.
+                if registry.lookup_by_name(&name).is_none() {
+                    return true;
+                }
             }
-            let entries = registry.get_conformances(name, iface);
+            let entries = registry.get_conformances(&name, iface);
             if !entries.is_empty() {
                 return true;
             }
-            // For shorthand operator interfaces, a user-defined type satisfies the
-            // constraint if it has any impl for the heterogeneous (*With) variant.
-            // E.g. `AddableWith[X]` implies `Addable` for the purposes of operator use.
-            if let Some(with_iface) = operator_shorthand_to_with(iface) {
-                if !registry.get_conformances(name, with_iface).is_empty() {
-                    return true;
+            // For Named types, also check shorthand operator variants
+            // (e.g. `AddableWith[X]` implies `Addable`).
+            if let Ty::Named(_, _) = ty {
+                if let Some(with_iface) = operator_shorthand_to_with(iface) {
+                    if !registry.get_conformances(&name, with_iface).is_empty() {
+                        return true;
+                    }
                 }
             }
             false
         }
-
-        Ty::GenericParam(_) => {
-            // Generic params are checked at call sites via explicit bounds;
-            // if one appears here it means the constraint was already emitted
-            // with a concrete type. Treat as unknown.
-            true
-        }
-
-        // Interface types satisfy all constraints — runtime dispatch handles
-        // actual conformance, so we cannot reject statically.
-        Ty::Interface(_, _) => true,
-
-        // Compound / structural types with no registered conformance.
-        Ty::Tuple(_) | Ty::Callable(_, _) | Ty::Ref(_, _) | Ty::Union(_) => false,
     }
 }
 

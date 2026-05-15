@@ -15,38 +15,93 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{FuncId, FuncOrDataId, Linkage, Module};
 use std::collections::{HashMap, HashSet};
 
-fn encode_op(op: &str) -> String {
-    match op {
-        "+" => "add".into(),
-        "-" => "sub".into(),
-        "*" => "mul".into(),
-        "/" => "div".into(),
-        "==" => "eq".into(),
-        "<=>" => "cmp".into(),
-        "[]" => "index".into(),
-        "<" => "lt".into(),
-        ">" => "gt".into(),
-        "<=" => "lte".into(),
-        ">=" => "gte".into(),
-        other => format!(
-            "op_{}",
-            other.chars().map(|c| c as u32).fold(0u32, |a, b| a ^ b)
-        ),
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analyzer::ty::Ty;
+    use crate::analyzer::typed_ast::{TypedBlock, TypedHookDef, TypedParam};
+    use crate::diagnostics::Span;
+    use crate::parser::ast::HookName;
+
+    fn s() -> Span {
+        Span { start: 0, end: 0 }
+    }
+
+    fn hook_op(op: &str, params: Vec<TypedParam>) -> TypedHookDef {
+        TypedHookDef {
+            is_static: false,
+            name: HookName::Op(op.into()),
+            params,
+            return_type: Ty::Void,
+            body: TypedBlock { stmts: vec![], span: s() },
+            span: s(),
+        }
+    }
+
+    fn param(name: &str) -> TypedParam {
+        TypedParam { name: name.into(), ty: Ty::Int, span: s() }
+    }
+
+    #[test]
+    fn unary_and_binary_plus_get_distinct_names() {
+        let unary_pos = hook_op("+", vec![]);
+        let binary_add = hook_op("+", vec![param("rhs")]);
+        let unary_name = hook_qualified_name("Vec2", &unary_pos);
+        let binary_name = hook_qualified_name("Vec2", &binary_add);
+        assert_ne!(
+            unary_name, binary_name,
+            "unary and binary + must produce distinct hook names"
+        );
+        assert_eq!(binary_name, "Vec2_op_add");
+        assert_eq!(unary_name, "Vec2_pos");
+    }
+
+    #[test]
+    fn unary_and_binary_minus_get_distinct_names() {
+        let unary_neg = hook_op("-", vec![]);
+        let binary_sub = hook_op("-", vec![param("rhs")]);
+        assert_ne!(
+            hook_qualified_name("T", &unary_neg),
+            hook_qualified_name("T", &binary_sub),
+        );
+        assert_eq!(hook_qualified_name("T", &unary_neg), "T_neg");
+        assert_eq!(hook_qualified_name("T", &binary_sub), "T_op_sub");
+    }
+
+    #[test]
+    fn not_hook_encodes_to_not() {
+        let not_hook = hook_op("!", vec![]);
+        assert_eq!(hook_qualified_name("Flags", &not_hook), "Flags_not");
     }
 }
 
+
 fn hook_qualified_name(type_name: &str, hook: &TypedHookDef) -> String {
+    use crate::codegen::names;
     let suffix = match &hook.name {
         HookName::Named(n) => n.clone(),
-        HookName::Op(op) => encode_op(op),
+        HookName::Op(op) => {
+            if hook.params.is_empty() {
+                names::encode_unary_op(op).to_string()
+            } else {
+                names::encode_op(op)
+            }
+        }
     };
     format!("{}_{}", type_name, suffix)
 }
 
 fn hook_method_key(hook: &TypedHookDef) -> String {
+    use crate::codegen::names;
     match &hook.name {
         HookName::Named(n) => n.clone(),
-        HookName::Op(op) => op.clone(),
+        HookName::Op(op) => {
+            if hook.params.is_empty() {
+                names::encode_unary_op(op).to_string()
+            } else {
+                op.clone()
+            }
+        }
     }
 }
 
@@ -182,7 +237,7 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                     let method_key = hook_method_key(hook);
                     let id = register_fn(
                         &func_name,
-                        true,
+                        !hook.is_static,
                         &hook.params,
                         &hook.return_type,
                         &mut cgx.module,
@@ -200,7 +255,7 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                         params,
                         return_type: hook.return_type.clone(),
                         body: hook.body.clone(),
-                        self_type: Some(type_name.clone()),
+                        self_type: if hook.is_static { None } else { Some(type_name.clone()) },
                     });
                 }
             }

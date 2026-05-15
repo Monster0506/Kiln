@@ -1,9 +1,5 @@
 # layer1_unary.kn -- unary operation interfaces (Layer 1 operational core)
-# Negatable and Invertible are provided by the prelude.
-
-interface Normalizeable {
-    hook +() -> Self
-}
+# Negatable, Invertible, and Normalizeable are provided by the prelude.
 
 # ---- Concrete examples -------------------------------------------------------
 
@@ -53,7 +49,7 @@ def negate_vec(v: Vec2) -> Vec2 {
 }
 
 def normalize_vec(v: Vec2) -> Vec2 {
-    return v.normalize()
+    return +v
 }
 
 def invert_flags(f: BitFlags) -> BitFlags {

@@ -881,7 +881,10 @@ impl Parser {
         }
     }
 
-    fn parse_hook_sig_or_def(&mut self) -> Result<InterfaceItem, ParseError> {
+    fn parse_hook_sig_or_def_with_annotations(
+        &mut self,
+        annotations: Vec<AnnotationUse>,
+    ) -> Result<InterfaceItem, ParseError> {
         let start = self.peek_span().start;
         self.expect(TokenKind::Hook)?;
         let name = self.parse_hook_name()?;
@@ -914,6 +917,7 @@ impl Parser {
         let end = self.peek_span().start;
         Ok(InterfaceItem {
             kind: InterfaceItemKind::Hook {
+                annotations,
                 name,
                 params,
                 return_type,
@@ -933,10 +937,11 @@ impl Parser {
         let mut items = Vec::new();
         while self.peek() != &TokenKind::RBrace && self.peek() != &TokenKind::Eof {
             let item_start = self.peek_span().start;
+            let anns = self.parse_annotation_uses()?;
             let item = match self.peek().clone() {
-                TokenKind::Hook => self.parse_hook_sig_or_def()?,
+                TokenKind::Hook => self.parse_hook_sig_or_def_with_annotations(anns)?,
                 TokenKind::Def => {
-                    let method = self.parse_fn_def(vec![])?;
+                    let method = self.parse_fn_def(anns)?;
                     let span = method.span;
                     InterfaceItem {
                         kind: InterfaceItemKind::Method(method),
@@ -1002,7 +1007,10 @@ impl Parser {
         })
     }
 
-    fn parse_hook_def(&mut self) -> Result<HookDef, ParseError> {
+    fn parse_hook_def_with_annotations(
+        &mut self,
+        annotations: Vec<AnnotationUse>,
+    ) -> Result<HookDef, ParseError> {
         let start = self.peek_span().start;
         self.expect(TokenKind::Hook)?;
         let name = self.parse_hook_name()?;
@@ -1030,6 +1038,7 @@ impl Parser {
         let body = self.parse_block()?;
         let end = self.peek_span().start;
         Ok(HookDef {
+            annotations,
             name,
             params,
             return_type,
@@ -1053,9 +1062,10 @@ impl Parser {
         let mut methods = Vec::new();
         let mut hooks = Vec::new();
         while self.peek() != &TokenKind::RBrace && self.peek() != &TokenKind::Eof {
+            let anns = self.parse_annotation_uses()?;
             match self.peek().clone() {
-                TokenKind::Hook => hooks.push(self.parse_hook_def()?),
-                TokenKind::Def => methods.push(self.parse_fn_def(vec![])?),
+                TokenKind::Hook => hooks.push(self.parse_hook_def_with_annotations(anns)?),
+                TokenKind::Def => methods.push(self.parse_fn_def(anns)?),
                 found => {
                     return Err(ParseError::Unexpected {
                         found,
@@ -1554,6 +1564,15 @@ impl Parser {
                 Ok(Expr::Ref {
                     mutable,
                     expr: Box::new(e),
+                    span: start,
+                })
+            }
+            TokenKind::Plus => {
+                self.advance();
+                let e = self.parse_expr_inner(15, allow_struct)?;
+                Ok(Expr::UnOp {
+                    op: UnOp::Pos,
+                    operand: Box::new(e),
                     span: start,
                 })
             }

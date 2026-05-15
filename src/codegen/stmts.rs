@@ -137,11 +137,12 @@ fn lower_typed_stmt(
 
         TypedStmt::For {
             binding,
+            binding_ty,
             iterable,
             body,
             ..
         } => {
-            lower_for(binding, iterable, body, builder, vars, loops, ctx);
+            lower_for(binding, &binding_ty, iterable, body, builder, vars, loops, ctx);
         }
 
         TypedStmt::Break(_) => {
@@ -376,6 +377,7 @@ fn lower_do_while(
 
 fn lower_for(
     binding: &str,
+    binding_ty: &Ty,
     iterable: &TypedExpr,
     body: &TypedBlock,
     builder: &mut FunctionBuilder,
@@ -403,9 +405,15 @@ fn lower_for(
     let zero = builder.ins().iconst(types::I64, 0);
     builder.def_var(idx_var, zero);
 
-    // User binding variable — holds the actual element each iteration.
-    let bind_var = vars.declare(binding, types::I64, builder);
-    builder.def_var(bind_var, zero);
+    // User binding variable — element type drives the Cranelift slot type.
+    let bind_clif_ty = clif_type(binding_ty).unwrap_or(types::I64);
+    let bind_zero = if bind_clif_ty == types::F64 {
+        builder.ins().f64const(0.0)
+    } else {
+        builder.ins().iconst(bind_clif_ty, 0)
+    };
+    let bind_var = vars.declare(binding, bind_clif_ty, builder);
+    builder.def_var(bind_var, bind_zero);
 
     let header_bb = builder.create_block();
     let body_bb = builder.create_block();
@@ -422,10 +430,12 @@ fn lower_for(
     builder.seal_block(body_bb);
 
     // Retrieve the element for this iteration and store in the binding.
+    // Vec_get returns I64 (raw bits); coerce to the binding's actual type.
     if is_vec {
         let coll = builder.use_var(coll_var);
         let idx_now = builder.use_var(idx_var);
-        let elem = call_fn_by_name("Vec_get", &[coll, idx_now], builder, ctx);
+        let raw = call_fn_by_name("Vec_get", &[coll, idx_now], builder, ctx);
+        let elem = coerce_to(raw, bind_clif_ty, builder);
         builder.def_var(bind_var, elem);
     } else {
         let idx_now = builder.use_var(idx_var);

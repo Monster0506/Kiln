@@ -105,3 +105,64 @@ struct Ordered[+T: Comparable] { val: T }
 "#,
     );
 }
+
+// ---------------------------------------------------------------------------
+// 10: Unary + operator
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unary_plus_parses_in_return() {
+    parse_ok("def f(x: int) -> int { return +x }");
+}
+
+#[test]
+fn unary_plus_parses_in_assignment() {
+    parse_ok("def f(x: float) -> float { y: float = +x return y }");
+}
+
+// ---------------------------------------------------------------------------
+// 11: @static hooks
+// ---------------------------------------------------------------------------
+
+#[test]
+fn static_hook_parses_in_impl_block() {
+    parse_ok(
+        r#"
+impl Zero for int {
+    @static
+    hook zero() -> int {}
+}
+"#,
+    );
+}
+
+#[test]
+fn static_hook_parses_in_interface() {
+    parse_ok(
+        r#"
+interface Zero {
+    @static
+    hook zero() -> Self
+}
+"#,
+    );
+}
+
+#[test]
+fn static_annotation_sets_is_static_on_hook() {
+    use kiln_compiler::lexer::Lexer;
+    use kiln_compiler::parser::ast::{HookName, Item, ImplBlock};
+    use kiln_compiler::parser::Parser;
+
+    let src = r#"impl Zero for int { @static hook zero() -> int {} }"#;
+    let tokens = Lexer::new(src).tokenize().unwrap();
+    let file = Parser::new(tokens).parse_file().unwrap();
+    match &file.items[0] {
+        Item::ImplBlock(ImplBlock { hooks, .. }) => {
+            assert_eq!(hooks.len(), 1);
+            assert!(hooks[0].annotations.iter().any(|a| a.name == "static"),
+                "expected @static annotation on hook");
+        }
+        other => panic!("expected impl block, got {other:?}"),
+    }
+}

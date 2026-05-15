@@ -352,12 +352,31 @@ fn lower_typed_expr_inner(
         TypedExprKind::BinOp { op, left, right } => {
             let lv = lower_typed_expr(left, builder, vars, ctx);
             let rv = lower_typed_expr(right, builder, vars, ctx);
+            // int, float, bool use native LLVM arithmetic; all other types go
+            // through their registered hook (str, Named, Vec, etc.).
+            let use_native = matches!(left.ty, Ty::Int | Ty::Float | Ty::Bool);
+            if !use_native {
+                if let Some(type_name) = type_name_of(&left.ty) {
+                    if let Some(suffix) = crate::codegen::names::binop_fn_suffix(op) {
+                        let fn_name = format!("{}_{}", type_name, suffix);
+                        return call_fn_by_name(&fn_name, &[lv, rv], builder, ctx);
+                    }
+                }
+            }
             let (lv, rv) = coerce_binop_operands(lv, rv, builder);
             lower_binop(op, lv, rv, builder, ctx.module)
         }
 
         TypedExprKind::UnOp { op, operand } => {
             let v = lower_typed_expr(operand, builder, vars, ctx);
+            let use_native = matches!(operand.ty, Ty::Int | Ty::Float | Ty::Bool);
+            if !use_native {
+                if let Some(type_name) = type_name_of(&operand.ty) {
+                    let suffix = crate::codegen::names::unop_fn_suffix(op);
+                    let fn_name = format!("{}_{}", type_name, suffix);
+                    return call_fn_by_name(&fn_name, &[v], builder, ctx);
+                }
+            }
             let ty = builder.func.dfg.value_type(v);
             match op {
                 UnOp::Neg => {
@@ -371,6 +390,7 @@ fn lower_typed_expr_inner(
                     let one = builder.ins().iconst(ty, 1);
                     builder.ins().bxor(v, one)
                 }
+                UnOp::Pos => v,
             }
         }
 
@@ -676,31 +696,17 @@ fn lower_str_seg(
         TypedStringSegment::Interp(e) => {
             let v = lower_typed_expr(e, builder, vars, ctx);
             if e.ty == Ty::Str {
-                v
-            } else {
-                call_int_to_str(v, ctx.module, builder)
+                return v;
             }
+            // Dispatch to {typename}_to_str hook (e.g. int_to_str, float_to_str).
+            // call_fn_by_name already falls back to __kiln_to_str_dispatch for
+            // any *_to_str name that isn't registered, so this handles all types.
+            let fn_name = type_name_of(&e.ty)
+                .map(|n| format!("{}_to_str", n))
+                .unwrap_or_else(|| "__kiln_to_str_dispatch".to_string());
+            call_fn_by_name(&fn_name, &[v], builder, ctx)
         }
     }
-}
-
-fn call_int_to_str(val: Value, module: &mut ObjectModule, builder: &mut FunctionBuilder) -> Value {
-    let mut sig = module.make_signature();
-    sig.params.push(AbiParam::new(types::I64));
-    sig.returns.push(AbiParam::new(types::I64));
-    let id = module
-        .declare_function("__kiln_int_to_str", Linkage::Import, &sig)
-        .unwrap_or_else(|_| {
-            if let Some(FuncOrDataId::Func(id)) = module.get_name("__kiln_int_to_str") {
-                id
-            } else {
-                panic!("__kiln_int_to_str not found")
-            }
-        });
-    let func_ref = module.declare_func_in_func(id, builder.func);
-    let coerced = coerce_to_i64(val, builder);
-    let call = builder.ins().call(func_ref, &[coerced]);
-    builder.inst_results(call)[0]
 }
 
 /// Call a single-argument runtime dispatch function (e.g. `__kiln_to_str_dispatch`).

@@ -252,6 +252,38 @@ fn seed_stmt(
     }
 }
 
+// Resolve the effective type of an expression, recursively resolving generic call return types.
+// When an arg's type is still a GenericParam (e.g. the return of an unsubstituted generic call),
+// this looks at the call's arg types to compute the concrete return type via unification.
+fn resolve_expr_ty(expr: &TypedExpr, generic_fns: &HashMap<String, TypedFnDef>) -> Ty {
+    if matches!(&expr.ty, Ty::GenericParam(_)) {
+        if let TypedExprKind::Call {
+            callee,
+            args,
+            generic_params,
+            ..
+        } = &expr.kind
+        {
+            if !generic_params.is_empty() {
+                if let TypedExprKind::Ident(name) = &callee.kind {
+                    if let Some(gf) = generic_fns.get(name.as_str()) {
+                        let arg_tys: Vec<Ty> = args
+                            .iter()
+                            .map(|a| resolve_expr_ty(a, generic_fns))
+                            .collect();
+                        let call_subst = unify_params(gf, &arg_tys);
+                        let resolved = subst_ty(&gf.return_type, &call_subst);
+                        if !matches!(resolved, Ty::GenericParam(_)) {
+                            return resolved;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    expr.ty.clone()
+}
+
 fn seed_expr(
     expr: &TypedExpr,
     generic_fns: &HashMap<String, TypedFnDef>,
@@ -267,7 +299,8 @@ fn seed_expr(
             if !generic_params.is_empty() {
                 if let TypedExprKind::Ident(name) = &callee.kind {
                     if let Some(gf) = generic_fns.get(name.as_str()) {
-                        let arg_tys: Vec<Ty> = args.iter().map(|a| a.ty.clone()).collect();
+                        let arg_tys: Vec<Ty> =
+                            args.iter().map(|a| resolve_expr_ty(a, generic_fns)).collect();
                         let subst = unify_params(gf, &arg_tys);
                         if !subst.is_empty() {
                             queue.push_back((name.clone(), subst));
@@ -613,6 +646,9 @@ fn subst_expr(
                             ty: subst_ty(&callee.ty, subst),
                             span: callee.span,
                         };
+                        // Use call_subst (not outer subst) to resolve the return type,
+                        // so a generic return like T in sum[T]->T gets resolved to int.
+                        let resolved_ty = subst_ty(&expr.ty, &call_subst);
                         return TypedExpr {
                             kind: TypedExprKind::Call {
                                 callee: Box::new(new_callee),
@@ -620,7 +656,7 @@ fn subst_expr(
                                 generic_bounds: vec![],
                                 generic_params: vec![],
                             },
-                            ty,
+                            ty: resolved_ty,
                             span: expr.span,
                         };
                     }
@@ -659,7 +695,7 @@ fn subst_expr(
                 .map(|a| subst_expr(a, subst, generic_fns))
                 .collect();
             TypedExprKind::StaticCall {
-                method_fn: method_fn.clone(),
+                method_fn: rewrite_method_fn(method_fn, subst),
                 args: new_args,
             }
         }

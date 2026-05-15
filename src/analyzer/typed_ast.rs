@@ -95,6 +95,7 @@ pub struct TypedInterfaceMethod {
 
 #[derive(Debug, Clone)]
 pub struct TypedHookDef {
+    pub is_static: bool,
     pub name: HookName,
     pub params: Vec<TypedParam>,
     pub return_type: Ty,

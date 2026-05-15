@@ -397,3 +397,30 @@ specialized impl Greet for Dog {
         "specialized impl alongside plain impl should not be an error: {errs:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Bug 6: Associated type names in scope during impl resolution
+// ---------------------------------------------------------------------------
+
+#[test]
+fn assoc_type_name_in_impl_hook_signature_is_not_undefined() {
+    let errs = run(r#"
+interface Add {
+    type Output
+    hook +(rhs: Self) -> Output
+}
+
+struct Vec2 { x: float, y: float }
+
+impl Add for Vec2 {
+    hook +(rhs: Vec2) -> Vec2 { return Vec2 { x: 0.0, y: 0.0 } }
+}
+"#);
+    let undefined_output = errs
+        .iter()
+        .any(|e| e.contains("undefined") && e.contains("Output"));
+    assert!(
+        !undefined_output,
+        "Output assoc type should be in scope inside impl block: {errs:?}"
+    );
+}

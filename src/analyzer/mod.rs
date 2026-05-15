@@ -556,6 +556,37 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
     for item in &source.items {
         if let Item::Interface(iface) = item {
             use crate::parser::ast::InterfaceItemKind;
+            // Push Self, generic params, and associated types so that hook/method
+            // signatures using them (e.g. `-> Output`, `rhs: Self`) resolve cleanly.
+            env.push_scope();
+            let dummy_span = iface.span;
+            env.define(
+                "Self",
+                Symbol::Type {
+                    id: TypeId(0),
+                    span: dummy_span,
+                },
+            );
+            for gp in &iface.generic_params {
+                env.define(
+                    &gp.name,
+                    Symbol::Type {
+                        id: TypeId(0),
+                        span: gp.span,
+                    },
+                );
+            }
+            for iitem in &iface.items {
+                if let InterfaceItemKind::AssocType { name, .. } = &iitem.kind {
+                    env.define(
+                        name,
+                        Symbol::Type {
+                            id: TypeId(0),
+                            span: iitem.span,
+                        },
+                    );
+                }
+            }
             for iitem in &iface.items {
                 match &iitem.kind {
                     InterfaceItemKind::Method(method) => {
@@ -607,6 +638,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     InterfaceItemKind::AssocType { .. } => {}
                 }
             }
+            env.pop_scope();
         }
     }
 
@@ -803,6 +835,32 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     }
                 }
 
+                // Push `Self` and all associated type names from the interface into scope
+                // so that hook/method signatures like `-> Output` resolve without errors.
+                let dummy_span = impl_block.span;
+                env.push_scope();
+                env.define(
+                    "Self",
+                    Symbol::Type {
+                        id: TypeId(0),
+                        span: dummy_span,
+                    },
+                );
+                if let Some(iface_def) = interfaces.iter().find(|i| i.name == interface_name) {
+                    use crate::parser::ast::InterfaceItemKind;
+                    for iitem in &iface_def.items {
+                        if let InterfaceItemKind::AssocType { name, .. } = &iitem.kind {
+                            env.define(
+                                name,
+                                Symbol::Type {
+                                    id: TypeId(0),
+                                    span: iitem.span,
+                                },
+                            );
+                        }
+                    }
+                }
+
                 let self_ty = resolve_type_expr(&impl_block.for_type, &env, &mut errors);
 
                 let mut typed_methods: Vec<TypedFnDef> = Vec::new();
@@ -903,6 +961,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     });
                 }
 
+                env.pop_scope(); // assoc-types + Self scope
                 if has_impl_generics {
                     env.pop_scope();
                 }
@@ -918,6 +977,38 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
             Item::Interface(iface) => {
                 use crate::parser::ast::InterfaceItemKind;
+                env.push_scope();
+                let dummy_span = iface.span;
+                // `Self` stands for the implementing type inside an interface body.
+                env.define(
+                    "Self",
+                    Symbol::Type {
+                        id: TypeId(0),
+                        span: dummy_span,
+                    },
+                );
+                // Generic type params declared on the interface (e.g. `interface Add[Rhs]`).
+                for gp in &iface.generic_params {
+                    env.define(
+                        &gp.name,
+                        Symbol::Type {
+                            id: TypeId(0),
+                            span: gp.span,
+                        },
+                    );
+                }
+                // Associated types declared in the interface body.
+                for iitem in &iface.items {
+                    if let InterfaceItemKind::AssocType { name, .. } = &iitem.kind {
+                        env.define(
+                            name,
+                            Symbol::Type {
+                                id: TypeId(0),
+                                span: iitem.span,
+                            },
+                        );
+                    }
+                }
                 let typed_methods: Vec<TypedInterfaceMethod> = iface
                     .items
                     .iter()
@@ -944,6 +1035,7 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         }
                     })
                     .collect();
+                env.pop_scope();
                 typed_items.push(TypedItem::Interface(TypedInterfaceDef {
                     name: iface.name.clone(),
                     methods: typed_methods,

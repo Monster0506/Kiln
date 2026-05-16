@@ -52,6 +52,32 @@ impl SourceMap {
         (text, col, caret_w)
     }
 
+    /// Renders a `note:` block with a secondary source location.
+    ///
+    /// ```text
+    /// note: required because `sum` has use of `+=` on `T`
+    ///   --> file.kn:14:5
+    ///    |
+    /// 14 |     total += item
+    ///    |     ^^^^^^^^^^^^^
+    /// ```
+    pub fn render_note(&self, src: &str, span: Span, file: &str, note: &str) -> String {
+        let (line_num, col) = self.location_of(span.start);
+        let (text, _, caret_w) = self.line_info(src, span);
+        let lnum = line_num.to_string();
+        let gw = lnum.len();
+        let pad = " ".repeat(gw);
+        let indent = " ".repeat(col - 1);
+        let caret = "^".repeat(caret_w);
+        format!(
+            "note: {note}\n\
+             {pad}--> {file}:{line_num}:{col}\n\
+             {pad} |\n\
+             {lnum} | {text}\n\
+             {pad} | {indent}{caret}"
+        )
+    }
+
     /// Returns a two-line snippet (source line + caret row).
     pub fn render_snippet(&self, src: &str, span: Span) -> String {
         let (line_num, _col) = self.location_of(span.start);

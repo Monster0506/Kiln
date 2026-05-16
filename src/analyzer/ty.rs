@@ -215,6 +215,15 @@ impl TypeRegistry {
             .map(|v| v.as_slice())
             .unwrap_or(&[])
     }
+
+    /// Returns all interface names that declare a hook or method with `hook_name`.
+    pub fn interfaces_for_hook(&self, hook_name: &str) -> Vec<String> {
+        self.interface_methods
+            .iter()
+            .filter(|(_, methods)| methods.iter().any(|m| m.method_name == hook_name))
+            .map(|(iface, _)| iface.clone())
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -247,5 +256,46 @@ mod tests {
         let id = reg.register("Point".into(), TypeKind::Struct);
         let entry = reg.lookup_by_id(&id).unwrap();
         assert_eq!(entry.name, "Point");
+    }
+
+    #[test]
+    fn interfaces_for_hook_finds_single() {
+        let mut reg = TypeRegistry::new();
+        reg.register_interface_method(
+            "Zero",
+            MethodEntry {
+                method_name: "zero".into(),
+                qualified_fn: "zero".into(),
+                params: vec![],
+                ret: Ty::Unknown,
+            },
+        );
+        let ifaces = reg.interfaces_for_hook("zero");
+        assert_eq!(ifaces, vec!["Zero".to_string()]);
+    }
+
+    #[test]
+    fn interfaces_for_hook_returns_empty_when_not_found() {
+        let reg = TypeRegistry::new();
+        assert!(reg.interfaces_for_hook("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn interfaces_for_hook_finds_multiple() {
+        let mut reg = TypeRegistry::new();
+        for iface in &["Display", "Debug"] {
+            reg.register_interface_method(
+                iface,
+                MethodEntry {
+                    method_name: "to_str".into(),
+                    qualified_fn: "to_str".into(),
+                    params: vec![],
+                    ret: Ty::Str,
+                },
+            );
+        }
+        let mut ifaces = reg.interfaces_for_hook("to_str");
+        ifaces.sort();
+        assert_eq!(ifaces, vec!["Debug".to_string(), "Display".to_string()]);
     }
 }

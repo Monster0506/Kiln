@@ -1,4 +1,5 @@
 use crate::analyzer::env::GenericBound;
+use crate::analyzer::op_hierarchy::compound_assign_iface;
 use crate::analyzer::ty::Ty;
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedClosureBody, TypedExpr, TypedExprKind, TypedFile, TypedItem, TypedStmt,
@@ -14,6 +15,7 @@ use crate::parser::ast::BinOp;
 #[derive(Debug, Clone)]
 pub enum ConstraintReason {
     Operator(BinOp),
+    CompoundAssign(BinOp),
     UnaryNeg,
     UnaryPos,
     Interpolation,
@@ -21,6 +23,12 @@ pub enum ConstraintReason {
         param: String,
         bound: String,
         fn_name: String,
+        /// `true` when written explicitly in the function signature.
+        is_explicit: bool,
+        /// Where in the function body this bound is used (may be set even for explicit bounds).
+        source_span: Option<Span>,
+        /// Human-readable description of the usage site, e.g. "call to `T.zero()`".
+        source_desc: String,
     },
 }
 
@@ -28,6 +36,9 @@ impl ConstraintReason {
     pub fn context_string(&self) -> String {
         match self {
             ConstraintReason::Operator(op) => format!(" (required by operator `{op:?}`)"),
+            ConstraintReason::CompoundAssign(op) => {
+                format!(" (required by compound-assign operator `{op:?}=`)")
+            }
             ConstraintReason::UnaryNeg => " (required by unary `-`)".into(),
             ConstraintReason::UnaryPos => " (required by unary `+`)".into(),
             ConstraintReason::Interpolation => " (required by string interpolation)".into(),
@@ -35,8 +46,14 @@ impl ConstraintReason {
                 param,
                 bound,
                 fn_name,
+                is_explicit,
+                ..
             } => {
-                format!(" (required by bound `{param}: {bound}` on `{fn_name}`)")
+                if *is_explicit {
+                    format!(" (explicit bound `{param}: {bound}` on `{fn_name}`)")
+                } else {
+                    format!(" (inferred bound `{param}: {bound}` on `{fn_name}`)")
+                }
             }
         }
     }
@@ -95,6 +112,18 @@ fn collect_stmt(stmt: &TypedStmt, out: &mut Vec<Constraint>) {
         TypedStmt::Assign { target, value, .. } => {
             collect_expr(target, out);
             collect_expr(value, out);
+        }
+        TypedStmt::CompoundAssign { target, op, rhs, span } => {
+            collect_expr(target, out);
+            collect_expr(rhs, out);
+            if let Some(iface) = compound_assign_iface(op) {
+                out.push(Constraint {
+                    ty: target.ty.clone(),
+                    iface: iface.to_string(),
+                    span: *span,
+                    reason: ConstraintReason::CompoundAssign(op.clone()),
+                });
+            }
         }
         TypedStmt::If {
             branches,
@@ -199,9 +228,10 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
             args,
             generic_bounds,
             generic_params,
+            param_tys,
         } => {
             if let TypedExprKind::Ident(name) = &callee.kind {
-                // Generic bounds declared on the called function.
+                // Generic bounds declared on the called function (includes inferred bounds).
                 if !generic_bounds.is_empty() {
                     let arg_tys: Vec<(Ty, Span)> =
                         args.iter().map(|a| (a.ty.clone(), a.span)).collect();
@@ -209,6 +239,7 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
                         name,
                         generic_bounds,
                         generic_params,
+                        param_tys,
                         &arg_tys,
                         out,
                     );
@@ -294,7 +325,7 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
 /// Uses `PartialEq`/`PartialOrd` for `==`/`<` etc. so that float (which has
 /// partial order but not total order) can be compared. Only `<=>` (spaceship)
 /// requires a total order (`Ord`).
-fn binop_required_iface(op: &BinOp) -> Option<&'static str> {
+pub fn binop_required_iface(op: &BinOp) -> Option<&'static str> {
     match op {
         BinOp::Add => Some("Addable"),
         BinOp::Sub => Some("Subtractable"),
@@ -310,31 +341,89 @@ fn binop_required_iface(op: &BinOp) -> Option<&'static str> {
 }
 
 /// Emit constraints for a direct call to a named function with generic bounds.
-/// `bounds` come from `Symbol::Fn.generic_bounds`.
+/// `bounds` come from `Symbol::Fn.generic_bounds` plus inferred_bounds.
+/// `param_tys` are the declared parameter types (may contain GenericParam).
 /// `arg_tys` are `(concrete_type, span)` for each positional argument.
+///
+/// We unify each `param_tys[i]` with `arg_tys[i].ty` to build a substitution
+/// map from generic param names to concrete types, then check each bound against
+/// the substituted type.
 pub fn emit_call_bound_constraints(
     fn_name: &str,
     bounds: &[GenericBound],
     generic_params: &[String],
+    param_tys: &[Ty],
     arg_tys: &[(Ty, Span)],
     out: &mut Vec<Constraint>,
 ) {
+    // Build substitution: generic param name -> concrete type.
+    let mut subst: std::collections::HashMap<String, (Ty, Span)> =
+        std::collections::HashMap::new();
+    for (i, param_ty) in param_tys.iter().enumerate() {
+        if let Some((arg_ty, arg_span)) = arg_tys.get(i) {
+            unify_param(param_ty, arg_ty, *arg_span, generic_params, &mut subst);
+        }
+    }
+
     for bound in bounds {
-        let param_idx = generic_params.iter().position(|p| p == &bound.param);
-        if let Some(idx) = param_idx {
-            if let Some((ty, span)) = arg_tys.get(idx) {
-                out.push(Constraint {
-                    ty: ty.clone(),
-                    iface: bound.iface.clone(),
-                    span: *span,
-                    reason: ConstraintReason::GenericBoundCheck {
-                        param: bound.param.clone(),
-                        bound: bound.iface.clone(),
-                        fn_name: fn_name.to_string(),
-                    },
-                });
+        if let Some((concrete_ty, span)) = subst.get(&bound.param) {
+            out.push(Constraint {
+                ty: concrete_ty.clone(),
+                iface: bound.iface.clone(),
+                span: *span,
+                reason: ConstraintReason::GenericBoundCheck {
+                    param: bound.param.clone(),
+                    bound: bound.iface.clone(),
+                    fn_name: fn_name.to_string(),
+                    is_explicit: bound.is_explicit,
+                    source_span: bound.source_span,
+                    source_desc: bound.source_desc.clone(),
+                },
+            });
+        }
+    }
+}
+
+/// Unify `param_ty` (declared, possibly contains GenericParam) against `arg_ty`
+/// (concrete) and record any GenericParam -> concrete_ty mappings in `subst`.
+fn unify_param(
+    param_ty: &Ty,
+    arg_ty: &Ty,
+    span: Span,
+    generic_params: &[String],
+    subst: &mut std::collections::HashMap<String, (Ty, Span)>,
+) {
+    match param_ty {
+        Ty::GenericParam(p) if generic_params.iter().any(|g| g == p) => {
+            subst.entry(p.clone()).or_insert_with(|| (arg_ty.clone(), span));
+        }
+        Ty::Vec(inner_p) => {
+            if let Ty::Vec(inner_a) = arg_ty {
+                unify_param(inner_p, inner_a, span, generic_params, subst);
             }
         }
+        Ty::Set(inner_p) => {
+            if let Ty::Set(inner_a) = arg_ty {
+                unify_param(inner_p, inner_a, span, generic_params, subst);
+            }
+        }
+        Ty::Option(inner_p) => {
+            if let Ty::Option(inner_a) = arg_ty {
+                unify_param(inner_p, inner_a, span, generic_params, subst);
+            }
+        }
+        Ty::Shared(inner_p) => {
+            if let Ty::Shared(inner_a) = arg_ty {
+                unify_param(inner_p, inner_a, span, generic_params, subst);
+            }
+        }
+        Ty::Map(key_p, val_p) => {
+            if let Ty::Map(key_a, val_a) = arg_ty {
+                unify_param(key_p, key_a, span, generic_params, subst);
+                unify_param(val_p, val_a, span, generic_params, subst);
+            }
+        }
+        _ => {}
     }
 }
 

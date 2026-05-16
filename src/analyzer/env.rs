@@ -7,12 +7,23 @@ use std::collections::HashMap;
 pub struct GenericBound {
     pub param: String,
     pub iface: String,
+    /// `true` when the bound was written explicitly in the function signature (`[T: Addable]`).
+    /// `false` when inferred from body usage.
+    pub is_explicit: bool,
+    /// Byte span of the expression in the function body that requires this bound.
+    /// For explicit bounds this is populated after merging with inferred data.
+    pub source_span: Option<crate::diagnostics::Span>,
+    /// Human-readable description of the usage site, e.g. "use of `+=` on `T`".
+    /// Empty when no body-usage site was found.
+    pub source_desc: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct FnOverload {
     pub generic_params: Vec<String>,
     pub generic_bounds: Vec<GenericBound>,
+    /// Bounds inferred from how generic params are used in the function body.
+    pub inferred_bounds: Vec<GenericBound>,
     pub params: Vec<(String, Ty)>,
     pub ret: Ty,
     /// The symbol name used in codegen, e.g. "foo__0" for the first overload of "foo".
@@ -30,6 +41,8 @@ pub enum Symbol {
     Fn {
         generic_params: Vec<String>,
         generic_bounds: Vec<GenericBound>,
+        /// Bounds inferred from how generic params are used in the function body.
+        inferred_bounds: Vec<GenericBound>,
         params: Vec<(String, Ty)>,
         ret: Ty,
         span: Span,
@@ -93,6 +106,16 @@ impl Env {
     /// Look up `name` only in the innermost (current) scope.
     pub fn lookup_in_current_scope(&self, name: &str) -> Option<&Symbol> {
         self.scopes.last()?.get(name)
+    }
+
+    /// Mutable lookup — searches from innermost scope outward.
+    pub fn lookup_mut(&mut self, name: &str) -> Option<&mut Symbol> {
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains_key(name) {
+                return scope.get_mut(name);
+            }
+        }
+        None
     }
 }
 

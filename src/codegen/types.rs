@@ -1,3 +1,4 @@
+use crate::analyzer::resolve::resolve_primitive_name;
 use crate::analyzer::ty::Ty;
 use crate::parser::ast::TypeExpr;
 use cranelift_codegen::ir::types::{self, Type};
@@ -43,14 +44,13 @@ pub fn is_void(ty: &Ty) -> bool {
 /// the analyzer. Handles primitive names; everything else is an `I64` pointer.
 pub fn type_expr_to_clif(ty: &TypeExpr) -> Option<Type> {
     match ty {
-        TypeExpr::Named { name, .. } => match name.as_str() {
-            "void" => None,
-            "int" => Some(types::I64),
-            "float" => Some(types::F64),
-            "bool" => Some(types::I8),
-            "str" => Some(types::I64),
-            _ => Some(types::I64),
-        },
+        TypeExpr::Named { name, .. } => {
+            if let Some(prim) = resolve_primitive_name(name) {
+                clif_type(&prim)
+            } else {
+                Some(types::I64)
+            }
+        }
         TypeExpr::Tuple(elems, _) if elems.is_empty() => None,
         TypeExpr::Tuple(_, _) => Some(types::I64),
         _ => Some(types::I64),

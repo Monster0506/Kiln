@@ -83,10 +83,7 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
     });
 
     let typed_file = analyze(&ast).unwrap_or_else(|errs| {
-        for e in &errs {
-            let snippet = map.render_diagnostic(&src, e.span(), &path);
-            emit_error(e.kind(), e.code(), &e.message(), &snippet);
-        }
+        emit_analysis_errors(&errs, &map, &src, &path);
         std::process::exit(1);
     });
 
@@ -126,6 +123,24 @@ fn emit_error(kind: &str, code: &str, msg: &str, snippet: &str) {
 
 fn emit_error_no_span(kind: &str, code: &str, msg: &str) {
     eprintln!("error[{code}]: {kind}: {msg}");
+}
+
+fn emit_analysis_errors(
+    errs: &[kiln_compiler::analyzer::AnalysisError],
+    map: &SourceMap,
+    src: &str,
+    path: &str,
+) {
+    for e in errs {
+        let snippet = map.render_diagnostic(src, e.span(), path);
+        emit_error(e.kind(), e.code(), &e.message(), &snippet);
+        if let Some((note, Some(note_span))) = e.note_info() {
+            let note_block = map.render_note(src, note_span, path, &note);
+            eprintln!("{note_block}");
+        } else if let Some((note, None)) = e.note_info() {
+            eprintln!("note: {note}");
+        }
+    }
 }
 
 fn main() {
@@ -183,10 +198,7 @@ fn main() {
             match kiln_compiler::analyzer::analyze(&ast) {
                 Ok(_) => println!("ok"),
                 Err(errs) => {
-                    for e in &errs {
-                        let snippet = map.render_diagnostic(&src, e.span(), &path);
-                        emit_error(e.kind(), e.code(), &e.message(), &snippet);
-                    }
+                    emit_analysis_errors(&errs, &map, &src, &path);
                     std::process::exit(1);
                 }
             }
@@ -223,10 +235,7 @@ fn main() {
                     std::process::exit(1);
                 });
                 let typed_file = analyze(&ast).unwrap_or_else(|errs| {
-                    for e in &errs {
-                        let snippet = map.render_diagnostic(&src, e.span(), &path);
-                        emit_error(e.kind(), e.code(), &e.message(), &snippet);
-                    }
+                    emit_analysis_errors(&errs, &map, &src, &path);
                     std::process::exit(1);
                 });
                 let module_name = file

@@ -72,6 +72,9 @@ pub struct TypedEnumVariant {
 pub struct TypedImplBlock {
     pub interface: String,
     pub for_type: String,
+    /// Resolved self type including any generic params, e.g. `Vec(GenericParam("T"))`.
+    /// Used by the monomorphizer to detect generic impls and derive substitutions.
+    pub for_type_ty: Ty,
     pub kind: ImplKind,
     pub methods: Vec<TypedFnDef>,
     pub hooks: Vec<TypedHookDef>,
@@ -123,6 +126,12 @@ pub enum TypedStmt {
     Assign {
         target: TypedExpr,
         value: TypedExpr,
+        span: Span,
+    },
+    CompoundAssign {
+        target: TypedExpr,
+        op: BinOp,
+        rhs: TypedExpr,
         span: Span,
     },
     Return {
@@ -204,6 +213,9 @@ pub enum TypedExprKind {
         /// Generic bounds on the called function, carried for constraint checking.
         generic_bounds: Vec<crate::analyzer::env::GenericBound>,
         generic_params: Vec<String>,
+        /// Declared parameter types of the callee (with generic params), used to
+        /// unify call arguments against generic params for bound checking.
+        param_tys: Vec<Ty>,
     },
     /// Instance method call; method_fn is the qualified function name
     MethodCall {

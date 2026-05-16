@@ -66,8 +66,9 @@ pub fn collect_top_level(
             }
             Item::Function(f) => Symbol::Fn {
                 generic_params: f.generic_params.iter().map(|g| g.name.clone()).collect(),
-                generic_bounds: vec![], // resolved in pass 1b
-                params: vec![],         // resolved in pass 1b
+                generic_bounds: vec![],  // resolved in pass 1b
+                inferred_bounds: vec![], // populated after body analysis
+                params: vec![],          // resolved in pass 1b
                 ret: Ty::Unknown,
                 span,
             },

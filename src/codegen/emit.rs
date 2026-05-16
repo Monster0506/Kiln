@@ -43,7 +43,8 @@ pub fn link_executable(
     struct LinkerSpec {
         name: &'static str,
         is_msvc_style: bool,
-        trailing_libs: &'static [&'static str],
+        // Flags placed before the output and object arguments.
+        leading_flags: &'static [&'static str],
     }
 
     let linker_specs: &[LinkerSpec] = if cfg!(windows) {
@@ -51,25 +52,26 @@ pub fn link_executable(
             LinkerSpec {
                 name: "link",
                 is_msvc_style: true,
-                trailing_libs: &[],
+                leading_flags: &[],
             },
             LinkerSpec {
                 name: "lld-link",
                 is_msvc_style: true,
-                trailing_libs: &[],
+                leading_flags: &[],
             },
-            // MinGW gcc: -lmingw32 supplies mainCRTStartup and the MinGW CRT
+            // MinGW gcc: -mconsole must come before objects so ld selects
+            // crtexe.o (console) instead of crtexewin.o (GUI/WinMain).
             LinkerSpec {
                 name: "gcc",
                 is_msvc_style: false,
-                trailing_libs: &["-lmingw32"],
+                leading_flags: &["-mconsole", "-Wl,--subsystem,console"],
             },
         ]
     } else {
         &[LinkerSpec {
             name: "cc",
             is_msvc_style: false,
-            trailing_libs: &[],
+            leading_flags: &[],
         }]
     };
 
@@ -90,12 +92,12 @@ pub fn link_executable(
                 cmd.arg(rt);
             }
         } else {
+            for flag in spec.leading_flags {
+                cmd.arg(flag);
+            }
             cmd.arg("-o").arg(output).arg(obj_path);
             if let Some(ref rt) = runtime_path {
                 cmd.arg(rt);
-            }
-            for lib in spec.trailing_libs {
-                cmd.arg(lib);
             }
         }
 

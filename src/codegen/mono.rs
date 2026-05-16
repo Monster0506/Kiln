@@ -7,6 +7,11 @@ use crate::analyzer::typed_ast::{
     TypedFnDef, TypedHookDef, TypedImplBlock, TypedItem, TypedMatchArm, TypedParam, TypedStmt,
     TypedStringSegment,
 };
+use crate::parser::ast::HookName;
+
+// (for_type base name, hook_suffix, concrete receiver type)
+// e.g. ("Vec", "to_str", Vec(Named("Item")))
+type ImplHookReq = (String, String, Ty);
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -22,7 +27,24 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
         }
     }
 
-    if generic_fns.is_empty() {
+    // Collect generic impl hooks from parameterized types (e.g. impl[T] Iface for Vec[T]).
+    // Key: (for_type base name, hook_suffix). Value: (hook, for_type_ty template).
+    let mut generic_impl_hooks: HashMap<(String, String), (TypedHookDef, Ty)> = HashMap::new();
+    for item in &file.items {
+        if let TypedItem::ImplBlock(ib) = item {
+            if contains_type_param(&ib.for_type_ty) {
+                for hook in &ib.hooks {
+                    let suffix = hook_suffix(hook);
+                    generic_impl_hooks.insert(
+                        (ib.for_type.clone(), suffix),
+                        (hook.clone(), ib.for_type_ty.clone()),
+                    );
+                }
+            }
+        }
+    }
+
+    if generic_fns.is_empty() && generic_impl_hooks.is_empty() {
         return file;
     }
 
@@ -47,6 +69,8 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
     }
 
     let mut new_fns: Vec<TypedFnDef> = Vec::new();
+    let mut impl_reqs: Vec<ImplHookReq> = Vec::new();
+
     while let Some((fn_name, subst)) = queue.pop_front() {
         let key = make_done_key(&fn_name, &subst);
         if !done.insert(key) {
@@ -55,9 +79,39 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
         let Some(generic_fn) = generic_fns.get(&fn_name).cloned() else {
             continue;
         };
-        let specialized = specialize_fn(&generic_fn, &subst, &generic_fns);
+        let specialized = specialize_fn(&generic_fn, &subst, &generic_fns, &generic_impl_hooks, &mut impl_reqs);
         seed_block(&specialized.body, &generic_fns, &mut queue);
         new_fns.push(specialized);
+    }
+
+    // Process impl hook specializations (e.g. Vec_Item_to_str from Vec[T]_to_str with T=Item).
+    // Iterate to handle transitive specializations (e.g. Vec[Vec[int]]).
+    let mut impl_done: HashSet<String> = HashSet::new();
+    loop {
+        let pending: Vec<ImplHookReq> = std::mem::take(&mut impl_reqs);
+        if pending.is_empty() {
+            break;
+        }
+        for (base, method_suffix, concrete_ty) in pending {
+            let fn_name = format!("{}_{}", type_mono_name(&concrete_ty), method_suffix);
+            if impl_done.contains(&fn_name) {
+                continue;
+            }
+            impl_done.insert(fn_name.clone());
+            if let Some((hook, for_type_ty)) = generic_impl_hooks.get(&(base, method_suffix)) {
+                let inner_subst = derive_impl_subst(for_type_ty, &concrete_ty);
+                let fn_def = specialize_hook_as_fn(
+                    &fn_name,
+                    hook,
+                    &inner_subst,
+                    &concrete_ty,
+                    &generic_fns,
+                    &generic_impl_hooks,
+                    &mut impl_reqs,
+                );
+                new_fns.push(fn_def);
+            }
+        }
     }
 
     let empty: HashMap<String, Ty> = HashMap::new();
@@ -66,7 +120,7 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
         match item {
             TypedItem::Function(f) if is_generic_fn(&f) => {}
             TypedItem::Function(f) => {
-                let body = subst_block(&f.body, &empty, &generic_fns);
+                let body = subst_block(&f.body, &empty, &generic_fns, &generic_impl_hooks, &mut impl_reqs);
                 new_items.push(TypedItem::Function(TypedFnDef { body, ..f }));
             }
             TypedItem::ImplBlock(ib) => {
@@ -74,7 +128,7 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
                     .methods
                     .into_iter()
                     .map(|m| {
-                        let body = subst_block(&m.body, &empty, &generic_fns);
+                        let body = subst_block(&m.body, &empty, &generic_fns, &generic_impl_hooks, &mut impl_reqs);
                         TypedFnDef { body, ..m }
                     })
                     .collect();
@@ -82,7 +136,7 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
                     .hooks
                     .into_iter()
                     .map(|h| {
-                        let body = subst_block(&h.body, &empty, &generic_fns);
+                        let body = subst_block(&h.body, &empty, &generic_fns, &generic_impl_hooks, &mut impl_reqs);
                         TypedHookDef { body, ..h }
                     })
                     .collect();
@@ -102,6 +156,66 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
     TypedFile {
         items: new_items,
         span: file.span,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Generic impl hook helpers
+// ---------------------------------------------------------------------------
+
+fn hook_suffix(hook: &TypedHookDef) -> String {
+    match &hook.name {
+        HookName::Named(n) => n.clone(),
+        HookName::Op(op) => {
+            if hook.params.is_empty() {
+                crate::codegen::names::encode_unary_op(op).to_string()
+            } else {
+                crate::codegen::names::encode_op(op)
+            }
+        }
+    }
+}
+
+/// Derive the generic-param substitution by unifying the impl's generic self
+/// type (e.g. `Vec(GenericParam("T"))`) against the concrete receiver type
+/// (e.g. `Vec(Named("Item"))`).  Returns an empty map when the impl is not
+/// generic or the types don't match.
+fn derive_impl_subst(for_type_ty: &Ty, concrete_ty: &Ty) -> HashMap<String, Ty> {
+    let mut subst = HashMap::new();
+    unify_ty(for_type_ty, concrete_ty, &mut subst);
+    subst
+}
+
+fn specialize_hook_as_fn(
+    fn_name: &str,
+    hook: &TypedHookDef,
+    subst: &HashMap<String, Ty>,
+    concrete_self_ty: &Ty,
+    generic_fns: &HashMap<String, TypedFnDef>,
+    generic_impl_hooks: &HashMap<(String, String), (TypedHookDef, Ty)>,
+    impl_reqs: &mut Vec<ImplHookReq>,
+) -> TypedFnDef {
+    let mut params = vec![TypedParam {
+        name: "__self".to_string(),
+        ty: concrete_self_ty.clone(),
+        span: hook.span,
+    }];
+    for p in &hook.params {
+        params.push(TypedParam {
+            name: p.name.clone(),
+            ty: subst_ty(&p.ty, subst),
+            span: p.span,
+        });
+    }
+    let body = subst_block(&hook.body, subst, generic_fns, generic_impl_hooks, impl_reqs);
+    TypedFnDef {
+        name: fn_name.to_string(),
+        params,
+        variadic: None,
+        return_type: subst_ty(&hook.return_type, subst),
+        body,
+        is_builtin: false,
+        span: hook.span,
     }
 }
 
@@ -134,10 +248,6 @@ fn contains_type_param(ty: &Ty) -> bool {
 
 pub fn type_mono_name(ty: &Ty) -> String {
     match ty {
-        Ty::Int => "int".into(),
-        Ty::Float => "float".into(),
-        Ty::Bool => "bool".into(),
-        Ty::Str => "str".into(),
         Ty::Void => "void".into(),
         Ty::Named(_, name) | Ty::Interface(_, name) | Ty::GenericParam(name) => name.clone(),
         Ty::Vec(t) => format!("Vec_{}", type_mono_name(t)),
@@ -149,7 +259,7 @@ pub fn type_mono_name(ty: &Ty) -> String {
             let inner: Vec<String> = ts.iter().map(type_mono_name).collect();
             format!("Tuple_{}", inner.join("_"))
         }
-        _ => "unknown".into(),
+        _ => type_name_of(ty).unwrap_or_else(|| "unknown".into()),
     }
 }
 
@@ -208,6 +318,10 @@ fn seed_stmt(
         TypedStmt::Assign { target, value, .. } => {
             seed_expr(target, generic_fns, queue);
             seed_expr(value, generic_fns, queue);
+        }
+        TypedStmt::CompoundAssign { target, rhs, .. } => {
+            seed_expr(target, generic_fns, queue);
+            seed_expr(rhs, generic_fns, queue);
         }
         TypedStmt::If {
             branches,
@@ -430,6 +544,8 @@ fn specialize_fn(
     f: &TypedFnDef,
     subst: &HashMap<String, Ty>,
     generic_fns: &HashMap<String, TypedFnDef>,
+    generic_impl_hooks: &HashMap<(String, String), (TypedHookDef, Ty)>,
+    impl_reqs: &mut Vec<ImplHookReq>,
 ) -> TypedFnDef {
     let name = specialized_name(&f.name, subst);
     let params: Vec<TypedParam> = f
@@ -442,7 +558,7 @@ fn specialize_fn(
         })
         .collect();
     let return_type = subst_ty(&f.return_type, subst);
-    let body = subst_block(&f.body, subst, generic_fns);
+    let body = subst_block(&f.body, subst, generic_fns, generic_impl_hooks, impl_reqs);
     TypedFnDef {
         name,
         params,
@@ -487,12 +603,14 @@ fn subst_block(
     block: &TypedBlock,
     subst: &HashMap<String, Ty>,
     generic_fns: &HashMap<String, TypedFnDef>,
+    generic_impl_hooks: &HashMap<(String, String), (TypedHookDef, Ty)>,
+    impl_reqs: &mut Vec<ImplHookReq>,
 ) -> TypedBlock {
     TypedBlock {
         stmts: block
             .stmts
             .iter()
-            .map(|s| subst_stmt(s, subst, generic_fns))
+            .map(|s| subst_stmt(s, subst, generic_fns, generic_impl_hooks, impl_reqs))
             .collect(),
         span: block.span,
     }
@@ -502,98 +620,84 @@ fn subst_stmt(
     stmt: &TypedStmt,
     subst: &HashMap<String, Ty>,
     generic_fns: &HashMap<String, TypedFnDef>,
+    generic_impl_hooks: &HashMap<(String, String), (TypedHookDef, Ty)>,
+    impl_reqs: &mut Vec<ImplHookReq>,
 ) -> TypedStmt {
+    macro_rules! se {
+        ($e:expr) => {
+            subst_expr($e, subst, generic_fns, generic_impl_hooks, impl_reqs)
+        };
+    }
+    macro_rules! sb {
+        ($b:expr) => {
+            subst_block($b, subst, generic_fns, generic_impl_hooks, impl_reqs)
+        };
+    }
     match stmt {
-        TypedStmt::Expr(e) => TypedStmt::Expr(subst_expr(e, subst, generic_fns)),
+        TypedStmt::Expr(e) => TypedStmt::Expr(se!(e)),
         TypedStmt::Return { value, span } => TypedStmt::Return {
-            value: value.as_ref().map(|v| subst_expr(v, subst, generic_fns)),
+            value: value.as_ref().map(|v| se!(v)),
             span: *span,
         },
         TypedStmt::Raise { value, span } => TypedStmt::Raise {
-            value: value.as_ref().map(|v| subst_expr(v, subst, generic_fns)),
+            value: value.as_ref().map(|v| se!(v)),
             span: *span,
         },
-        TypedStmt::VarDecl {
-            name,
-            ty,
-            value,
-            mutable,
-            span,
-        } => TypedStmt::VarDecl {
+        TypedStmt::VarDecl { name, ty, value, mutable, span } => TypedStmt::VarDecl {
             name: name.clone(),
             ty: subst_ty(ty, subst),
-            value: subst_expr(value, subst, generic_fns),
+            value: se!(value),
             mutable: *mutable,
             span: *span,
         },
-        TypedStmt::Assign {
-            target,
-            value,
-            span,
-        } => TypedStmt::Assign {
-            target: subst_expr(target, subst, generic_fns),
-            value: subst_expr(value, subst, generic_fns),
+        TypedStmt::Assign { target, value, span } => TypedStmt::Assign {
+            target: se!(target),
+            value: se!(value),
             span: *span,
         },
-        TypedStmt::If {
-            branches,
-            else_branch,
-            span,
-        } => TypedStmt::If {
+        TypedStmt::CompoundAssign { target, op, rhs, span } => TypedStmt::CompoundAssign {
+            target: se!(target),
+            op: op.clone(),
+            rhs: se!(rhs),
+            span: *span,
+        },
+        TypedStmt::If { branches, else_branch, span } => TypedStmt::If {
             branches: branches
                 .iter()
-                .map(|(c, b)| {
-                    (
-                        subst_expr(c, subst, generic_fns),
-                        subst_block(b, subst, generic_fns),
-                    )
-                })
+                .map(|(c, b)| (se!(c), sb!(b)))
                 .collect(),
-            else_branch: else_branch
-                .as_ref()
-                .map(|b| subst_block(b, subst, generic_fns)),
+            else_branch: else_branch.as_ref().map(|b| sb!(b)),
             span: *span,
         },
         TypedStmt::While { cond, body, span } => TypedStmt::While {
-            cond: subst_expr(cond, subst, generic_fns),
-            body: subst_block(body, subst, generic_fns),
+            cond: se!(cond),
+            body: sb!(body),
             span: *span,
         },
         TypedStmt::DoWhile { body, cond, span } => TypedStmt::DoWhile {
-            body: subst_block(body, subst, generic_fns),
-            cond: subst_expr(cond, subst, generic_fns),
+            body: sb!(body),
+            cond: se!(cond),
             span: *span,
         },
-        TypedStmt::For {
-            binding,
-            binding_ty,
-            iterable,
-            body,
-            span,
-        } => TypedStmt::For {
+        TypedStmt::For { binding, binding_ty, iterable, body, span } => TypedStmt::For {
             binding: binding.clone(),
             binding_ty: subst_ty(binding_ty, subst),
-            iterable: subst_expr(iterable, subst, generic_fns),
-            body: subst_block(body, subst, generic_fns),
+            iterable: se!(iterable),
+            body: sb!(body),
             span: *span,
         },
-        TypedStmt::TryCatch {
-            body,
-            handlers,
-            finally,
-            span,
-        } => TypedStmt::TryCatch {
-            body: subst_block(body, subst, generic_fns),
+        TypedStmt::TryCatch { body, handlers, finally, span } => TypedStmt::TryCatch {
+            body: sb!(body),
             handlers: handlers
                 .iter()
                 .map(|h| TypedCatchHandler {
                     ty: subst_ty(&h.ty, subst),
                     binding: h.binding.clone(),
-                    body: subst_block(&h.body, subst, generic_fns),
+                    body: sb!(&h.body),
                     span: h.span,
                 })
                 .collect(),
-            finally: finally.as_ref().map(|b| subst_block(b, subst, generic_fns)),
+            finally: finally.as_ref().map(|b| sb!(b)),
             span: *span,
         },
         TypedStmt::FnDef(f) => TypedStmt::FnDef(TypedFnDef {
@@ -609,7 +713,7 @@ fn subst_stmt(
                 .collect(),
             variadic: f.variadic.clone(),
             return_type: subst_ty(&f.return_type, subst),
-            body: subst_block(&f.body, subst, generic_fns),
+            body: sb!(&f.body),
             is_builtin: f.is_builtin,
             span: f.span,
         }),
@@ -622,7 +726,19 @@ fn subst_expr(
     expr: &TypedExpr,
     subst: &HashMap<String, Ty>,
     generic_fns: &HashMap<String, TypedFnDef>,
+    generic_impl_hooks: &HashMap<(String, String), (TypedHookDef, Ty)>,
+    impl_reqs: &mut Vec<ImplHookReq>,
 ) -> TypedExpr {
+    macro_rules! se {
+        ($e:expr) => {
+            subst_expr($e, subst, generic_fns, generic_impl_hooks, impl_reqs)
+        };
+    }
+    macro_rules! sb {
+        ($b:expr) => {
+            subst_block($b, subst, generic_fns, generic_impl_hooks, impl_reqs)
+        };
+    }
     let ty = subst_ty(&expr.ty, subst);
     let kind = match &expr.kind {
         TypedExprKind::Call {
@@ -630,11 +746,9 @@ fn subst_expr(
             args,
             generic_params,
             generic_bounds,
+            param_tys,
         } => {
-            let new_args: Vec<TypedExpr> = args
-                .iter()
-                .map(|a| subst_expr(a, subst, generic_fns))
-                .collect();
+            let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
             if !generic_params.is_empty() {
                 if let TypedExprKind::Ident(name) = &callee.kind {
                     if let Some(gf) = generic_fns.get(name.as_str()) {
@@ -655,6 +769,7 @@ fn subst_expr(
                                 args: new_args,
                                 generic_bounds: vec![],
                                 generic_params: vec![],
+                                param_tys: vec![],
                             },
                             ty: resolved_ty,
                             span: expr.span,
@@ -662,26 +777,20 @@ fn subst_expr(
                     }
                 }
             }
-            let new_callee = subst_expr(callee, subst, generic_fns);
+            let new_callee = se!(callee);
             TypedExprKind::Call {
                 callee: Box::new(new_callee),
                 args: new_args,
                 generic_bounds: generic_bounds.clone(),
                 generic_params: generic_params.clone(),
+                param_tys: param_tys.iter().map(|t| subst_ty(t, subst)).collect(),
             }
         }
 
-        TypedExprKind::MethodCall {
-            object,
-            method_fn,
-            args,
-        } => {
-            let new_obj = subst_expr(object, subst, generic_fns);
-            let new_args: Vec<TypedExpr> = args
-                .iter()
-                .map(|a| subst_expr(a, subst, generic_fns))
-                .collect();
-            let new_method_fn = rewrite_method_fn(method_fn, subst);
+        TypedExprKind::MethodCall { object, method_fn, args } => {
+            let new_obj = se!(object);
+            let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
+            let new_method_fn = rewrite_method_fn(method_fn, subst, generic_impl_hooks, impl_reqs);
             TypedExprKind::MethodCall {
                 object: Box::new(new_obj),
                 method_fn: new_method_fn,
@@ -690,22 +799,16 @@ fn subst_expr(
         }
 
         TypedExprKind::StaticCall { method_fn, args } => {
-            let new_args: Vec<TypedExpr> = args
-                .iter()
-                .map(|a| subst_expr(a, subst, generic_fns))
-                .collect();
+            let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
             TypedExprKind::StaticCall {
-                method_fn: rewrite_method_fn(method_fn, subst),
+                method_fn: rewrite_method_fn(method_fn, subst, generic_impl_hooks, impl_reqs),
                 args: new_args,
             }
         }
 
         TypedExprKind::IndirectCall { fat_ptr, args } => {
-            let new_fp = subst_expr(fat_ptr, subst, generic_fns);
-            let new_args: Vec<TypedExpr> = args
-                .iter()
-                .map(|a| subst_expr(a, subst, generic_fns))
-                .collect();
+            let new_fp = se!(fat_ptr);
+            let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
             TypedExprKind::IndirectCall {
                 fat_ptr: Box::new(new_fp),
                 args: new_args,
@@ -714,51 +817,42 @@ fn subst_expr(
 
         TypedExprKind::BinOp { op, left, right } => TypedExprKind::BinOp {
             op: op.clone(),
-            left: Box::new(subst_expr(left, subst, generic_fns)),
-            right: Box::new(subst_expr(right, subst, generic_fns)),
+            left: Box::new(se!(left)),
+            right: Box::new(se!(right)),
         },
 
         TypedExprKind::UnOp { op, operand } => TypedExprKind::UnOp {
             op: op.clone(),
-            operand: Box::new(subst_expr(operand, subst, generic_fns)),
+            operand: Box::new(se!(operand)),
         },
 
         TypedExprKind::Field { object, field } => TypedExprKind::Field {
-            object: Box::new(subst_expr(object, subst, generic_fns)),
+            object: Box::new(se!(object)),
             field: field.clone(),
         },
 
         TypedExprKind::Index { object, index } => TypedExprKind::Index {
-            object: Box::new(subst_expr(object, subst, generic_fns)),
-            index: Box::new(subst_expr(index, subst, generic_fns)),
+            object: Box::new(se!(object)),
+            index: Box::new(se!(index)),
         },
 
         TypedExprKind::StructLiteral { ty_name, fields } => TypedExprKind::StructLiteral {
             ty_name: ty_name.clone(),
-            fields: fields
-                .iter()
-                .map(|(n, e)| (n.clone(), subst_expr(e, subst, generic_fns)))
-                .collect(),
+            fields: fields.iter().map(|(n, e)| (n.clone(), se!(e))).collect(),
         },
 
-        TypedExprKind::Tuple(elems) => TypedExprKind::Tuple(
-            elems
-                .iter()
-                .map(|e| subst_expr(e, subst, generic_fns))
-                .collect(),
-        ),
+        TypedExprKind::Tuple(elems) => {
+            TypedExprKind::Tuple(elems.iter().map(|e| se!(e)).collect())
+        }
 
         TypedExprKind::Match { scrutinee, arms } => TypedExprKind::Match {
-            scrutinee: Box::new(subst_expr(scrutinee, subst, generic_fns)),
+            scrutinee: Box::new(se!(scrutinee)),
             arms: arms
                 .iter()
                 .map(|arm| TypedMatchArm {
                     pattern: arm.pattern.clone(),
-                    guard: arm
-                        .guard
-                        .as_ref()
-                        .map(|g| subst_expr(g, subst, generic_fns)),
-                    body: subst_expr(&arm.body, subst, generic_fns),
+                    guard: arm.guard.as_ref().map(|g| se!(g)),
+                    body: se!(&arm.body),
                     span: arm.span,
                 })
                 .collect(),
@@ -774,67 +868,68 @@ fn subst_expr(
                 })
                 .collect(),
             body: match body {
-                TypedClosureBody::Expr(e) => {
-                    TypedClosureBody::Expr(Box::new(subst_expr(e, subst, generic_fns)))
-                }
-                TypedClosureBody::Block(b) => {
-                    TypedClosureBody::Block(subst_block(b, subst, generic_fns))
-                }
+                TypedClosureBody::Expr(e) => TypedClosureBody::Expr(Box::new(se!(e))),
+                TypedClosureBody::Block(b) => TypedClosureBody::Block(sb!(b)),
             },
         },
 
-        TypedExprKind::Unwrap(inner) => {
-            TypedExprKind::Unwrap(Box::new(subst_expr(inner, subst, generic_fns)))
-        }
+        TypedExprKind::Unwrap(inner) => TypedExprKind::Unwrap(Box::new(se!(inner))),
         TypedExprKind::As { expr: e, ty: t } => TypedExprKind::As {
-            expr: Box::new(subst_expr(e, subst, generic_fns)),
+            expr: Box::new(se!(e)),
             ty: subst_ty(t, subst),
         },
-        TypedExprKind::Spawn(inner) => {
-            TypedExprKind::Spawn(Box::new(subst_expr(inner, subst, generic_fns)))
-        }
+        TypedExprKind::Spawn(inner) => TypedExprKind::Spawn(Box::new(se!(inner))),
         TypedExprKind::Ref { mutable, expr: e } => TypedExprKind::Ref {
             mutable: *mutable,
-            expr: Box::new(subst_expr(e, subst, generic_fns)),
+            expr: Box::new(se!(e)),
         },
-        TypedExprKind::Gen { body } => TypedExprKind::Gen {
-            body: subst_block(body, subst, generic_fns),
-        },
-        TypedExprKind::GenSplice(inner) => {
-            TypedExprKind::GenSplice(Box::new(subst_expr(inner, subst, generic_fns)))
-        }
+        TypedExprKind::Gen { body } => TypedExprKind::Gen { body: sb!(body) },
+        TypedExprKind::GenSplice(inner) => TypedExprKind::GenSplice(Box::new(se!(inner))),
         TypedExprKind::Str(segs) => TypedExprKind::Str(
             segs.iter()
                 .map(|seg| match seg {
                     TypedStringSegment::Text(t) => TypedStringSegment::Text(t.clone()),
-                    TypedStringSegment::Interp(e) => {
-                        TypedStringSegment::Interp(subst_expr(e, subst, generic_fns))
-                    }
+                    TypedStringSegment::Interp(e) => TypedStringSegment::Interp(se!(e)),
                 })
                 .collect(),
         ),
         other => other.clone(),
     };
-    TypedExpr {
-        kind,
-        ty,
-        span: expr.span,
-    }
+    TypedExpr { kind, ty, span: expr.span }
 }
 
 // ---------------------------------------------------------------------------
 // Method function name rewriting
 // ---------------------------------------------------------------------------
 
-fn rewrite_method_fn(method_fn: &str, subst: &HashMap<String, Ty>) -> String {
+fn type_base_name(ty: &Ty) -> String {
+    match ty {
+        Ty::Vec(_) => "Vec".to_string(),
+        Ty::Set(_) => "Set".to_string(),
+        Ty::Option(_) => "Option".to_string(),
+        Ty::Shared(_) => "Shared".to_string(),
+        Ty::Map(_, _) => "Map".to_string(),
+        Ty::Named(_, name) | Ty::GenericParam(name) => name.clone(),
+        _ => type_mono_name(ty),
+    }
+}
+
+fn rewrite_method_fn(
+    method_fn: &str,
+    subst: &HashMap<String, Ty>,
+    generic_impl_hooks: &HashMap<(String, String), (TypedHookDef, Ty)>,
+    impl_reqs: &mut Vec<ImplHookReq>,
+) -> String {
     for (param, concrete_ty) in subst {
         let prefix = format!("{}_", param);
         if method_fn.starts_with(prefix.as_str()) {
             let suffix = &method_fn[prefix.len()..];
-            return match type_name_of(concrete_ty) {
-                Some(name) => format!("{}_{}", name, suffix),
-                None => suffix.to_string(),
-            };
+            let concrete_name = type_mono_name(concrete_ty);
+            let base = type_base_name(concrete_ty);
+            if generic_impl_hooks.contains_key(&(base.clone(), suffix.to_string())) {
+                impl_reqs.push((base, suffix.to_string(), concrete_ty.clone()));
+            }
+            return format!("{}_{}", concrete_name, suffix);
         }
     }
     method_fn.to_string()
@@ -861,15 +956,28 @@ mod tests {
 
     #[test]
     fn rewrite_method_fn_named() {
+        let hooks: HashMap<(String, String), (TypedHookDef, Ty)> = HashMap::new();
+        let mut reqs: Vec<ImplHookReq> = Vec::new();
         let mut subst = HashMap::new();
         subst.insert("T".to_string(), Ty::Named(TypeId(1), "Circle".into()));
-        assert_eq!(rewrite_method_fn("T_draw", &subst), "Circle_draw");
+        assert_eq!(rewrite_method_fn("T_draw", &subst, &hooks, &mut reqs), "Circle_draw");
     }
 
     #[test]
     fn rewrite_method_fn_no_match() {
+        let hooks: HashMap<(String, String), (TypedHookDef, Ty)> = HashMap::new();
+        let mut reqs: Vec<ImplHookReq> = Vec::new();
         let subst: HashMap<String, Ty> = HashMap::new();
-        assert_eq!(rewrite_method_fn("Vec_add", &subst), "Vec_add");
+        assert_eq!(rewrite_method_fn("Vec_add", &subst, &hooks, &mut reqs), "Vec_add");
+    }
+
+    #[test]
+    fn rewrite_method_fn_vec_uses_mono_name() {
+        let hooks: HashMap<(String, String), (TypedHookDef, Ty)> = HashMap::new();
+        let mut reqs: Vec<ImplHookReq> = Vec::new();
+        let mut subst = HashMap::new();
+        subst.insert("T".to_string(), Ty::Vec(Box::new(Ty::Named(TypeId(1), "Item".into()))));
+        assert_eq!(rewrite_method_fn("T_to_str", &subst, &hooks, &mut reqs), "Vec_Item_to_str");
     }
 
     #[test]

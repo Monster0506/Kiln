@@ -148,6 +148,71 @@ interface Zero {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Multi-bound generic parameter syntax
+// ---------------------------------------------------------------------------
+
+#[test]
+fn multi_bound_plus_syntax() {
+    parse_ok(
+        r#"
+def sum[T:Addable + Zero](items: Vec[T]) -> T {
+    let total: T = T.zero()
+    for item <- items {
+        total += item
+    }
+    total
+}
+"#,
+    );
+}
+
+#[test]
+fn multi_bound_paren_syntax() {
+    parse_ok(
+        r#"
+def sum[T:(Addable, Zero)](items: Vec[T]) -> T {
+    let total: T = T.zero()
+    for item <- items {
+        total += item
+    }
+    total
+}
+"#,
+    );
+}
+
+#[test]
+fn multi_bound_paren_single_bound() {
+    parse_ok(r#"def foo[T:(Addable)](x: T) -> T { x }"#);
+}
+
+#[test]
+fn multi_bound_plus_and_paren_yield_same_bounds() {
+    use kiln_compiler::parser::ast::{Item, GenericParamKind};
+
+    let src_plus = r#"def f[T:Addable + Zero](x: T) -> T { x }"#;
+    let src_paren = r#"def f[T:(Addable, Zero)](x: T) -> T { x }"#;
+
+    let tok_plus = Lexer::new(src_plus).tokenize().unwrap();
+    let file_plus = Parser::new(tok_plus).parse_file().unwrap();
+    let tok_paren = Lexer::new(src_paren).tokenize().unwrap();
+    let file_paren = Parser::new(tok_paren).parse_file().unwrap();
+
+    let bounds_of = |file: &kiln_compiler::parser::ast::SourceFile| {
+        if let Item::Function(f) = &file.items[0] {
+            let p = &f.generic_params[0];
+            assert_eq!(p.kind, GenericParamKind::Type);
+            p.bounds.clone()
+        } else {
+            panic!("expected fn def")
+        }
+    };
+
+    assert_eq!(bounds_of(&file_plus), bounds_of(&file_paren));
+    assert_eq!(bounds_of(&file_plus), vec!["Addable", "Zero"]);
+}
+
 #[test]
 fn static_annotation_sets_is_static_on_hook() {
     use kiln_compiler::lexer::Lexer;

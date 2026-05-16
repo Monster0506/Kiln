@@ -574,6 +574,7 @@ fn infer_call_ident(
             ret,
             generic_params: gparams,
             generic_bounds: gbounds,
+            inferred_bounds: ibounds,
             ..
         }) => {
             if params.len() != typed_args.len() && !params.iter().any(|(_, t)| *t == Ty::Unknown) {
@@ -589,12 +590,28 @@ fn infer_call_ident(
                 Box::new(ret_ty.clone()),
             );
             let callee = mk(TypedExprKind::Ident(name.to_string()), callee_ty, span);
+            let mut all_bounds = gbounds.clone();
+            for ib in ibounds {
+                if let Some(existing) = all_bounds
+                    .iter_mut()
+                    .find(|b| b.param == ib.param && b.iface == ib.iface)
+                {
+                    if existing.source_span.is_none() && ib.source_span.is_some() {
+                        existing.source_span = ib.source_span;
+                        existing.source_desc = ib.source_desc.clone();
+                    }
+                } else {
+                    all_bounds.push(ib.clone());
+                }
+            }
+            let declared_param_tys: Vec<Ty> = params.iter().map(|(_, t)| t.clone()).collect();
             mk(
                 TypedExprKind::Call {
                     callee: Box::new(callee),
                     args: typed_args,
-                    generic_bounds: gbounds.clone(),
+                    generic_bounds: all_bounds,
                     generic_params: gparams.clone(),
+                    param_tys: declared_param_tys,
                 },
                 ret_ty,
                 span,
@@ -614,12 +631,29 @@ fn infer_call_ident(
                         callee_ty,
                         span,
                     );
+                    let mut all_bounds = overload.generic_bounds.clone();
+                    for ib in &overload.inferred_bounds {
+                        if let Some(existing) = all_bounds
+                            .iter_mut()
+                            .find(|b| b.param == ib.param && b.iface == ib.iface)
+                        {
+                            if existing.source_span.is_none() && ib.source_span.is_some() {
+                                existing.source_span = ib.source_span;
+                                existing.source_desc = ib.source_desc.clone();
+                            }
+                        } else {
+                            all_bounds.push(ib.clone());
+                        }
+                    }
+                    let declared_param_tys: Vec<Ty> =
+                        overload.params.iter().map(|(_, t)| t.clone()).collect();
                     mk(
                         TypedExprKind::Call {
                             callee: Box::new(callee),
                             args: typed_args,
-                            generic_bounds: overload.generic_bounds.clone(),
+                            generic_bounds: all_bounds,
                             generic_params: overload.generic_params.clone(),
+                            param_tys: declared_param_tys,
                         },
                         ret_ty,
                         span,
@@ -637,6 +671,7 @@ fn infer_call_ident(
                             args: typed_args,
                             generic_bounds: vec![],
                             generic_params: vec![],
+                            param_tys: vec![],
                         },
                         Ty::Unknown,
                         span,
@@ -666,6 +701,7 @@ fn infer_call_ident(
                     args: typed_args,
                     generic_bounds: vec![],
                     generic_params: vec![],
+                    param_tys: vec![],
                 },
                 Ty::Unknown,
                 span,
@@ -845,6 +881,12 @@ fn lower_stmt_shallow(
         } => TypedStmt::Assign {
             target: infer_typed_expr(target, env, registry, errors),
             value: infer_typed_expr(value, env, registry, errors),
+            span: *span,
+        },
+        Stmt::CompoundAssign { target, op, rhs, span } => TypedStmt::CompoundAssign {
+            target: infer_typed_expr(target, env, registry, errors),
+            op: op.clone(),
+            rhs: infer_typed_expr(rhs, env, registry, errors),
             span: *span,
         },
         Stmt::If {

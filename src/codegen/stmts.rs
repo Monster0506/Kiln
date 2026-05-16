@@ -1,8 +1,11 @@
 use crate::analyzer::ty::Ty;
 use crate::analyzer::typed_ast::{TypedBlock, TypedExpr, TypedExprKind, TypedStmt};
+use crate::analyzer::infer::type_name_of;
 use crate::codegen::exprs::{
-    call_fn_by_name, coerce_to, coerce_to_i64, lower_typed_expr_loops, LowerCtx, VarEnv,
+    call_fn_by_name, coerce_to, coerce_to_i64, lower_binop, lower_typed_expr_loops, LowerCtx,
+    VarEnv,
 };
+use crate::codegen::names::binop_fn_suffix;
 use crate::codegen::memory::store_field;
 use crate::codegen::types::clif_type;
 use cranelift_codegen::ir::condcodes::IntCC;
@@ -91,6 +94,58 @@ fn lower_typed_stmt(
                     let ptr = lower_typed_expr_loops(object, builder, vars, loops, ctx);
                     if let Some(off) = ctx.layouts.find_field_offset(field) {
                         let coerced = coerce_to_i64(val, builder);
+                        store_field(coerced, ptr, off, builder);
+                    }
+                }
+                _ => {
+                    lower_typed_expr_loops(target, builder, vars, loops, ctx);
+                }
+            }
+        }
+
+        TypedStmt::CompoundAssign { target, op, rhs, .. } => {
+            let rhs_val = lower_typed_expr_loops(rhs, builder, vars, loops, ctx);
+            let use_native = matches!(target.ty, Ty::Int | Ty::Float | Ty::Bool);
+            match &target.kind {
+                TypedExprKind::Ident(name) => {
+                    if let Some(var) = vars.get(name) {
+                        let cur = builder.use_var(var);
+                        let result = if !use_native {
+                            if let Some(type_name) = type_name_of(&target.ty) {
+                                if let Some(suffix) = binop_fn_suffix(op) {
+                                    let fn_name = format!("{}_{}", type_name, suffix);
+                                    call_fn_by_name(&fn_name, &[cur, rhs_val], builder, ctx)
+                                } else {
+                                    lower_binop(op, cur, rhs_val, builder, ctx.module)
+                                }
+                            } else {
+                                lower_binop(op, cur, rhs_val, builder, ctx.module)
+                            }
+                        } else {
+                            lower_binop(op, cur, rhs_val, builder, ctx.module)
+                        };
+                        builder.def_var(var, result);
+                    }
+                }
+                TypedExprKind::Field { object, field } => {
+                    let ptr = lower_typed_expr_loops(object, builder, vars, loops, ctx);
+                    if let Some(off) = ctx.layouts.find_field_offset(field) {
+                        let cur = crate::codegen::memory::load_field(ptr, off, builder);
+                        let result = if !use_native {
+                            if let Some(type_name) = type_name_of(&target.ty) {
+                                if let Some(suffix) = binop_fn_suffix(op) {
+                                    let fn_name = format!("{}_{}", type_name, suffix);
+                                    call_fn_by_name(&fn_name, &[cur, rhs_val], builder, ctx)
+                                } else {
+                                    lower_binop(op, cur, rhs_val, builder, ctx.module)
+                                }
+                            } else {
+                                lower_binop(op, cur, rhs_val, builder, ctx.module)
+                            }
+                        } else {
+                            lower_binop(op, cur, rhs_val, builder, ctx.module)
+                        };
+                        let coerced = coerce_to_i64(result, builder);
                         store_field(coerced, ptr, off, builder);
                     }
                 }

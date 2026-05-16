@@ -3,6 +3,19 @@ use crate::analyzer::error::AnalysisError;
 use crate::analyzer::ty::Ty;
 use crate::parser::ast::TypeExpr;
 
+/// Maps a bare primitive type name to its `Ty` without needing analyzer context.
+/// Returns `None` for non-primitive names (containers, user types, etc.).
+pub fn resolve_primitive_name(name: &str) -> Option<Ty> {
+    match name {
+        "int" => Some(Ty::Int),
+        "float" => Some(Ty::Float),
+        "bool" => Some(Ty::Bool),
+        "str" => Some(Ty::Str),
+        "void" => Some(Ty::Void),
+        _ => None,
+    }
+}
+
 pub fn resolve_type_expr(
     expr: &TypeExpr,
     env: &Env,
@@ -21,12 +34,10 @@ pub fn resolve_type_expr(
                 .map(|g| resolve_type_expr(g, env, errors))
                 .collect();
 
+            if let Some(prim) = resolve_primitive_name(name) {
+                return prim;
+            }
             match name.as_str() {
-                "int" => Ty::Int,
-                "float" => Ty::Float,
-                "bool" => Ty::Bool,
-                "str" => Ty::Str,
-                "void" => Ty::Void,
                 "Option" => Ty::Option(Box::new(nth(&resolved_generics, 0))),
                 "Vec" => Ty::Vec(Box::new(nth(&resolved_generics, 0))),
                 "Set" => Ty::Set(Box::new(nth(&resolved_generics, 0))),

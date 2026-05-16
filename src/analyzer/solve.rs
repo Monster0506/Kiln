@@ -121,11 +121,29 @@ pub fn solve(constraints: &[Constraint], registry: &TypeRegistry) -> Vec<Analysi
     for c in constraints {
         if !satisfies(&c.ty, &c.iface, registry) {
             let context = c.reason.context_string();
+            let (note, note_span) = match &c.reason {
+                crate::analyzer::constrain::ConstraintReason::GenericBoundCheck {
+                    fn_name,
+                    is_explicit,
+                    source_span,
+                    source_desc,
+                    ..
+                } if !source_desc.is_empty() => {
+                    let verb = if *is_explicit { "required by" } else { "inferred from" };
+                    (
+                        format!("bound {verb} {source_desc} in `{fn_name}`"),
+                        *source_span,
+                    )
+                }
+                _ => (String::new(), None),
+            };
             errors.push(AnalysisError::BoundViolation {
                 ty: c.ty.to_string(),
                 iface: c.iface.clone(),
                 context,
                 span: c.span,
+                note,
+                note_span,
             });
         }
     }

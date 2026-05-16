@@ -109,6 +109,32 @@ fn check_typed_stmt(
             }
         }
 
+        Stmt::CompoundAssign { target, op, rhs, span } => {
+            if let Expr::Ident(name, ident_span) = target {
+                match env.lookup(name) {
+                    Some(Symbol::Var { mutable: false, .. }) => {
+                        errors.push(AnalysisError::AssignToImmutable {
+                            name: name.clone(),
+                            span: *ident_span,
+                        });
+                    }
+                    None => {
+                        errors.push(AnalysisError::UndefinedName {
+                            name: name.clone(),
+                            span: *ident_span,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            TypedStmt::CompoundAssign {
+                target: infer_typed_expr(target, env, registry, errors),
+                op: op.clone(),
+                rhs: infer_typed_expr(rhs, env, registry, errors),
+                span: *span,
+            }
+        }
+
         Stmt::Return { value, span } => {
             let (typed, val_span) = match value {
                 Some(v) => {
@@ -323,9 +349,13 @@ pub fn check_fn_def(
                         .map(move |b| crate::analyzer::env::GenericBound {
                             param: g.name.clone(),
                             iface: b.clone(),
+                            is_explicit: true,
+                            source_span: None,
+                            source_desc: String::new(),
                         })
                 })
                 .collect(),
+            inferred_bounds: vec![],
             params: params
                 .iter()
                 .map(|p| (p.name.clone(), p.ty.clone()))

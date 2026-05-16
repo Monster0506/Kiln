@@ -6,6 +6,8 @@ pub mod env;
 pub mod error;
 pub mod exhaustive;
 pub mod infer;
+pub mod infer_bounds;
+pub mod op_hierarchy;
 pub mod resolve;
 pub mod returns;
 pub mod solve;
@@ -254,6 +256,7 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
         Symbol::Fn {
             generic_params: vec!["T".into()],
             generic_bounds: vec![],
+            inferred_bounds: vec![],
             params: vec![("value".into(), Ty::GenericParam("T".into()))],
             ret: Ty::Option(Box::new(Ty::GenericParam("T".into()))),
             span: s,
@@ -274,6 +277,7 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
             Symbol::Fn {
                 generic_params: vec![],
                 generic_bounds: vec![],
+                inferred_bounds: vec![],
                 params: params
                     .iter()
                     .enumerate()
@@ -371,6 +375,9 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         g.bounds.iter().map(move |b| GenericBound {
                             param: g.name.clone(),
                             iface: b.clone(),
+                            is_explicit: true,
+                            source_span: None,
+                            source_desc: String::new(),
                         })
                     })
                     .collect();
@@ -379,6 +386,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     Symbol::Fn {
                         generic_params: f.generic_params.iter().map(|g| g.name.clone()).collect(),
                         generic_bounds,
+                        inferred_bounds: vec![],
                         params,
                         ret,
                         span: f.span,
@@ -418,12 +426,16 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             g.bounds.iter().map(move |b| GenericBound {
                                 param: g.name.clone(),
                                 iface: b.clone(),
+                                is_explicit: true,
+                                source_span: None,
+                                source_desc: String::new(),
                             })
                         })
                         .collect();
                     overloads.push(FnOverload {
                         generic_params: f.generic_params.iter().map(|g| g.name.clone()).collect(),
                         generic_bounds,
+                        inferred_bounds: vec![],
                         params,
                         ret,
                         mangled_name,
@@ -785,6 +797,29 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 env.pop_scope();
                 if has_generics {
                     env.pop_scope();
+                    // Infer bounds from how the generic params are used in the body.
+                    let gparams: Vec<String> =
+                        f.generic_params.iter().map(|g| g.name.clone()).collect();
+                    let inferred =
+                        infer_bounds::infer_bounds_from_body(&body, &gparams, &registry);
+                    if !inferred.is_empty() {
+                        match env.lookup_mut(&f.name) {
+                            Some(Symbol::Fn {
+                                ref mut inferred_bounds,
+                                ..
+                            }) => {
+                                *inferred_bounds = inferred;
+                            }
+                            Some(Symbol::FnOverloadSet { ref mut overloads }) => {
+                                if let Some(ov) =
+                                    overloads.iter_mut().find(|o| o.span == f.span)
+                                {
+                                    ov.inferred_bounds = inferred;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 if ret != Ty::Void && !f.body.stmts.is_empty() && !returns::always_returns(&f.body)
                 {
@@ -1106,6 +1141,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 typed_items.push(TypedItem::ImplBlock(TypedImplBlock {
                     interface: interface_name,
                     for_type: type_name,
+                    for_type_ty: self_ty,
                     kind: impl_block.kind.clone(),
                     methods: typed_methods,
                     hooks: typed_hooks,

@@ -161,6 +161,28 @@ interface MutableIndexableWith[Index] {
     hook []=(index: Index, value: Output) -> void
 }
 
+# ---- Assign operation closed shorthands ------------------------------------
+
+interface AddAssignable: AddAssignableWith[Self] {
+    hook +=(rhs: Self) -> void
+}
+
+interface SubtractAssignable: SubtractAssignableWith[Self] {
+    hook -=(rhs: Self) -> void
+}
+
+interface MultiplyAssignable: MultiplyAssignableWith[Self] {
+    hook *=(rhs: Self) -> void
+}
+
+interface DivideAssignable: DivideAssignableWith[Self] {
+    hook /=(rhs: Self) -> void
+}
+
+interface RemainderAssignable: RemainderAssignableWith[Self] {
+    hook %=(rhs: Self) -> void
+}
+
 # ---- Arithmetic layer 2: closed self-typed shorthands -----------------------
 
 interface Addable: AddableWith[Self, Output=Self] {

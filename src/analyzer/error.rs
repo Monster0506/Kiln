@@ -39,6 +39,10 @@ pub enum AnalysisError {
         iface: String,
         context: String,
         span: Span,
+        /// Span in the generic function body where this bound was inferred (for the note line).
+        note_span: Option<Span>,
+        /// Human-readable explanation for the note, e.g. "required because `sum` uses `+=` on `T`".
+        note: String,
     },
 
     #[error("{span}: field `{field}` is private")]
@@ -125,7 +129,7 @@ impl AnalysisError {
             AnalysisError::BoundViolation {
                 ty, iface, context, ..
             } => {
-                format!("type `{ty}` does not implement `{iface}`{context}")
+                format!("`{ty}` does not implement `{iface}`{context}")
             }
             AnalysisError::PrivateField { field, .. } => {
                 format!("field `{field}` is private")
@@ -139,6 +143,16 @@ impl AnalysisError {
             AnalysisError::NonObjectSafeInterface { iface, method, .. } => {
                 format!("interface `{iface}` is not object-safe (method `{method}` uses `Self`)")
             }
+        }
+    }
+
+    /// Returns `(note_text, note_span)` for errors that carry a secondary location.
+    pub fn note_info(&self) -> Option<(String, Option<Span>)> {
+        match self {
+            AnalysisError::BoundViolation { note, note_span, .. } if !note.is_empty() => {
+                Some((note.clone(), *note_span))
+            }
+            _ => None,
         }
     }
 

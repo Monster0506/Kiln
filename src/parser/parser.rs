@@ -445,15 +445,27 @@ impl Parser {
                 } else {
                     GenericParamKind::Type
                 };
-                // Generic params use `+` to separate multiple bounds.
-                // Commas always start the next param. Read one bound, then
-                // continue with `+` for additional bounds.
+                // Generic params use `+` to separate multiple bounds, or
+                // a parenthesized comma-separated list: T:Bound or
+                // T:A+B or T:(A, B).
                 let bounds = if self.eat(&TokenKind::Colon) {
-                    let mut bs = vec![self.expect_ident()?];
-                    while self.eat(&TokenKind::Plus) {
-                        bs.push(self.expect_ident()?);
+                    if self.eat(&TokenKind::LParen) {
+                        let mut bs = Vec::new();
+                        while self.peek() != &TokenKind::RParen {
+                            bs.push(self.expect_ident()?);
+                            if !self.eat(&TokenKind::Comma) {
+                                break;
+                            }
+                        }
+                        self.expect(TokenKind::RParen)?;
+                        bs
+                    } else {
+                        let mut bs = vec![self.expect_ident()?];
+                        while self.eat(&TokenKind::Plus) {
+                            bs.push(self.expect_ident()?);
+                        }
+                        bs
                     }
-                    bs
                 } else {
                     vec![]
                 };
@@ -1239,17 +1251,11 @@ impl Parser {
                 } else if let Some(bin_op) = compound_assign_op(self.peek()) {
                     self.advance();
                     let rhs = self.parse_expr(0)?;
-                    let rhs_span = rhs.span();
-                    let value = Expr::BinOp {
-                        op: bin_op,
-                        left: Box::new(expr.clone()),
-                        right: Box::new(rhs),
-                        span: rhs_span,
-                    };
                     let end = self.peek_span().start;
-                    Ok(Stmt::Assign {
+                    Ok(Stmt::CompoundAssign {
                         target: expr,
-                        value,
+                        op: bin_op,
+                        rhs,
                         span: Span::new(start.start, end),
                     })
                 } else {
@@ -1399,17 +1405,11 @@ impl Parser {
         if let Some(bin_op) = compound_assign_op(self.peek()) {
             self.advance();
             let rhs = self.parse_expr(0)?;
-            let rhs_span = rhs.span();
-            let value = Expr::BinOp {
-                op: bin_op,
-                left: Box::new(lhs.clone()),
-                right: Box::new(rhs),
-                span: rhs_span,
-            };
             let end = self.peek_span().start;
-            return Ok(Stmt::Assign {
+            return Ok(Stmt::CompoundAssign {
                 target: lhs,
-                value,
+                op: bin_op,
+                rhs,
                 span: Span::new(start.start, end),
             });
         }
@@ -2540,13 +2540,10 @@ export { Point, distance }
         let src = "def f() -> void { x += 1 }";
         let file = parse(src).unwrap();
         match &file.items[0] {
-            Item::Function(f) => {
-                assert!(
-                    matches!(&f.body.stmts[0], Stmt::Assign { .. }),
-                    "expected Assign, got {:?}",
-                    &f.body.stmts[0]
-                );
-            }
+            Item::Function(f) => match &f.body.stmts[0] {
+                Stmt::CompoundAssign { op: BinOp::Add, .. } => {}
+                other => panic!("expected CompoundAssign(Add), got {other:?}"),
+            },
             other => panic!("{other:?}"),
         }
     }

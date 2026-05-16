@@ -319,6 +319,13 @@ pub enum Stmt {
         value: Expr,
         span: Span,
     },
+    /// `x += 5`, `x -= 1`, etc.
+    CompoundAssign {
+        target: Expr,
+        op: BinOp,
+        rhs: Expr,
+        span: Span,
+    },
     /// `return expr`
     Return { value: Option<Expr>, span: Span },
     /// `raise expr` or bare `raise` (re-raise)

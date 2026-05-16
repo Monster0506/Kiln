@@ -396,7 +396,22 @@ fn lower_typed_expr_inner(
 
         TypedExprKind::Unwrap(inner) => lower_typed_expr(inner, builder, vars, ctx),
 
-        TypedExprKind::As { expr, .. } => lower_typed_expr(expr, builder, vars, ctx),
+        TypedExprKind::As { expr, ty: target_ty } => {
+            let v = lower_typed_expr(expr, builder, vars, ctx);
+            let src = &expr.ty;
+            match (src, target_ty) {
+                (s, t) if s == t => v,
+                (_, Ty::Str) => {
+                    let fn_name = type_name_of(src)
+                        .map(|n| format!("{}_to_str", n))
+                        .unwrap_or_else(|| "__kiln_to_str_dispatch".to_string());
+                    call_fn_by_name(&fn_name, &[v], builder, ctx)
+                }
+                (Ty::Int, Ty::Float) => builder.ins().fcvt_from_sint(types::F64, v),
+                (Ty::Float, Ty::Int) => builder.ins().fcvt_to_sint_sat(types::I64, v),
+                _ => v,
+            }
+        }
 
         TypedExprKind::Match { scrutinee, arms } => {
             let s = lower_typed_expr(scrutinee, builder, vars, ctx);
@@ -869,7 +884,7 @@ fn coerce_binop_operands(lv: Value, rv: Value, builder: &mut FunctionBuilder) ->
 // Binop lowering
 // ---------------------------------------------------------------------------
 
-fn lower_binop(
+pub fn lower_binop(
     op: &BinOp,
     lv: Value,
     rv: Value,

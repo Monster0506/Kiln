@@ -23,22 +23,5 @@ impl SubtractAssignableWith[int] for Counter {
     }
 }
 
-# ---- Convenience shorthands --------------------------------------------------
-
-interface AddAssignable: AddAssignableWith[Self] {
-}
-
-interface SubtractAssignable: SubtractAssignableWith[Self] {
-}
-
-interface MultiplyAssignable: MultiplyAssignableWith[Self] {
-}
-
-interface DivideAssignable: DivideAssignableWith[Self] {
-}
-
-interface RemainderAssignable: RemainderAssignableWith[Self] {
-}
-
 def main() -> void {
 }

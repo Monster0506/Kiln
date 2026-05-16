@@ -20,15 +20,10 @@ pub fn clif_type(ty: &Ty) -> Option<Type> {
 
         // Composite scalar-ish: represented as a pointer word.
         Ty::Str
-        | Ty::Shared(_)
         | Ty::Ref(_, _)
-        | Ty::Vec(_)
-        | Ty::Set(_)
-        | Ty::Map(_, _)
-        | Ty::Option(_)
         | Ty::Tuple(_)
         | Ty::Callable(_, _)
-        | Ty::Named(_, _)
+        | Ty::Named(_, _, _)
         | Ty::Interface(_, _)
         | Ty::Union(_)
         | Ty::GenericParam(_)
@@ -84,11 +79,18 @@ mod tests {
 
     #[test]
     fn pointer_types_lower_to_i64() {
-        assert_eq!(clif_type(&Ty::Shared(Box::new(Ty::Int))), Some(types::I64));
+        use crate::analyzer::ty::TypeId;
+        assert_eq!(
+            clif_type(&Ty::Named(TypeId(0), "Shared".into(), vec![Ty::Int])),
+            Some(types::I64)
+        );
         assert_eq!(
             clif_type(&Ty::Ref(Box::new(Ty::Int), false)),
             Some(types::I64)
         );
-        assert_eq!(clif_type(&Ty::Vec(Box::new(Ty::Int))), Some(types::I64));
+        assert_eq!(
+            clif_type(&Ty::Named(TypeId(1), "Vec".into(), vec![Ty::Int])),
+            Some(types::I64)
+        );
     }
 }

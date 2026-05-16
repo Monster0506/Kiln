@@ -15,6 +15,32 @@ struct Vec[T] {
     def clear() -> void
 }
 
+@builtin
+struct Map[K, V] {
+    def new() -> Map[K, V]
+    def get(key: K) -> V
+    def set(key: K, value: V) -> void
+    def contains(key: K) -> bool
+    def remove(key: K) -> void
+    def len() -> int
+}
+
+@builtin
+struct Set[T] {
+    def new() -> Set[T]
+    def add(item: T) -> void
+    def contains(item: T) -> bool
+    def remove(item: T) -> void
+    def len() -> int
+}
+
+@builtin
+struct Shared[T] {
+    def new(value: T) -> Shared[T]
+    def get() -> T
+    def set(value: T) -> void
+}
+
 # ---- Builtin function declarations ------------------------------------------
 
 @builtin

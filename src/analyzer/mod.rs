@@ -28,20 +28,28 @@ use crate::analyzer::typed_ast::{
 use crate::diagnostics::Span;
 use crate::parser::ast::{HookName, ImplKind, Item, SourceFile, TypeExpr};
 
-fn register_builtins(env: &mut Env, _registry: &mut ty::TypeRegistry) {
+fn register_builtins(_env: &mut Env, _registry: &mut ty::TypeRegistry) {
+    // None and Some are registered after pass 1 (register_option_symbols),
+    // once Option has been declared in the prelude and its TypeId is known.
+    // Everything else -- conformances, Exception, len/panic/assert/clock_ms --
+    // is declared in prelude.kn.
+}
+
+/// Register `None` and `Some` after the prelude has been processed so we
+/// can look up Option's TypeId from the registry.
+fn register_option_symbols(env: &mut Env, registry: &ty::TypeRegistry) {
     let s = Span::new(0, 0);
+    let opt_id = registry
+        .lookup_by_name("Option")
+        .map(|e| e.id.clone())
+        .unwrap_or(ty::TypeId(0));
 
-    // None and Some cannot be expressed as plain Kiln enum variants because
-    // Option[T] is a compiler-intrinsic Ty variant (Ty::Option). Everything
-    // else -- conformances, Exception, len/panic/assert/clock_ms -- is declared
-    // in prelude.kn.
-
-    // None is the unit variant of Option[T]; treat it as Option[Unknown] so
+    // None is the unit variant of Option[T]; use Unknown as the type arg so
     // comparisons like `v != None` type-check without knowing T.
     env.define(
         "None",
         Symbol::Var {
-            ty: Ty::Option(Box::new(Ty::Unknown)),
+            ty: Ty::Named(opt_id.clone(), "Option".into(), vec![Ty::Unknown]),
             mutable: false,
             span: s,
         },
@@ -54,7 +62,7 @@ fn register_builtins(env: &mut Env, _registry: &mut ty::TypeRegistry) {
             generic_bounds: vec![],
             inferred_bounds: vec![],
             params: vec![("value".into(), Ty::GenericParam("T".into()))],
-            ret: Ty::Option(Box::new(Ty::GenericParam("T".into()))),
+            ret: Ty::Named(opt_id, "Option".into(), vec![Ty::GenericParam("T".into())]),
             span: s,
         },
     );
@@ -87,6 +95,9 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
     // Pass 1: collect top-level names.
     errors.extend(collect::collect_top_level(source, &mut env, &mut registry));
+
+    // Register None/Some now that Option has been processed from the prelude.
+    register_option_symbols(&mut env, &registry);
 
     // Pass 1b: resolve top-level function signatures, grouping overloads.
     {
@@ -336,7 +347,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             // Look up the concrete type from the registry so Self resolves to Ty::Named("Item")
             // rather than a generic param.
             let self_concrete_ty = if let Some(e) = registry.lookup_by_name(&type_name) {
-                Ty::Named(e.id.clone(), type_name.clone())
+                Ty::Named(e.id.clone(), type_name.clone(), vec![])
             } else {
                 Ty::Unknown
             };

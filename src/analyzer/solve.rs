@@ -16,83 +16,60 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
         // Structural types with no registered conformance.
         Ty::Void | Ty::Tuple(_) | Ty::Callable(_, _) | Ty::Ref(_, _) | Ty::Union(_) => false,
 
-        // Container types recurse over their element/key types.
-        Ty::Vec(inner) => satisfies_generic_one("Vec", inner, iface, registry),
-        Ty::Set(inner) => satisfies_generic_one("Set", inner, iface, registry),
-        Ty::Option(inner) => satisfies_generic_one("Option", inner, iface, registry),
-        Ty::Shared(inner) => satisfies_generic_one("Shared", inner, iface, registry),
-        Ty::Map(key, val) => satisfies_map(key, val, iface, registry),
+        // Named types (including generic containers like Vec, Option, Map).
+        Ty::Named(_, name, args) => {
+            // Generic placeholder names have no TypeRegistry entry; treat as passing.
+            if registry.lookup_by_name(name.as_str()).is_none() {
+                return true;
+            }
+            let entries = registry.get_conformances(name.as_str(), iface);
+            if !entries.is_empty() {
+                let ok = if args.is_empty() {
+                    true
+                } else if args.len() == 1 {
+                    // Single-arg container: all bounds checked against args[0].
+                    let inner = &args[0];
+                    entries.iter().any(|entry| {
+                        entry
+                            .bounds
+                            .iter()
+                            .all(|(_, bound_iface)| satisfies(inner, bound_iface, registry))
+                    })
+                } else {
+                    // Multi-arg container: bounds matched positionally to args.
+                    entries.iter().any(|entry| {
+                        entry.bounds.iter().enumerate().all(|(i, (_, bound_iface))| {
+                            args.get(i).map_or(true, |a| satisfies(a, bound_iface, registry))
+                        })
+                    })
+                };
+                if ok {
+                    return true;
+                }
+            }
+            // Check shorthand operator variants (e.g. `AddableWith[X]` implies `Addable`).
+            if let Some(with_iface) = operator_shorthand_to_with(iface) {
+                if !registry.get_conformances(name.as_str(), with_iface).is_empty() {
+                    return true;
+                }
+            }
+            false
+        }
 
-        // All remaining concrete types (primitives + user-defined Named) look up
-        // conformances by name. Named types additionally check operator shorthand
-        // variants. Adding a new primitive only requires updating type_name_of.
+        // Primitives look up conformances by name.
         _ => {
             let Some(name) = type_name_of(ty) else {
                 return false;
             };
-            if let Ty::Named(_, _) = ty {
-                // Generic placeholder names have no TypeRegistry entry; treat as passing.
-                if registry.lookup_by_name(&name).is_none() {
-                    return true;
-                }
-            }
             let entries = registry.get_conformances(&name, iface);
             if !entries.is_empty() {
                 return true;
-            }
-            // For Named types, also check shorthand operator variants
-            // (e.g. `AddableWith[X]` implies `Addable`).
-            if let Ty::Named(_, _) = ty {
-                if let Some(with_iface) = operator_shorthand_to_with(iface) {
-                    if !registry.get_conformances(&name, with_iface).is_empty() {
-                        return true;
-                    }
-                }
             }
             false
         }
     }
 }
 
-/// Check conformance for a single-parameter generic container (Vec, Set, Option, Shared).
-fn satisfies_generic_one(
-    type_name: &str,
-    inner: &Ty,
-    iface: &str,
-    registry: &TypeRegistry,
-) -> bool {
-    let entries = registry.get_conformances(type_name, iface);
-    if entries.is_empty() {
-        return false;
-    }
-    // Any one entry with all bounds satisfied is enough.
-    entries.iter().any(|entry| {
-        entry
-            .bounds
-            .iter()
-            .all(|(_param, bound_iface)| satisfies(inner, bound_iface, registry))
-    })
-}
-
-/// Check conformance for Map[K, V].
-fn satisfies_map(key: &Ty, val: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
-    let entries = registry.get_conformances("Map", iface);
-    if entries.is_empty() {
-        return false;
-    }
-    // Bounds are ordered: first bound applies to K, second to V (by convention).
-    entries.iter().any(|entry| {
-        let bounds = &entry.bounds;
-        match bounds.as_slice() {
-            [] => true,
-            [(_, k_iface)] => satisfies(key, k_iface, registry),
-            [(_, k_iface), (_, v_iface)] => {
-                satisfies(key, k_iface, registry) && satisfies(val, v_iface, registry)
-            }
-            _ => false,
-        }
-    })
-}
 
 /// Maps a shorthand operator interface to its heterogeneous `*With` variant.
 /// User-defined types implementing `AddableWith[X]` satisfy the `Addable` bound.
@@ -207,14 +184,16 @@ mod tests {
     #[test]
     fn vec_int_satisfies_display() {
         let r = make_registry();
-        assert!(satisfies(&Ty::Vec(Box::new(Ty::Int)), "Display", &r));
+        let ty = Ty::Named(crate::analyzer::ty::TypeId(99), "Vec".into(), vec![Ty::Int]);
+        assert!(satisfies(&ty, "Display", &r));
     }
 
     #[test]
     fn vec_vec_int_satisfies_display() {
         let r = make_registry();
-        let inner = Ty::Vec(Box::new(Ty::Int));
-        assert!(satisfies(&Ty::Vec(Box::new(inner)), "Display", &r));
+        let inner = Ty::Named(crate::analyzer::ty::TypeId(99), "Vec".into(), vec![Ty::Int]);
+        let outer = Ty::Named(crate::analyzer::ty::TypeId(99), "Vec".into(), vec![inner]);
+        assert!(satisfies(&outer, "Display", &r));
     }
 
     #[test]

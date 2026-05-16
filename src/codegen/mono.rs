@@ -263,9 +263,8 @@ fn is_generic_fn(f: &TypedFnDef) -> bool {
 fn contains_type_param(ty: &Ty) -> bool {
     match ty {
         Ty::GenericParam(_) => true,
-        Ty::Vec(t) | Ty::Set(t) | Ty::Option(t) | Ty::Shared(t) => contains_type_param(t),
+        Ty::Named(_, _, args) => args.iter().any(contains_type_param),
         Ty::Ref(t, _) => contains_type_param(t),
-        Ty::Map(k, v) => contains_type_param(k) || contains_type_param(v),
         Ty::Callable(ps, r) => ps.iter().any(contains_type_param) || contains_type_param(r),
         Ty::Tuple(ts) => ts.iter().any(contains_type_param),
         _ => false,
@@ -279,12 +278,12 @@ fn contains_type_param(ty: &Ty) -> bool {
 pub fn type_mono_name(ty: &Ty) -> String {
     match ty {
         Ty::Void => "void".into(),
-        Ty::Named(_, name) | Ty::Interface(_, name) | Ty::GenericParam(name) => name.clone(),
-        Ty::Vec(t) => format!("Vec_{}", type_mono_name(t)),
-        Ty::Set(t) => format!("Set_{}", type_mono_name(t)),
-        Ty::Option(t) => format!("Option_{}", type_mono_name(t)),
-        Ty::Shared(t) => format!("Shared_{}", type_mono_name(t)),
-        Ty::Map(k, v) => format!("Map_{}_{}", type_mono_name(k), type_mono_name(v)),
+        Ty::Named(_, name, args) if args.is_empty() => name.clone(),
+        Ty::Named(_, name, args) => {
+            let arg_names: Vec<String> = args.iter().map(type_mono_name).collect();
+            format!("{}_{}", name, arg_names.join("_"))
+        }
+        Ty::Interface(_, name) | Ty::GenericParam(name) => name.clone(),
         Ty::Tuple(ts) => {
             let inner: Vec<String> = ts.iter().map(type_mono_name).collect();
             format!("Tuple_{}", inner.join("_"))
@@ -552,13 +551,10 @@ fn unify_ty(pat: &Ty, concrete: &Ty, subst: &mut HashMap<String, Ty>) {
                 .entry(name.clone())
                 .or_insert_with(|| concrete.clone());
         }
-        (Ty::Vec(p), Ty::Vec(c))
-        | (Ty::Set(p), Ty::Set(c))
-        | (Ty::Option(p), Ty::Option(c))
-        | (Ty::Shared(p), Ty::Shared(c)) => unify_ty(p, c, subst),
-        (Ty::Map(kp, vp), Ty::Map(kc, vc)) => {
-            unify_ty(kp, kc, subst);
-            unify_ty(vp, vc, subst);
+        (Ty::Named(_, pname, pargs), Ty::Named(_, cname, cargs)) if pname == cname => {
+            for (pa, ca) in pargs.iter().zip(cargs.iter()) {
+                unify_ty(pa, ca, subst);
+            }
         }
         (Ty::Tuple(ps), Ty::Tuple(cs)) => {
             for (p, c) in ps.iter().zip(cs.iter()) {
@@ -613,12 +609,12 @@ fn subst_ty(ty: &Ty, subst: &HashMap<String, Ty>) -> Ty {
             .get(name.as_str())
             .cloned()
             .unwrap_or_else(|| ty.clone()),
-        Ty::Vec(t) => Ty::Vec(Box::new(subst_ty(t, subst))),
-        Ty::Set(t) => Ty::Set(Box::new(subst_ty(t, subst))),
-        Ty::Option(t) => Ty::Option(Box::new(subst_ty(t, subst))),
-        Ty::Shared(t) => Ty::Shared(Box::new(subst_ty(t, subst))),
+        Ty::Named(id, name, args) => Ty::Named(
+            id.clone(),
+            name.clone(),
+            args.iter().map(|a| subst_ty(a, subst)).collect(),
+        ),
         Ty::Ref(t, m) => Ty::Ref(Box::new(subst_ty(t, subst)), *m),
-        Ty::Map(k, v) => Ty::Map(Box::new(subst_ty(k, subst)), Box::new(subst_ty(v, subst))),
         Ty::Callable(ps, r) => Ty::Callable(
             ps.iter().map(|p| subst_ty(p, subst)).collect(),
             Box::new(subst_ty(r, subst)),
@@ -970,12 +966,7 @@ fn subst_expr(
 
 fn type_base_name(ty: &Ty) -> String {
     match ty {
-        Ty::Vec(_) => "Vec".to_string(),
-        Ty::Set(_) => "Set".to_string(),
-        Ty::Option(_) => "Option".to_string(),
-        Ty::Shared(_) => "Shared".to_string(),
-        Ty::Map(_, _) => "Map".to_string(),
-        Ty::Named(_, name) | Ty::GenericParam(name) => name.clone(),
+        Ty::Named(_, name, _) | Ty::GenericParam(name) => name.clone(),
         _ => type_mono_name(ty),
     }
 }
@@ -1010,7 +1001,10 @@ mod tests {
     fn type_mono_name_primitives() {
         assert_eq!(type_mono_name(&Ty::Int), "int");
         assert_eq!(type_mono_name(&Ty::Str), "str");
-        assert_eq!(type_mono_name(&Ty::Vec(Box::new(Ty::Int))), "Vec_int");
+        assert_eq!(
+            type_mono_name(&Ty::Named(TypeId(99), "Vec".into(), vec![Ty::Int])),
+            "Vec_int"
+        );
     }
 
     #[test]
@@ -1025,7 +1019,7 @@ mod tests {
         let hooks: HashMap<(String, String), (TypedHookDef, Ty)> = HashMap::new();
         let mut reqs: Vec<ImplHookReq> = Vec::new();
         let mut subst = HashMap::new();
-        subst.insert("T".to_string(), Ty::Named(TypeId(1), "Circle".into()));
+        subst.insert("T".to_string(), Ty::Named(TypeId(1), "Circle".into(), vec![]));
         assert_eq!(
             rewrite_method_fn("T_draw", &subst, &hooks, &mut reqs),
             "Circle_draw"
@@ -1050,7 +1044,7 @@ mod tests {
         let mut subst = HashMap::new();
         subst.insert(
             "T".to_string(),
-            Ty::Vec(Box::new(Ty::Named(TypeId(1), "Item".into()))),
+            Ty::Named(TypeId(99), "Vec".into(), vec![Ty::Named(TypeId(1), "Item".into(), vec![])]),
         );
         assert_eq!(
             rewrite_method_fn("T_to_str", &subst, &hooks, &mut reqs),
@@ -1061,9 +1055,10 @@ mod tests {
     #[test]
     fn contains_type_param_generic_param() {
         assert!(contains_type_param(&Ty::GenericParam("T".into())));
-        assert!(!contains_type_param(&Ty::Named(TypeId(1), "Circle".into())));
-        assert!(contains_type_param(&Ty::Vec(Box::new(Ty::GenericParam(
-            "T".into()
-        )))));
+        assert!(!contains_type_param(&Ty::Named(TypeId(1), "Circle".into(), vec![])));
+        assert!(contains_type_param(&Ty::Named(
+            TypeId(99), "Vec".into(),
+            vec![Ty::GenericParam("T".into())]
+        )));
     }
 }

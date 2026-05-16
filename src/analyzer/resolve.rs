@@ -37,30 +37,22 @@ pub fn resolve_type_expr(
             if let Some(prim) = resolve_primitive_name(name) {
                 return prim;
             }
-            match name.as_str() {
-                "Option" => Ty::Option(Box::new(nth(&resolved_generics, 0))),
-                "Vec" => Ty::Vec(Box::new(nth(&resolved_generics, 0))),
-                "Set" => Ty::Set(Box::new(nth(&resolved_generics, 0))),
-                "Map" => Ty::Map(
-                    Box::new(nth(&resolved_generics, 0)),
-                    Box::new(nth(&resolved_generics, 1)),
-                ),
-                "Shared" => Ty::Shared(Box::new(nth(&resolved_generics, 0))),
-                other => match env.lookup(other) {
-                    Some(Symbol::TypeAlias(ty)) => ty.clone(),
-                    Some(Symbol::Type { id, .. }) if *id == crate::analyzer::ty::TypeId(0) => {
-                        Ty::GenericParam(other.to_string())
-                    }
-                    Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), other.to_string()),
-                    Some(Symbol::Iface { id, .. }) => Ty::Interface(id.clone(), other.to_string()),
-                    _ => {
-                        errors.push(AnalysisError::UndefinedName {
-                            name: other.to_string(),
-                            span: *span,
-                        });
-                        Ty::Unknown
-                    }
-                },
+            match env.lookup(name.as_str()) {
+                Some(Symbol::TypeAlias(ty)) => ty.clone(),
+                Some(Symbol::Type { id, .. }) if *id == crate::analyzer::ty::TypeId(0) => {
+                    Ty::GenericParam(name.to_string())
+                }
+                Some(Symbol::Type { id, .. }) => {
+                    Ty::Named(id.clone(), name.to_string(), resolved_generics)
+                }
+                Some(Symbol::Iface { id, .. }) => Ty::Interface(id.clone(), name.to_string()),
+                _ => {
+                    errors.push(AnalysisError::UndefinedName {
+                        name: name.to_string(),
+                        span: *span,
+                    });
+                    Ty::Unknown
+                }
             }
         }
         TypeExpr::Tuple(elems, _) => Ty::Tuple(
@@ -101,9 +93,6 @@ pub fn resolve_type_expr(
     }
 }
 
-fn nth(tys: &[Ty], i: usize) -> Ty {
-    tys.get(i).cloned().unwrap_or(Ty::Unknown)
-}
 
 #[cfg(test)]
 mod tests {
@@ -151,12 +140,25 @@ mod tests {
     }
 
     #[test]
-    fn resolves_option_int() {
-        let env = Env::new();
+    fn resolves_registered_generic_type() {
+        use crate::analyzer::env::Symbol;
+        use crate::analyzer::ty::TypeKind;
+        let mut env = Env::new();
+        let mut reg = crate::analyzer::ty::TypeRegistry::new();
+        // TypeId(0) is reserved as the generic-param sentinel; new() starts at 1.
+        let id = reg.register("Box".into(), TypeKind::Struct);
+        env.push_scope();
+        env.define(
+            "Box",
+            Symbol::Type {
+                id: id.clone(),
+                span: s(),
+            },
+        );
         let mut errs = vec![];
         let ty = resolve_type_expr(
             &TypeExpr::Named {
-                name: "Option".into(),
+                name: "Box".into(),
                 generics: vec![TypeExpr::Named {
                     name: "int".into(),
                     generics: vec![],
@@ -169,7 +171,8 @@ mod tests {
             &env,
             &mut errs,
         );
-        assert_eq!(ty, Ty::Option(Box::new(Ty::Int)));
+        assert_eq!(ty, Ty::Named(id, "Box".into(), vec![Ty::Int]));
+        assert!(errs.is_empty());
     }
 
     #[test]

@@ -35,16 +35,13 @@ pub enum Ty {
     Bool,
     Str,
     Void,
-    Option(Box<Ty>),
-    Vec(Box<Ty>),
-    Set(Box<Ty>),
-    Map(Box<Ty>, Box<Ty>),
     Tuple(Vec<Ty>),
     Callable(Vec<Ty>, Box<Ty>),
-    Shared(Box<Ty>),
     Ref(Box<Ty>, bool),
     Union(Vec<Ty>),
-    Named(TypeId, String),
+    /// A named (possibly generic) type. `args` holds concrete type arguments.
+    /// Plain named types have an empty `args` vec.
+    Named(TypeId, String, Vec<Ty>),
     /// An interface name used as a type. Dispatches via type-tag vtable at runtime.
     Interface(InterfaceId, String),
     GenericParam(String),
@@ -59,14 +56,17 @@ impl fmt::Display for Ty {
             Ty::Bool => write!(f, "bool"),
             Ty::Str => write!(f, "str"),
             Ty::Void => write!(f, "void"),
-            Ty::Option(t) => write!(f, "Option[{t}]"),
-            Ty::Vec(t) => write!(f, "Vec[{t}]"),
-            Ty::Set(t) => write!(f, "Set[{t}]"),
-            Ty::Map(k, v) => write!(f, "Map[{k}, {v}]"),
-            Ty::Shared(t) => write!(f, "Shared[{t}]"),
             Ty::Ref(t, true) => write!(f, "&mut {t}"),
             Ty::Ref(t, false) => write!(f, "&{t}"),
-            Ty::Named(_, name) => write!(f, "{name}"),
+            Ty::Named(_, name, args) if args.is_empty() => write!(f, "{name}"),
+            Ty::Named(_, name, args) => {
+                let s = args
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "{name}[{s}]")
+            }
             Ty::Interface(_, name) => write!(f, "{name}"),
             Ty::GenericParam(n) => write!(f, "{n}"),
             Ty::Unknown => write!(f, "<unknown>"),
@@ -128,7 +128,10 @@ pub struct TypeRegistry {
 
 impl TypeRegistry {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            next_id: 1, // TypeId(0) is reserved as the generic-param sentinel
+            ..Self::default()
+        }
     }
 
     pub fn register_struct_fields(&mut self, type_name: &str, fields: Vec<(String, Ty)>) {
@@ -169,7 +172,7 @@ impl TypeRegistry {
     }
 
     pub fn lookup_by_id(&self, id: &TypeId) -> Option<&TypeEntry> {
-        self.entries.get(id.0 as usize)
+        self.entries.iter().find(|e| e.id == *id)
     }
 
     pub fn register_conformance(
@@ -240,8 +243,9 @@ mod tests {
     }
 
     #[test]
-    fn ty_display_option() {
-        assert_eq!(Ty::Option(Box::new(Ty::Int)).to_string(), "Option[int]");
+    fn ty_display_named_with_args() {
+        let ty = Ty::Named(TypeId(0), "Option".into(), vec![Ty::Int]);
+        assert_eq!(ty.to_string(), "Option[int]");
     }
 
     #[test]

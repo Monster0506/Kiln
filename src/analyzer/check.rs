@@ -240,7 +240,9 @@ fn check_typed_stmt(
         } => {
             let ti = infer_typed_expr(iterable, env, registry, errors);
             let elem_ty = match &ti.ty {
-                Ty::Vec(t) | Ty::Set(t) => *t.clone(),
+                Ty::Named(_, name, args) if name == "Vec" || name == "Set" => {
+                    args.first().cloned().unwrap_or(Ty::Unknown)
+                }
                 Ty::Str => Ty::Str,
                 _ => Ty::Unknown,
             };

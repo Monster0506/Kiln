@@ -404,30 +404,13 @@ fn unify_param(
                 .entry(p.clone())
                 .or_insert_with(|| (arg_ty.clone(), span));
         }
-        Ty::Vec(inner_p) => {
-            if let Ty::Vec(inner_a) = arg_ty {
-                unify_param(inner_p, inner_a, span, generic_params, subst);
-            }
-        }
-        Ty::Set(inner_p) => {
-            if let Ty::Set(inner_a) = arg_ty {
-                unify_param(inner_p, inner_a, span, generic_params, subst);
-            }
-        }
-        Ty::Option(inner_p) => {
-            if let Ty::Option(inner_a) = arg_ty {
-                unify_param(inner_p, inner_a, span, generic_params, subst);
-            }
-        }
-        Ty::Shared(inner_p) => {
-            if let Ty::Shared(inner_a) = arg_ty {
-                unify_param(inner_p, inner_a, span, generic_params, subst);
-            }
-        }
-        Ty::Map(key_p, val_p) => {
-            if let Ty::Map(key_a, val_a) = arg_ty {
-                unify_param(key_p, key_a, span, generic_params, subst);
-                unify_param(val_p, val_a, span, generic_params, subst);
+        Ty::Named(_, pname, pargs) => {
+            if let Ty::Named(_, aname, aargs) = arg_ty {
+                if pname == aname {
+                    for (pa, aa) in pargs.iter().zip(aargs.iter()) {
+                        unify_param(pa, aa, span, generic_params, subst);
+                    }
+                }
             }
         }
         _ => {}

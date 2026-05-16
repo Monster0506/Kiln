@@ -46,7 +46,7 @@ pub fn infer_typed_expr(
                     // Overloaded function used as first-class value — ambiguous without a call.
                     Ty::Unknown
                 }
-                Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), name.clone()),
+                Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), name.clone(), vec![]),
                 _ => {
                     errors.push(AnalysisError::UndefinedName {
                         name: name.clone(),
@@ -67,7 +67,10 @@ pub fn infer_typed_expr(
                 Some(entry) => match &entry.kind {
                     crate::analyzer::ty::TypeKind::Enum { variant_names } => {
                         if let Some(idx) = variant_names.iter().position(|v| v == variant) {
-                            (Ty::Named(entry.id.clone(), enum_name.clone()), idx as i64)
+                            (
+                                Ty::Named(entry.id.clone(), enum_name.clone(), vec![]),
+                                idx as i64,
+                            )
                         } else {
                             errors.push(AnalysisError::UndefinedName {
                                 name: format!("{enum_name}:{variant}"),
@@ -219,7 +222,9 @@ pub fn infer_typed_expr(
         Expr::Unwrap(inner, s) => {
             let ti = infer_typed_expr(inner, env, registry, errors);
             let ty = match &ti.ty {
-                Ty::Option(t) => *t.clone(),
+                Ty::Named(_, name, args) if name == "Option" => {
+                    args.first().cloned().unwrap_or(Ty::Unknown)
+                }
                 Ty::Unknown => Ty::Unknown,
                 other => {
                     errors.push(AnalysisError::TypeMismatch {
@@ -296,8 +301,12 @@ pub fn infer_typed_expr(
             let to = infer_typed_expr(object, env, registry, errors);
             let ti = infer_typed_expr(index, env, registry, errors);
             let elem_ty = match &to.ty {
-                Ty::Vec(t) => *t.clone(),
-                Ty::Map(_, v) => *v.clone(),
+                Ty::Named(_, name, args) if name == "Vec" => {
+                    args.first().cloned().unwrap_or(Ty::Unknown)
+                }
+                Ty::Named(_, name, args) if name == "Map" => {
+                    args.get(1).cloned().unwrap_or(Ty::Unknown)
+                }
                 _ => Ty::Unknown,
             };
             mk(
@@ -318,12 +327,14 @@ pub fn infer_typed_expr(
             let (struct_ty, concrete_ty_name) = match env.lookup(ty) {
                 Some(Symbol::TypeAlias(alias_ty)) => {
                     let name = match alias_ty {
-                        Ty::Named(_, n) => n.clone(),
+                        Ty::Named(_, n, _) => n.clone(),
                         _ => ty.clone(),
                     };
                     (alias_ty.clone(), name)
                 }
-                Some(Symbol::Type { id, .. }) => (Ty::Named(id.clone(), ty.clone()), ty.clone()),
+                Some(Symbol::Type { id, .. }) => {
+                    (Ty::Named(id.clone(), ty.clone(), vec![]), ty.clone())
+                }
                 _ => {
                     errors.push(AnalysisError::UndefinedName {
                         name: ty.clone(),
@@ -558,7 +569,7 @@ fn infer_call_field(
         // For generic containers (Vec[X], Set[X]), substitute X for T in the
         // method signature so argument types and the return type are concrete.
         let elem_ty: Option<Ty> = match &to.ty {
-            Ty::Vec(inner) | Ty::Set(inner) => Some(*inner.clone()),
+            Ty::Named(_, name, args) if name == "Vec" || name == "Set" => args.first().cloned(),
             _ => None,
         };
 
@@ -838,12 +849,7 @@ pub fn type_name_of(ty: &Ty) -> Option<String> {
         Ty::Float => Some("float".into()),
         Ty::Bool => Some("bool".into()),
         Ty::Str => Some("str".into()),
-        Ty::Named(_, name) | Ty::GenericParam(name) => Some(name.clone()),
-        Ty::Vec(_) => Some("Vec".into()),
-        Ty::Map(_, _) => Some("Map".into()),
-        Ty::Set(_) => Some("Set".into()),
-        Ty::Option(_) => Some("Option".into()),
-        Ty::Shared(_) => Some("Shared".into()),
+        Ty::Named(_, name, _) | Ty::GenericParam(name) => Some(name.clone()),
         // These types have no single dispatch name.
         Ty::Void
         | Ty::Unknown
@@ -1103,8 +1109,8 @@ fn infer_binop(
             (Ty::Unknown, _) | (_, Ty::Unknown) => Ty::Unknown,
             // Any type with a name and matching operands may implement the operator
             // via hooks; let conformance checking catch actual violations later.
-            (Ty::Named(_, _), _)
-            | (_, Ty::Named(_, _))
+            (Ty::Named(_, _, _), _)
+            | (_, Ty::Named(_, _, _))
             | (Ty::GenericParam(_), _)
             | (_, Ty::GenericParam(_)) => Ty::Unknown,
             (l, r) if l == r && type_name_of(l).is_some() => l.clone(),
@@ -1122,7 +1128,7 @@ fn infer_binop(
         Spaceship => match (&lt, &rt) {
             (Ty::Unknown, _) | (_, Ty::Unknown) => Ty::Unknown,
             _ => match registry.lookup_by_name("Ordering") {
-                Some(e) => Ty::Named(e.id.clone(), "Ordering".into()),
+                Some(e) => Ty::Named(e.id.clone(), "Ordering".into(), vec![]),
                 None => Ty::Int,
             },
         },
@@ -1147,13 +1153,10 @@ fn infer_binop(
 fn substitute_t(ty: &Ty, concrete: &Ty) -> Ty {
     match ty {
         Ty::GenericParam(_) => concrete.clone(),
-        Ty::Vec(inner) => Ty::Vec(Box::new(substitute_t(inner, concrete))),
-        Ty::Set(inner) => Ty::Set(Box::new(substitute_t(inner, concrete))),
-        Ty::Option(inner) => Ty::Option(Box::new(substitute_t(inner, concrete))),
-        Ty::Shared(inner) => Ty::Shared(Box::new(substitute_t(inner, concrete))),
-        Ty::Map(k, v) => Ty::Map(
-            Box::new(substitute_t(k, concrete)),
-            Box::new(substitute_t(v, concrete)),
+        Ty::Named(id, name, args) => Ty::Named(
+            id.clone(),
+            name.clone(),
+            args.iter().map(|a| substitute_t(a, concrete)).collect(),
         ),
         Ty::Callable(params, ret) => Ty::Callable(
             params.iter().map(|p| substitute_t(p, concrete)).collect(),
@@ -1195,11 +1198,9 @@ pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
         (Ty::Interface(_, _), _) => true,
         (_, Ty::Interface(_, _)) => true,
 
-        (Ty::Vec(e), Ty::Vec(f)) => types_compatible(e, f),
-        (Ty::Set(e), Ty::Set(f)) => types_compatible(e, f),
-        (Ty::Option(e), Ty::Option(f)) => types_compatible(e, f),
-        (Ty::Shared(e), Ty::Shared(f)) => types_compatible(e, f),
-        (Ty::Map(ek, ev), Ty::Map(fk, fv)) => types_compatible(ek, fk) && types_compatible(ev, fv),
+        (Ty::Named(_, en, ea), Ty::Named(_, fn_, fa)) if en == fn_ => {
+            ea.iter().zip(fa.iter()).all(|(e, f)| types_compatible(e, f))
+        }
         (Ty::Callable(ep, er), Ty::Callable(fp, fr)) => {
             ep.len() == fp.len()
                 && ep

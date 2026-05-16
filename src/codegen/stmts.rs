@@ -452,7 +452,10 @@ fn lower_for(
     ctx: &mut LowerCtx,
 ) {
     let coll_val = lower_typed_expr_loops(iterable, builder, vars, loops, ctx);
-    let is_vec = matches!(&iterable.ty, Ty::Vec(_) | Ty::Set(_));
+    let is_vec = match &iterable.ty {
+        Ty::Named(_, name, _) => name == "Vec" || name == "Set",
+        _ => false,
+    };
 
     // Store the collection pointer in a variable so it survives across blocks.
     let coll_name = format!("__for_coll_{}", binding);

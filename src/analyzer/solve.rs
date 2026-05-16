@@ -129,7 +129,11 @@ pub fn solve(constraints: &[Constraint], registry: &TypeRegistry) -> Vec<Analysi
                     source_desc,
                     ..
                 } if !source_desc.is_empty() => {
-                    let verb = if *is_explicit { "required by" } else { "inferred from" };
+                    let verb = if *is_explicit {
+                        "required by"
+                    } else {
+                        "inferred from"
+                    };
                     (
                         format!("bound {verb} {source_desc} in `{fn_name}`"),
                         *source_span,

@@ -71,7 +71,12 @@ fn collect_stmt(
             collect_expr(target, params, registry, out);
             collect_expr(value, params, registry, out);
         }
-        TypedStmt::CompoundAssign { target, op, rhs, span } => {
+        TypedStmt::CompoundAssign {
+            target,
+            op,
+            rhs,
+            span,
+        } => {
             collect_expr(target, params, registry, out);
             collect_expr(rhs, params, registry, out);
             if let Ty::GenericParam(p) = &target.ty {
@@ -95,7 +100,11 @@ fn collect_stmt(
             }
         }
         TypedStmt::Expr(e) => collect_expr(e, params, registry, out),
-        TypedStmt::If { branches, else_branch, .. } => {
+        TypedStmt::If {
+            branches,
+            else_branch,
+            ..
+        } => {
             for (cond, body) in branches {
                 collect_expr(cond, params, registry, out);
                 collect_block(body, params, registry, out);
@@ -116,7 +125,12 @@ fn collect_stmt(
             collect_expr(iterable, params, registry, out);
             collect_block(body, params, registry, out);
         }
-        TypedStmt::TryCatch { body, handlers, finally, .. } => {
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            ..
+        } => {
             collect_block(body, params, registry, out);
             for h in handlers {
                 collect_block(&h.body, params, registry, out);
@@ -272,7 +286,11 @@ mod tests {
     }
 
     fn int_expr() -> TypedExpr {
-        TypedExpr { kind: TypedExprKind::Int(0), ty: Ty::Int, span: s() }
+        TypedExpr {
+            kind: TypedExprKind::Int(0),
+            ty: Ty::Int,
+            span: s(),
+        }
     }
 
     fn param_expr(p: &str) -> TypedExpr {
@@ -314,7 +332,9 @@ mod tests {
         };
         let bounds = infer_bounds_from_body(&body, &["T".to_string()], &reg);
         assert!(
-            bounds.iter().any(|b| b.param == "T" && b.iface == "Addable"),
+            bounds
+                .iter()
+                .any(|b| b.param == "T" && b.iface == "Addable"),
             "expected T: Addable, got {bounds:?}"
         );
     }
@@ -373,7 +393,9 @@ mod tests {
         };
         let bounds = infer_bounds_from_body(&body, &["T".to_string()], &reg);
         assert!(
-            bounds.iter().any(|b| b.param == "T" && b.iface == "Addable"),
+            bounds
+                .iter()
+                .any(|b| b.param == "T" && b.iface == "Addable"),
             "expected T: Addable, got {bounds:?}"
         );
     }

@@ -20,7 +20,7 @@ pub use typed_ast::TypedFile;
 
 use crate::analyzer::env::{Env, FnOverload, GenericBound, Symbol};
 use crate::analyzer::resolve::resolve_type_expr;
-use crate::analyzer::ty::{MethodEntry, TypeKind};
+use crate::analyzer::ty::MethodEntry;
 use crate::analyzer::typed_ast::{
     TypedEnumDef, TypedEnumVariant, TypedField, TypedFnDef, TypedHookDef, TypedImplBlock,
     TypedInterfaceDef, TypedInterfaceMethod, TypedItem, TypedParam, TypedStructDef,
@@ -28,190 +28,13 @@ use crate::analyzer::typed_ast::{
 use crate::diagnostics::Span;
 use crate::parser::ast::{HookName, ImplKind, Item, SourceFile, TypeExpr};
 
-fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
-    use ty::ConformanceEntry as CE;
+fn register_builtins(env: &mut Env, _registry: &mut ty::TypeRegistry) {
     let s = Span::new(0, 0);
-    let unc = || CE { bounds: vec![] }; // unconditional entry
-    let with = |param: &str, iface: &str| CE {
-        bounds: vec![(param.into(), iface.into())],
-    };
-    let with2 = |p1: &str, i1: &str, p2: &str, i2: &str| CE {
-        bounds: vec![(p1.into(), i1.into()), (p2.into(), i2.into())],
-    };
 
-    // int
-    for iface in &[
-        "Copy",
-        "Clone",
-        "Eq",
-        "Hash",
-        "Ord",
-        "PartialEq",
-        "PartialOrd",
-        "Debug",
-        "Display",
-        "Default",
-        "Zero",
-        "One",
-        "Negatable",
-        "Abs",
-        "Signum",
-        "Addable",
-        "Subtractable",
-        "Multiplicable",
-        "Divisible",
-        "Remainder",
-        "Bitwise",
-        "Comparable",
-        "Numeric",
-        "Integral",
-        "Semigroup",
-        "Monoid",
-    ] {
-        registry.register_conformance("int", iface, unc());
-    }
-
-    // float (not Eq, not Ord, not Remainder, not Bitwise, not Integral due to NaN / IEEE754)
-    for iface in &[
-        "Copy",
-        "Clone",
-        "PartialEq",
-        "PartialOrd",
-        "Debug",
-        "Display",
-        "Default",
-        "Zero",
-        "One",
-        "Negatable",
-        "Abs",
-        "Signum",
-        "Addable",
-        "Subtractable",
-        "Multiplicable",
-        "Divisible",
-        "Comparable",
-        "Fractional",
-        "Numeric",
-        "Semigroup",
-    ] {
-        registry.register_conformance("float", iface, unc());
-    }
-
-    // bool
-    for iface in &[
-        "Copy",
-        "Clone",
-        "Eq",
-        "Hash",
-        "Ord",
-        "Comparable",
-        "PartialEq",
-        "PartialOrd",
-        "Debug",
-        "Display",
-        "Default",
-    ] {
-        registry.register_conformance("bool", iface, unc());
-    }
-
-    // str
-    for iface in &[
-        "Clone",
-        "Eq",
-        "Hash",
-        "Ord",
-        "Comparable",
-        "PartialEq",
-        "PartialOrd",
-        "Debug",
-        "Display",
-        "Default",
-        "Semigroup",
-        "Monoid",
-        "Addable",
-        "Indexable",
-    ] {
-        registry.register_conformance("str", iface, unc());
-    }
-
-    // Vec[T] -- conditional on T
-    for (iface, bound) in &[
-        ("Clone", "Clone"),
-        ("Eq", "Eq"),
-        ("Hash", "Hash"),
-        ("Ord", "Ord"),
-        ("PartialEq", "PartialEq"),
-        ("PartialOrd", "PartialOrd"),
-        ("Debug", "Debug"),
-        ("Display", "Display"),
-    ] {
-        registry.register_conformance("Vec", iface, with("T", bound));
-    }
-    for iface in &[
-        "Default",
-        "Semigroup",
-        "Monoid",
-        "Iterable",
-        "Foldable",
-        "Indexable",
-    ] {
-        registry.register_conformance("Vec", iface, unc());
-    }
-
-    // Set[T: Hash]
-    for (iface, bound) in &[
-        ("Clone", "Clone"),
-        ("Eq", "Eq"),
-        ("Debug", "Debug"),
-        ("Display", "Display"),
-    ] {
-        registry.register_conformance("Set", iface, with("T", bound));
-    }
-    for iface in &["Default", "Semigroup", "Monoid", "Iterable", "Foldable"] {
-        registry.register_conformance("Set", iface, unc());
-    }
-
-    // Map[K: Hash, V]
-    for (iface, k_bound, v_bound) in &[
-        ("Clone", "Clone", "Clone"),
-        ("Eq", "Eq", "Eq"),
-        ("Debug", "Debug", "Debug"),
-        ("Display", "Display", "Display"),
-    ] {
-        registry.register_conformance("Map", iface, with2("K", k_bound, "V", v_bound));
-    }
-    for iface in &["Default", "Iterable", "Foldable", "Indexable"] {
-        registry.register_conformance("Map", iface, unc());
-    }
-
-    // Option[T]
-    for (iface, bound) in &[
-        ("Clone", "Clone"),
-        ("Eq", "Eq"),
-        ("Hash", "Hash"),
-        ("Ord", "Ord"),
-        ("PartialEq", "PartialEq"),
-        ("PartialOrd", "PartialOrd"),
-        ("Debug", "Debug"),
-        ("Display", "Display"),
-    ] {
-        registry.register_conformance("Option", iface, with("T", bound));
-    }
-    for iface in &["Default", "Iterable", "Foldable"] {
-        registry.register_conformance("Option", iface, unc());
-    }
-
-    // Shared[T]
-    registry.register_conformance("Shared", "Clone", unc());
-
-    let exc_id = registry.register("Exception".into(), TypeKind::Struct);
-    env.define(
-        "Exception",
-        Symbol::Type {
-            id: exc_id,
-            span: s,
-        },
-    );
+    // None and Some cannot be expressed as plain Kiln enum variants because
+    // Option[T] is a compiler-intrinsic Ty variant (Ty::Option). Everything
+    // else -- conformances, Exception, len/panic/assert/clock_ms -- is declared
+    // in prelude.kn.
 
     // None is the unit variant of Option[T]; treat it as Option[Unknown] so
     // comparisons like `v != None` type-check without knowing T.
@@ -235,32 +58,6 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
             span: s,
         },
     );
-
-    // len, panic, assert, clock_ms: no interface requirements
-    // (print/println are defined in the prelude as def print[T: Display])
-    let fns: &[(&str, &[Ty], Ty)] = &[
-        ("len", &[Ty::Unknown], Ty::Int),
-        ("panic", &[Ty::Unknown], Ty::Void),
-        ("assert", &[Ty::Unknown], Ty::Void),
-        ("clock_ms", &[], Ty::Int),
-    ];
-    for (name, params, ret) in fns {
-        env.define(
-            name,
-            Symbol::Fn {
-                generic_params: vec![],
-                generic_bounds: vec![],
-                inferred_bounds: vec![],
-                params: params
-                    .iter()
-                    .enumerate()
-                    .map(|(i, t)| (format!("_{i}"), t.clone()))
-                    .collect(),
-                ret: ret.clone(),
-                span: s,
-            },
-        );
-    }
 }
 
 /// Analyze `source`, producing a `TypedFile` or a list of errors.
@@ -787,8 +584,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     // Infer bounds from how the generic params are used in the body.
                     let gparams: Vec<String> =
                         f.generic_params.iter().map(|g| g.name.clone()).collect();
-                    let inferred =
-                        infer_bounds::infer_bounds_from_body(&body, &gparams, &registry);
+                    let inferred = infer_bounds::infer_bounds_from_body(&body, &gparams, &registry);
                     if !inferred.is_empty() {
                         match env.lookup_mut(&f.name) {
                             Some(Symbol::Fn {
@@ -798,9 +594,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                                 *inferred_bounds = inferred;
                             }
                             Some(Symbol::FnOverloadSet { ref mut overloads }) => {
-                                if let Some(ov) =
-                                    overloads.iter_mut().find(|o| o.span == f.span)
-                                {
+                                if let Some(ov) = overloads.iter_mut().find(|o| o.span == f.span) {
                                     ov.inferred_bounds = inferred;
                                 }
                             }
@@ -850,6 +644,19 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
             Item::Enum(e) => {
                 conformance::check_enum_conformance(e, &interfaces, &all_impls, &mut errors);
+                let has_generics = !e.generic_params.is_empty();
+                if has_generics {
+                    env.push_scope();
+                    for gp in &e.generic_params {
+                        env.define(
+                            &gp.name,
+                            Symbol::Type {
+                                id: TypeId(0),
+                                span: gp.span,
+                            },
+                        );
+                    }
+                }
                 let variants: Vec<TypedEnumVariant> = e
                     .variants
                     .iter()
@@ -869,6 +676,9 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         span: v.span,
                     })
                     .collect();
+                if has_generics {
+                    env.pop_scope();
+                }
                 typed_items.push(TypedItem::Enum(TypedEnumDef {
                     name: e.name.clone(),
                     variants,
@@ -877,7 +687,12 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             }
 
             Item::ImplBlock(impl_block) => {
-                conformance::check_impl_completeness(impl_block, &interfaces, &all_impls, &mut errors);
+                conformance::check_impl_completeness(
+                    impl_block,
+                    &interfaces,
+                    &all_impls,
+                    &mut errors,
+                );
                 if impl_block.kind == ImplKind::Plain {
                     let key_ty = match &impl_block.for_type {
                         TypeExpr::Named { name, generics, .. } => {
@@ -1069,7 +884,10 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             .items
                             .iter()
                             .filter_map(|item| {
-                                if let InterfaceItemKind::Hook { annotations, name, .. } = &item.kind {
+                                if let InterfaceItemKind::Hook {
+                                    annotations, name, ..
+                                } = &item.kind
+                                {
                                     if annotations.iter().any(|a| a.name == "static") {
                                         return Some(match name {
                                             crate::parser::ast::HookName::Named(n) => n.clone(),

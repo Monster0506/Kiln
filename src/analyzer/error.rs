@@ -66,7 +66,11 @@ pub enum AnalysisError {
     },
 
     #[error("{span}: type `{ty}` has no field `{field}`")]
-    NoField { ty: String, field: String, span: Span },
+    NoField {
+        ty: String,
+        field: String,
+        span: Span,
+    },
 }
 
 impl AnalysisError {
@@ -157,9 +161,9 @@ impl AnalysisError {
     /// Returns `(note_text, note_span)` for errors that carry a secondary location.
     pub fn note_info(&self) -> Option<(String, Option<Span>)> {
         match self {
-            AnalysisError::BoundViolation { note, note_span, .. } if !note.is_empty() => {
-                Some((note.clone(), *note_span))
-            }
+            AnalysisError::BoundViolation {
+                note, note_span, ..
+            } if !note.is_empty() => Some((note.clone(), *note_span)),
             _ => None,
         }
     }

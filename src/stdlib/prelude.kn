@@ -35,6 +35,31 @@ def __kiln_bool_to_str(b: bool) -> str
 @builtin
 def __kiln_str_concat(a: str, b: str) -> str
 
+@builtin
+def len(x: str) -> int
+
+@builtin
+def panic(msg: str) -> void
+
+@builtin
+def assert(cond: bool) -> void
+
+@builtin
+def clock_ms() -> int
+
+# ---- Exception --------------------------------------------------------------
+
+@builtin
+struct Exception {}
+
+# ---- Option[T] --------------------------------------------------------------
+
+@builtin
+enum Option[T] {
+    Some { value: T }
+    None
+}
+
 # ---- Ordering enum ----------------------------------------------------------
 
 enum Ordering {

@@ -1,12 +1,12 @@
+use crate::analyzer::infer::type_name_of;
 use crate::analyzer::ty::Ty;
 use crate::analyzer::typed_ast::{TypedBlock, TypedExpr, TypedExprKind, TypedStmt};
-use crate::analyzer::infer::type_name_of;
 use crate::codegen::exprs::{
     call_fn_by_name, coerce_to, coerce_to_i64, lower_binop, lower_typed_expr_loops, LowerCtx,
     VarEnv,
 };
-use crate::codegen::names::binop_fn_suffix;
 use crate::codegen::memory::store_field;
+use crate::codegen::names::binop_fn_suffix;
 use crate::codegen::types::clif_type;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{types, AbiParam, Block as ClifBlock, InstBuilder};
@@ -103,7 +103,9 @@ fn lower_typed_stmt(
             }
         }
 
-        TypedStmt::CompoundAssign { target, op, rhs, .. } => {
+        TypedStmt::CompoundAssign {
+            target, op, rhs, ..
+        } => {
             let rhs_val = lower_typed_expr_loops(rhs, builder, vars, loops, ctx);
             let use_native = matches!(target.ty, Ty::Int | Ty::Float | Ty::Bool);
             match &target.kind {
@@ -197,7 +199,16 @@ fn lower_typed_stmt(
             body,
             ..
         } => {
-            lower_for(binding, &binding_ty, iterable, body, builder, vars, loops, ctx);
+            lower_for(
+                binding,
+                &binding_ty,
+                iterable,
+                body,
+                builder,
+                vars,
+                loops,
+                ctx,
+            );
         }
 
         TypedStmt::Break(_) => {

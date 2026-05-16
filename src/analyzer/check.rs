@@ -109,7 +109,12 @@ fn check_typed_stmt(
             }
         }
 
-        Stmt::CompoundAssign { target, op, rhs, span } => {
+        Stmt::CompoundAssign {
+            target,
+            op,
+            rhs,
+            span,
+        } => {
             if let Expr::Ident(name, ident_span) = target {
                 match env.lookup(name) {
                     Some(Symbol::Var { mutable: false, .. }) => {

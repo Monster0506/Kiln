@@ -396,7 +396,10 @@ fn lower_typed_expr_inner(
 
         TypedExprKind::Unwrap(inner) => lower_typed_expr(inner, builder, vars, ctx),
 
-        TypedExprKind::As { expr, ty: target_ty } => {
+        TypedExprKind::As {
+            expr,
+            ty: target_ty,
+        } => {
             let v = lower_typed_expr(expr, builder, vars, ctx);
             let src = &expr.ty;
             match (src, target_ty) {

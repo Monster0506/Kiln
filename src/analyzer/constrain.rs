@@ -113,7 +113,12 @@ fn collect_stmt(stmt: &TypedStmt, out: &mut Vec<Constraint>) {
             collect_expr(target, out);
             collect_expr(value, out);
         }
-        TypedStmt::CompoundAssign { target, op, rhs, span } => {
+        TypedStmt::CompoundAssign {
+            target,
+            op,
+            rhs,
+            span,
+        } => {
             collect_expr(target, out);
             collect_expr(rhs, out);
             if let Some(iface) = compound_assign_iface(op) {
@@ -358,8 +363,7 @@ pub fn emit_call_bound_constraints(
     out: &mut Vec<Constraint>,
 ) {
     // Build substitution: generic param name -> concrete type.
-    let mut subst: std::collections::HashMap<String, (Ty, Span)> =
-        std::collections::HashMap::new();
+    let mut subst: std::collections::HashMap<String, (Ty, Span)> = std::collections::HashMap::new();
     for (i, param_ty) in param_tys.iter().enumerate() {
         if let Some((arg_ty, arg_span)) = arg_tys.get(i) {
             unify_param(param_ty, arg_ty, *arg_span, generic_params, &mut subst);
@@ -396,7 +400,9 @@ fn unify_param(
 ) {
     match param_ty {
         Ty::GenericParam(p) if generic_params.iter().any(|g| g == p) => {
-            subst.entry(p.clone()).or_insert_with(|| (arg_ty.clone(), span));
+            subst
+                .entry(p.clone())
+                .or_insert_with(|| (arg_ty.clone(), span));
         }
         Ty::Vec(inner_p) => {
             if let Ty::Vec(inner_a) = arg_ty {

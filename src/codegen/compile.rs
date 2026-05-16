@@ -33,13 +33,20 @@ mod tests {
             name: HookName::Op(op.into()),
             params,
             return_type: Ty::Void,
-            body: TypedBlock { stmts: vec![], span: s() },
+            body: TypedBlock {
+                stmts: vec![],
+                span: s(),
+            },
             span: s(),
         }
     }
 
     fn param(name: &str) -> TypedParam {
-        TypedParam { name: name.into(), ty: Ty::Int, span: s() }
+        TypedParam {
+            name: name.into(),
+            ty: Ty::Int,
+            span: s(),
+        }
     }
 
     #[test]
@@ -74,7 +81,6 @@ mod tests {
         assert_eq!(hook_qualified_name("Flags", &not_hook), "Flags_not");
     }
 }
-
 
 fn hook_qualified_name(type_name: &str, hook: &TypedHookDef) -> String {
     use crate::codegen::names;
@@ -255,7 +261,11 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                         params,
                         return_type: hook.return_type.clone(),
                         body: hook.body.clone(),
-                        self_type: if hook.is_static { None } else { Some(type_name.clone()) },
+                        self_type: if hook.is_static {
+                            None
+                        } else {
+                            Some(type_name.clone())
+                        },
                     });
                 }
             }

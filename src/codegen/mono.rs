@@ -79,7 +79,13 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
         let Some(generic_fn) = generic_fns.get(&fn_name).cloned() else {
             continue;
         };
-        let specialized = specialize_fn(&generic_fn, &subst, &generic_fns, &generic_impl_hooks, &mut impl_reqs);
+        let specialized = specialize_fn(
+            &generic_fn,
+            &subst,
+            &generic_fns,
+            &generic_impl_hooks,
+            &mut impl_reqs,
+        );
         seed_block(&specialized.body, &generic_fns, &mut queue);
         new_fns.push(specialized);
     }
@@ -120,7 +126,13 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
         match item {
             TypedItem::Function(f) if is_generic_fn(&f) => {}
             TypedItem::Function(f) => {
-                let body = subst_block(&f.body, &empty, &generic_fns, &generic_impl_hooks, &mut impl_reqs);
+                let body = subst_block(
+                    &f.body,
+                    &empty,
+                    &generic_fns,
+                    &generic_impl_hooks,
+                    &mut impl_reqs,
+                );
                 new_items.push(TypedItem::Function(TypedFnDef { body, ..f }));
             }
             TypedItem::ImplBlock(ib) => {
@@ -128,7 +140,13 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
                     .methods
                     .into_iter()
                     .map(|m| {
-                        let body = subst_block(&m.body, &empty, &generic_fns, &generic_impl_hooks, &mut impl_reqs);
+                        let body = subst_block(
+                            &m.body,
+                            &empty,
+                            &generic_fns,
+                            &generic_impl_hooks,
+                            &mut impl_reqs,
+                        );
                         TypedFnDef { body, ..m }
                     })
                     .collect();
@@ -136,7 +154,13 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
                     .hooks
                     .into_iter()
                     .map(|h| {
-                        let body = subst_block(&h.body, &empty, &generic_fns, &generic_impl_hooks, &mut impl_reqs);
+                        let body = subst_block(
+                            &h.body,
+                            &empty,
+                            &generic_fns,
+                            &generic_impl_hooks,
+                            &mut impl_reqs,
+                        );
                         TypedHookDef { body, ..h }
                     })
                     .collect();
@@ -207,7 +231,13 @@ fn specialize_hook_as_fn(
             span: p.span,
         });
     }
-    let body = subst_block(&hook.body, subst, generic_fns, generic_impl_hooks, impl_reqs);
+    let body = subst_block(
+        &hook.body,
+        subst,
+        generic_fns,
+        generic_impl_hooks,
+        impl_reqs,
+    );
     TypedFnDef {
         name: fn_name.to_string(),
         params,
@@ -413,8 +443,10 @@ fn seed_expr(
             if !generic_params.is_empty() {
                 if let TypedExprKind::Ident(name) = &callee.kind {
                     if let Some(gf) = generic_fns.get(name.as_str()) {
-                        let arg_tys: Vec<Ty> =
-                            args.iter().map(|a| resolve_expr_ty(a, generic_fns)).collect();
+                        let arg_tys: Vec<Ty> = args
+                            .iter()
+                            .map(|a| resolve_expr_ty(a, generic_fns))
+                            .collect();
                         let subst = unify_params(gf, &arg_tys);
                         if !subst.is_empty() {
                             queue.push_back((name.clone(), subst));
@@ -644,29 +676,45 @@ fn subst_stmt(
             value: value.as_ref().map(|v| se!(v)),
             span: *span,
         },
-        TypedStmt::VarDecl { name, ty, value, mutable, span } => TypedStmt::VarDecl {
+        TypedStmt::VarDecl {
+            name,
+            ty,
+            value,
+            mutable,
+            span,
+        } => TypedStmt::VarDecl {
             name: name.clone(),
             ty: subst_ty(ty, subst),
             value: se!(value),
             mutable: *mutable,
             span: *span,
         },
-        TypedStmt::Assign { target, value, span } => TypedStmt::Assign {
+        TypedStmt::Assign {
+            target,
+            value,
+            span,
+        } => TypedStmt::Assign {
             target: se!(target),
             value: se!(value),
             span: *span,
         },
-        TypedStmt::CompoundAssign { target, op, rhs, span } => TypedStmt::CompoundAssign {
+        TypedStmt::CompoundAssign {
+            target,
+            op,
+            rhs,
+            span,
+        } => TypedStmt::CompoundAssign {
             target: se!(target),
             op: op.clone(),
             rhs: se!(rhs),
             span: *span,
         },
-        TypedStmt::If { branches, else_branch, span } => TypedStmt::If {
-            branches: branches
-                .iter()
-                .map(|(c, b)| (se!(c), sb!(b)))
-                .collect(),
+        TypedStmt::If {
+            branches,
+            else_branch,
+            span,
+        } => TypedStmt::If {
+            branches: branches.iter().map(|(c, b)| (se!(c), sb!(b))).collect(),
             else_branch: else_branch.as_ref().map(|b| sb!(b)),
             span: *span,
         },
@@ -680,14 +728,25 @@ fn subst_stmt(
             cond: se!(cond),
             span: *span,
         },
-        TypedStmt::For { binding, binding_ty, iterable, body, span } => TypedStmt::For {
+        TypedStmt::For {
+            binding,
+            binding_ty,
+            iterable,
+            body,
+            span,
+        } => TypedStmt::For {
             binding: binding.clone(),
             binding_ty: subst_ty(binding_ty, subst),
             iterable: se!(iterable),
             body: sb!(body),
             span: *span,
         },
-        TypedStmt::TryCatch { body, handlers, finally, span } => TypedStmt::TryCatch {
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            span,
+        } => TypedStmt::TryCatch {
             body: sb!(body),
             handlers: handlers
                 .iter()
@@ -788,7 +847,11 @@ fn subst_expr(
             }
         }
 
-        TypedExprKind::MethodCall { object, method_fn, args } => {
+        TypedExprKind::MethodCall {
+            object,
+            method_fn,
+            args,
+        } => {
             let new_obj = se!(object);
             let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
             let new_method_fn = rewrite_method_fn(method_fn, subst, generic_impl_hooks, impl_reqs);
@@ -842,9 +905,7 @@ fn subst_expr(
             fields: fields.iter().map(|(n, e)| (n.clone(), se!(e))).collect(),
         },
 
-        TypedExprKind::Tuple(elems) => {
-            TypedExprKind::Tuple(elems.iter().map(|e| se!(e)).collect())
-        }
+        TypedExprKind::Tuple(elems) => TypedExprKind::Tuple(elems.iter().map(|e| se!(e)).collect()),
 
         TypedExprKind::Match { scrutinee, arms } => TypedExprKind::Match {
             scrutinee: Box::new(se!(scrutinee)),
@@ -896,7 +957,11 @@ fn subst_expr(
         ),
         other => other.clone(),
     };
-    TypedExpr { kind, ty, span: expr.span }
+    TypedExpr {
+        kind,
+        ty,
+        span: expr.span,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -961,7 +1026,10 @@ mod tests {
         let mut reqs: Vec<ImplHookReq> = Vec::new();
         let mut subst = HashMap::new();
         subst.insert("T".to_string(), Ty::Named(TypeId(1), "Circle".into()));
-        assert_eq!(rewrite_method_fn("T_draw", &subst, &hooks, &mut reqs), "Circle_draw");
+        assert_eq!(
+            rewrite_method_fn("T_draw", &subst, &hooks, &mut reqs),
+            "Circle_draw"
+        );
     }
 
     #[test]
@@ -969,7 +1037,10 @@ mod tests {
         let hooks: HashMap<(String, String), (TypedHookDef, Ty)> = HashMap::new();
         let mut reqs: Vec<ImplHookReq> = Vec::new();
         let subst: HashMap<String, Ty> = HashMap::new();
-        assert_eq!(rewrite_method_fn("Vec_add", &subst, &hooks, &mut reqs), "Vec_add");
+        assert_eq!(
+            rewrite_method_fn("Vec_add", &subst, &hooks, &mut reqs),
+            "Vec_add"
+        );
     }
 
     #[test]
@@ -977,8 +1048,14 @@ mod tests {
         let hooks: HashMap<(String, String), (TypedHookDef, Ty)> = HashMap::new();
         let mut reqs: Vec<ImplHookReq> = Vec::new();
         let mut subst = HashMap::new();
-        subst.insert("T".to_string(), Ty::Vec(Box::new(Ty::Named(TypeId(1), "Item".into()))));
-        assert_eq!(rewrite_method_fn("T_to_str", &subst, &hooks, &mut reqs), "Vec_Item_to_str");
+        subst.insert(
+            "T".to_string(),
+            Ty::Vec(Box::new(Ty::Named(TypeId(1), "Item".into()))),
+        );
+        assert_eq!(
+            rewrite_method_fn("T_to_str", &subst, &hooks, &mut reqs),
+            "Vec_Item_to_str"
+        );
     }
 
     #[test]

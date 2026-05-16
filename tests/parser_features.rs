@@ -189,7 +189,7 @@ fn multi_bound_paren_single_bound() {
 
 #[test]
 fn multi_bound_plus_and_paren_yield_same_bounds() {
-    use kiln_compiler::parser::ast::{Item, GenericParamKind};
+    use kiln_compiler::parser::ast::{GenericParamKind, Item};
 
     let src_plus = r#"def f[T:Addable + Zero](x: T) -> T { x }"#;
     let src_paren = r#"def f[T:(Addable, Zero)](x: T) -> T { x }"#;
@@ -216,7 +216,7 @@ fn multi_bound_plus_and_paren_yield_same_bounds() {
 #[test]
 fn static_annotation_sets_is_static_on_hook() {
     use kiln_compiler::lexer::Lexer;
-    use kiln_compiler::parser::ast::{HookName, Item, ImplBlock};
+    use kiln_compiler::parser::ast::{HookName, ImplBlock, Item};
     use kiln_compiler::parser::Parser;
 
     let src = r#"impl Zero for int { @static hook zero() -> int {} }"#;
@@ -225,8 +225,10 @@ fn static_annotation_sets_is_static_on_hook() {
     match &file.items[0] {
         Item::ImplBlock(ImplBlock { hooks, .. }) => {
             assert_eq!(hooks.len(), 1);
-            assert!(hooks[0].annotations.iter().any(|a| a.name == "static"),
-                "expected @static annotation on hook");
+            assert!(
+                hooks[0].annotations.iter().any(|a| a.name == "static"),
+                "expected @static annotation on hook"
+            );
         }
         other => panic!("expected impl block, got {other:?}"),
     }

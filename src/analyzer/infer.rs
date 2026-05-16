@@ -58,7 +58,11 @@ pub fn infer_typed_expr(
             mk(TypedExprKind::Ident(name.clone()), ty, span)
         }
 
-        Expr::EnumAccess { enum_name, variant, span: espan } => {
+        Expr::EnumAccess {
+            enum_name,
+            variant,
+            span: espan,
+        } => {
             let (ty, discriminant) = match registry.lookup_by_name(enum_name) {
                 Some(entry) => match &entry.kind {
                     crate::analyzer::ty::TypeKind::Enum { variant_names } => {
@@ -89,7 +93,15 @@ pub fn infer_typed_expr(
                     (Ty::Unknown, 0)
                 }
             };
-            mk(TypedExprKind::EnumVariant { enum_name: enum_name.clone(), variant: variant.clone(), discriminant }, ty, *espan)
+            mk(
+                TypedExprKind::EnumVariant {
+                    enum_name: enum_name.clone(),
+                    variant: variant.clone(),
+                    discriminant,
+                },
+                ty,
+                *espan,
+            )
         }
 
         Expr::Tuple(elems, _) => {
@@ -109,7 +121,14 @@ pub fn infer_typed_expr(
         } => {
             let tl = infer_typed_expr(left, env, registry, errors);
             let tr = infer_typed_expr(right, env, registry, errors);
-            let ty = infer_binop(op.clone(), tl.ty.clone(), tr.ty.clone(), s, errors, registry);
+            let ty = infer_binop(
+                op.clone(),
+                tl.ty.clone(),
+                tr.ty.clone(),
+                s,
+                errors,
+                registry,
+            );
             mk(
                 TypedExprKind::BinOp {
                     op: op.clone(),
@@ -249,7 +268,11 @@ pub fn infer_typed_expr(
             }
         }
 
-        Expr::Field { object, field, span: fspan } => {
+        Expr::Field {
+            object,
+            field,
+            span: fspan,
+        } => {
             let to = infer_typed_expr(object, env, registry, errors);
             let field_ty = resolve_field_ty(&to.ty, field, registry);
             if field_ty == Ty::Unknown && to.ty != Ty::Unknown {
@@ -300,9 +323,7 @@ pub fn infer_typed_expr(
                     };
                     (alias_ty.clone(), name)
                 }
-                Some(Symbol::Type { id, .. }) => {
-                    (Ty::Named(id.clone(), ty.clone()), ty.clone())
-                }
+                Some(Symbol::Type { id, .. }) => (Ty::Named(id.clone(), ty.clone()), ty.clone()),
                 _ => {
                     errors.push(AnalysisError::UndefinedName {
                         name: ty.clone(),
@@ -933,7 +954,12 @@ fn lower_stmt_shallow(
             value: infer_typed_expr(value, env, registry, errors),
             span: *span,
         },
-        Stmt::CompoundAssign { target, op, rhs, span } => TypedStmt::CompoundAssign {
+        Stmt::CompoundAssign {
+            target,
+            op,
+            rhs,
+            span,
+        } => TypedStmt::CompoundAssign {
             target: infer_typed_expr(target, env, registry, errors),
             op: op.clone(),
             rhs: infer_typed_expr(rhs, env, registry, errors),
@@ -1060,7 +1086,14 @@ fn shallow_block(
 // Binop type inference
 // ---------------------------------------------------------------------------
 
-fn infer_binop(op: BinOp, lt: Ty, rt: Ty, span: &Span, errors: &mut Vec<AnalysisError>, registry: &TypeRegistry) -> Ty {
+fn infer_binop(
+    op: BinOp,
+    lt: Ty,
+    rt: Ty,
+    span: &Span,
+    errors: &mut Vec<AnalysisError>,
+    registry: &TypeRegistry,
+) -> Ty {
     use BinOp::*;
     match op {
         Add | Sub | Mul | Div | Mod => match (&lt, &rt) {

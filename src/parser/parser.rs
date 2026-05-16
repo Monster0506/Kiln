@@ -1561,7 +1561,12 @@ impl Parser {
                 let name = self.expect_ident()?;
                 // `EnumName:Variant` enum access
                 if self.peek() == &TokenKind::Colon {
-                    if let TokenKind::Ident(_) = self.tokens.get(self.pos + 1).map(|t| &t.kind).unwrap_or(&TokenKind::Eof) {
+                    if let TokenKind::Ident(_) = self
+                        .tokens
+                        .get(self.pos + 1)
+                        .map(|t| &t.kind)
+                        .unwrap_or(&TokenKind::Eof)
+                    {
                         self.advance(); // consume `:`
                         let variant = self.expect_ident()?;
                         let end = self.peek_span().start;

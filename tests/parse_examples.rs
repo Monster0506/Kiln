@@ -357,6 +357,84 @@ fn parse_modules() {
     parse_file("examples/modules.kn");
 }
 
+// ---- error (single-file) -----------------------------------------------------
+
+#[test]
+fn parse_error() {
+    parse_file("examples/error.kn");
+}
+
+// ---- check examples ----------------------------------------------------------
+
+#[test]
+fn parse_check_valid() {
+    parse_file("examples/check_valid.kn");
+}
+
+#[test]
+fn parse_check_valid_complex() {
+    parse_file("examples/check_valid_complex.kn");
+}
+
+#[test]
+fn parse_check_conformance() {
+    parse_file("examples/check_conformance.kn");
+}
+
+#[test]
+fn parse_check_duplicate_names() {
+    parse_file("examples/check_duplicate_names.kn");
+}
+
+#[test]
+fn parse_check_immutability() {
+    parse_file("examples/check_immutability.kn");
+}
+
+#[test]
+fn parse_check_missing_return() {
+    parse_file("examples/check_missing_return.kn");
+}
+
+#[test]
+fn parse_check_mixed() {
+    parse_file("examples/check_mixed.kn");
+}
+
+#[test]
+fn parse_check_return_paths() {
+    parse_file("examples/check_return_paths.kn");
+}
+
+#[test]
+fn parse_check_scope() {
+    parse_file("examples/check_scope.kn");
+}
+
+#[test]
+fn parse_check_type_mismatch() {
+    parse_file("examples/check_type_mismatch.kn");
+}
+
+#[test]
+fn parse_check_undefined() {
+    parse_file("examples/check_undefined.kn");
+}
+
+// ---- interface dispatch ------------------------------------------------------
+
+#[test]
+fn parse_iface_dispatch() {
+    parse_file("examples/iface_dispatch.kn");
+}
+
+// ---- mono --------------------------------------------------------------------
+
+#[test]
+fn parse_mono_identity() {
+    parse_file("examples/mono_identity.kn");
+}
+
 // ---- tricky parse cases ------------------------------------------------------
 
 #[test]

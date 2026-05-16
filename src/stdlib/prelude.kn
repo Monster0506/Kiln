@@ -35,6 +35,14 @@ def __kiln_bool_to_str(b: bool) -> str
 @builtin
 def __kiln_str_concat(a: str, b: str) -> str
 
+# ---- Ordering enum ----------------------------------------------------------
+
+enum Ordering {
+    Less
+    Equal
+    Greater
+}
+
 # ---- Core marker and identity interfaces ------------------------------------
 
 interface Copy {}
@@ -325,6 +333,18 @@ interface VecMethods {
     def pop() -> void {}
     def is_empty() -> bool {}
 }
+
+# ---- Conformance: Ordering --------------------------------------------------
+
+impl Copy for Ordering {}
+impl Clone for Ordering { hook clone() -> Ordering {} }
+impl Eq for Ordering {}
+impl PartialEq for Ordering { hook ==(other: Ordering) -> bool {} }
+impl Hash for Ordering { hook hash() -> int {} }
+impl Ord for Ordering { hook <=>(other: Ordering) -> Ordering {} }
+impl PartialOrd for Ordering { hook <(other: Ordering) -> bool {} }
+impl Debug for Ordering { hook debug_str() -> str {} }
+impl Display for Ordering { hook to_str() -> str {} }
 
 # ---- Conformance: int -------------------------------------------------------
 

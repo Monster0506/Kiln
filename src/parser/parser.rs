@@ -1070,6 +1070,13 @@ impl Parser {
         let interface = self.parse_type_atom()?;
         self.expect(TokenKind::For)?;
         let for_type = self.parse_type_atom()?;
+        let self_alias = if self.eat(&TokenKind::LParen) {
+            let alias = self.expect_ident()?;
+            self.expect(TokenKind::RParen)?;
+            Some(alias)
+        } else {
+            None
+        };
         self.expect(TokenKind::LBrace)?;
         let mut methods = Vec::new();
         let mut hooks = Vec::new();
@@ -1093,6 +1100,7 @@ impl Parser {
             generic_params,
             interface,
             for_type,
+            self_alias,
             methods,
             hooks,
             kind,
@@ -1551,10 +1559,31 @@ impl Parser {
             TokenKind::LParen => self.parse_closure_or_paren(),
             TokenKind::Ident(_) => {
                 let name = self.expect_ident()?;
+                // `EnumName:Variant` enum access
+                if self.peek() == &TokenKind::Colon {
+                    if let TokenKind::Ident(_) = self.tokens.get(self.pos + 1).map(|t| &t.kind).unwrap_or(&TokenKind::Eof) {
+                        self.advance(); // consume `:`
+                        let variant = self.expect_ident()?;
+                        let end = self.peek_span().start;
+                        return Ok(Expr::EnumAccess {
+                            enum_name: name,
+                            variant,
+                            span: Span::new(start.start, end),
+                        });
+                    }
+                }
                 if allow_struct && self.peek() == &TokenKind::LBrace {
                     self.parse_struct_literal(name, start)
                 } else {
                     Ok(Expr::Ident(name, start))
+                }
+            }
+            TokenKind::Self_ => {
+                self.advance();
+                if allow_struct && self.peek() == &TokenKind::LBrace {
+                    self.parse_struct_literal("Self".to_string(), start)
+                } else {
+                    Ok(Expr::Ident("Self".to_string(), start))
                 }
             }
             TokenKind::Amp => {

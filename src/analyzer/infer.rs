@@ -58,6 +58,40 @@ pub fn infer_typed_expr(
             mk(TypedExprKind::Ident(name.clone()), ty, span)
         }
 
+        Expr::EnumAccess { enum_name, variant, span: espan } => {
+            let (ty, discriminant) = match registry.lookup_by_name(enum_name) {
+                Some(entry) => match &entry.kind {
+                    crate::analyzer::ty::TypeKind::Enum { variant_names } => {
+                        if let Some(idx) = variant_names.iter().position(|v| v == variant) {
+                            (Ty::Named(entry.id.clone(), enum_name.clone()), idx as i64)
+                        } else {
+                            errors.push(AnalysisError::UndefinedName {
+                                name: format!("{enum_name}:{variant}"),
+                                span: *espan,
+                            });
+                            (Ty::Unknown, 0)
+                        }
+                    }
+                    _ => {
+                        errors.push(AnalysisError::TypeMismatch {
+                            expected: "enum".into(),
+                            found: enum_name.clone(),
+                            span: *espan,
+                        });
+                        (Ty::Unknown, 0)
+                    }
+                },
+                None => {
+                    errors.push(AnalysisError::UndefinedName {
+                        name: enum_name.clone(),
+                        span: *espan,
+                    });
+                    (Ty::Unknown, 0)
+                }
+            };
+            mk(TypedExprKind::EnumVariant { enum_name: enum_name.clone(), variant: variant.clone(), discriminant }, ty, *espan)
+        }
+
         Expr::Tuple(elems, _) => {
             let typed: Vec<TypedExpr> = elems
                 .iter()
@@ -75,7 +109,7 @@ pub fn infer_typed_expr(
         } => {
             let tl = infer_typed_expr(left, env, registry, errors);
             let tr = infer_typed_expr(right, env, registry, errors);
-            let ty = infer_binop(op.clone(), tl.ty.clone(), tr.ty.clone(), s, errors);
+            let ty = infer_binop(op.clone(), tl.ty.clone(), tr.ty.clone(), s, errors, registry);
             mk(
                 TypedExprKind::BinOp {
                     op: op.clone(),
@@ -215,9 +249,16 @@ pub fn infer_typed_expr(
             }
         }
 
-        Expr::Field { object, field, .. } => {
+        Expr::Field { object, field, span: fspan } => {
             let to = infer_typed_expr(object, env, registry, errors);
             let field_ty = resolve_field_ty(&to.ty, field, registry);
+            if field_ty == Ty::Unknown && to.ty != Ty::Unknown {
+                errors.push(AnalysisError::NoField {
+                    ty: to.ty.to_string(),
+                    field: field.clone(),
+                    span: *fspan,
+                });
+            }
             mk(
                 TypedExprKind::Field {
                     object: Box::new(to),
@@ -251,14 +292,23 @@ pub fn infer_typed_expr(
             fields,
             span: s,
         } => {
-            let struct_ty = match env.lookup(ty) {
-                Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), ty.clone()),
+            let (struct_ty, concrete_ty_name) = match env.lookup(ty) {
+                Some(Symbol::TypeAlias(alias_ty)) => {
+                    let name = match alias_ty {
+                        Ty::Named(_, n) => n.clone(),
+                        _ => ty.clone(),
+                    };
+                    (alias_ty.clone(), name)
+                }
+                Some(Symbol::Type { id, .. }) => {
+                    (Ty::Named(id.clone(), ty.clone()), ty.clone())
+                }
                 _ => {
                     errors.push(AnalysisError::UndefinedName {
                         name: ty.clone(),
                         span: *s,
                     });
-                    Ty::Unknown
+                    (Ty::Unknown, ty.clone())
                 }
             };
             let typed_fields = fields
@@ -267,7 +317,7 @@ pub fn infer_typed_expr(
                 .collect();
             mk(
                 TypedExprKind::StructLiteral {
-                    ty_name: ty.clone(),
+                    ty_name: concrete_ty_name,
                     fields: typed_fields,
                 },
                 struct_ty,
@@ -1010,7 +1060,7 @@ fn shallow_block(
 // Binop type inference
 // ---------------------------------------------------------------------------
 
-fn infer_binop(op: BinOp, lt: Ty, rt: Ty, span: &Span, errors: &mut Vec<AnalysisError>) -> Ty {
+fn infer_binop(op: BinOp, lt: Ty, rt: Ty, span: &Span, errors: &mut Vec<AnalysisError>, registry: &TypeRegistry) -> Ty {
     use BinOp::*;
     match op {
         Add | Sub | Mul | Div | Mod => match (&lt, &rt) {
@@ -1035,14 +1085,13 @@ fn infer_binop(op: BinOp, lt: Ty, rt: Ty, span: &Span, errors: &mut Vec<Analysis
             }
         },
         Eq | Ne | Lt | Gt | LtEq | GtEq => Ty::Bool,
-        // Spaceship returns an integer ordering value (-1, 0, 1), not a bool.
+        // Spaceship returns Ordering.
         Spaceship => match (&lt, &rt) {
             (Ty::Unknown, _) | (_, Ty::Unknown) => Ty::Unknown,
-            (Ty::Named(_, _), _)
-            | (_, Ty::Named(_, _))
-            | (Ty::GenericParam(_), _)
-            | (_, Ty::GenericParam(_)) => Ty::Int,
-            _ => Ty::Int,
+            _ => match registry.lookup_by_name("Ordering") {
+                Some(e) => Ty::Named(e.id.clone(), "Ordering".into()),
+                None => Ty::Int,
+            },
         },
         And | Or => {
             if !matches!(lt, Ty::Bool | Ty::Unknown) || !matches!(rt, Ty::Bool | Ty::Unknown) {

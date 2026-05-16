@@ -254,7 +254,8 @@ fn collect_expr(
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)
-        | TypedExprKind::Ident(_) => {}
+        | TypedExprKind::Ident(_)
+        | TypedExprKind::EnumVariant { .. } => {}
     }
 }
 

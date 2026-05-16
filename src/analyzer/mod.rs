@@ -213,33 +213,6 @@ fn register_builtins(env: &mut Env, registry: &mut ty::TypeRegistry) {
         },
     );
 
-    let ord_id = registry.register(
-        "Ordering".into(),
-        TypeKind::Enum {
-            variant_names: vec!["Less".into(), "Equal".into(), "Greater".into()],
-        },
-    );
-    env.define(
-        "Ordering",
-        Symbol::Type {
-            id: ord_id,
-            span: s,
-        },
-    );
-    for iface in &[
-        "Copy",
-        "Clone",
-        "Eq",
-        "Hash",
-        "Ord",
-        "PartialEq",
-        "PartialOrd",
-        "Debug",
-        "Display",
-    ] {
-        registry.register_conformance("Ordering", iface, unc());
-    }
-
     // None is the unit variant of Option[T]; treat it as Option[Unknown] so
     // comparisons like `v != None` type-check without knowing T.
     env.define(
@@ -549,9 +522,9 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 }
             };
             let has_generics = !scope_params.is_empty();
+            let dummy_span = impl_block.span;
             if has_generics {
                 env.push_scope();
-                let dummy_span = impl_block.span;
                 for gname in &scope_params {
                     env.define(
                         gname,
@@ -561,6 +534,19 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         },
                     );
                 }
+            }
+            // Define `Self` and any user alias so hook/method signatures can use them.
+            // Look up the concrete type from the registry so Self resolves to Ty::Named("Item")
+            // rather than a generic param.
+            let self_concrete_ty = if let Some(e) = registry.lookup_by_name(&type_name) {
+                Ty::Named(e.id.clone(), type_name.clone())
+            } else {
+                Ty::Unknown
+            };
+            env.push_scope();
+            env.define("Self", Symbol::TypeAlias(self_concrete_ty.clone()));
+            if let Some(alias) = &impl_block.self_alias {
+                env.define(alias, Symbol::TypeAlias(self_concrete_ty));
             }
             for method in &impl_block.methods {
                 let params: Vec<(String, Ty)> = method
@@ -606,6 +592,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     },
                 );
             }
+            env.pop_scope(); // Self + alias scope
             if has_generics {
                 env.pop_scope();
             }
@@ -980,17 +967,17 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     }
                 }
 
-                // Push `Self` and all associated type names from the interface into scope
-                // so that hook/method signatures like `-> Output` resolve without errors.
-                let dummy_span = impl_block.span;
+                // Compute self_ty before pushing the Self scope so that `for_type`
+                // resolves against the outer env (it never references Self).
+                let self_ty = resolve_type_expr(&impl_block.for_type, &env, &mut errors);
+
+                // Push `Self`, any user-defined self alias, and all associated type names
+                // from the interface into scope so hook/method signatures resolve correctly.
                 env.push_scope();
-                env.define(
-                    "Self",
-                    Symbol::Type {
-                        id: TypeId(0),
-                        span: dummy_span,
-                    },
-                );
+                env.define("Self", Symbol::TypeAlias(self_ty.clone()));
+                if let Some(alias) = &impl_block.self_alias {
+                    env.define(alias, Symbol::TypeAlias(self_ty.clone()));
+                }
                 if let Some(iface_def) = interfaces.iter().find(|i| i.name == interface_name) {
                     use crate::parser::ast::InterfaceItemKind;
                     for iitem in &iface_def.items {
@@ -1005,8 +992,6 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         }
                     }
                 }
-
-                let self_ty = resolve_type_expr(&impl_block.for_type, &env, &mut errors);
 
                 // Collect the struct's field names/types so they can be placed directly
                 // in scope inside each method/hook body (field access without `self.`).
@@ -1073,6 +1058,31 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     });
                 }
 
+                // Collect hook names declared @static in the interface definition so
+                // impl blocks don't need to repeat the annotation.
+                let iface_static_hooks: std::collections::HashSet<String> = interfaces
+                    .iter()
+                    .find(|i| i.name == interface_name)
+                    .map(|iface_def| {
+                        use crate::parser::ast::InterfaceItemKind;
+                        iface_def
+                            .items
+                            .iter()
+                            .filter_map(|item| {
+                                if let InterfaceItemKind::Hook { annotations, name, .. } = &item.kind {
+                                    if annotations.iter().any(|a| a.name == "static") {
+                                        return Some(match name {
+                                            crate::parser::ast::HookName::Named(n) => n.clone(),
+                                            crate::parser::ast::HookName::Op(s) => s.clone(),
+                                        });
+                                    }
+                                }
+                                None
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
                 let mut typed_hooks: Vec<TypedHookDef> = Vec::new();
                 for hook in &impl_block.hooks {
                     env.push_scope();
@@ -1125,7 +1135,11 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     );
                     env.pop_scope();
                     typed_hooks.push(TypedHookDef {
-                        is_static: hook.annotations.iter().any(|a| a.name == "static"),
+                        is_static: hook.annotations.iter().any(|a| a.name == "static")
+                            || iface_static_hooks.contains(&match &hook.name {
+                                crate::parser::ast::HookName::Named(n) => n.clone(),
+                                crate::parser::ast::HookName::Op(s) => s.clone(),
+                            }),
                         name: hook.name.clone(),
                         params,
                         return_type: ret,

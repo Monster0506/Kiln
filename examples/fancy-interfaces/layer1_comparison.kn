@@ -18,10 +18,10 @@ impl EquatableWith[Temperature] for Temperature {
 }
 
 impl ComparableWith[Temperature] for Temperature {
-    hook <=>(rhs: Temperature) -> int {
-        if celsius < rhs.celsius { return -1 }
-        if celsius > rhs.celsius { return 1 }
-        return 0
+    hook <=>(rhs: Temperature) -> Ordering {
+        if celsius < rhs.celsius { return Ordering:Less }
+        if celsius > rhs.celsius { return Ordering:Greater }
+        return Ordering:Equal
     }
 }
 
@@ -49,16 +49,16 @@ impl EquatableWith[Score] for Score {
 }
 
 impl ComparableWith[Score] for Score {
-    hook <=>(rhs: Score) -> int {
-        if points < rhs.points { return -1 }
-        if points > rhs.points { return 1 }
-        return 0
+    hook <=>(rhs: Score) -> Ordering {
+        if points < rhs.points { return Ordering:Less }
+        if points > rhs.points { return Ordering:Greater }
+        return Ordering:Equal
     }
 }
 
 def max_score(a: Score, b: Score) -> Score {
-    cmp: int = a <=> b
-    if cmp >= 0 {
+    cmp: Ordering = a <=> b
+    if cmp == Ordering:Greater || cmp == Ordering:Equal {
         return a
     }
     return b

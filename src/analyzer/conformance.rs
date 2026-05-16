@@ -53,6 +53,60 @@ pub fn check_enum_conformance(
     }
 }
 
+/// Returns the display name for a TypeExpr, substituting `Self` and generic params.
+fn type_expr_display(
+    ty: &TypeExpr,
+    self_name: &str,
+    subst: &std::collections::HashMap<String, String>,
+) -> String {
+    match ty {
+        TypeExpr::Named { name, .. } if name == "Self" => self_name.to_string(),
+        TypeExpr::Named { name, .. } => {
+            subst.get(name.as_str()).cloned().unwrap_or_else(|| name.clone())
+        }
+        _ => format!("{ty:?}"),
+    }
+}
+
+/// Returns true if the impl's TypeExpr is compatible with the interface's TypeExpr.
+/// `Self` and generic params in the interface are substituted before comparison.
+/// Names in `assoc_types` are treated as wildcards (the impl may use any concrete type).
+fn hook_param_ty_compatible(
+    impl_ty: &TypeExpr,
+    iface_ty: &TypeExpr,
+    type_name: &str,
+    self_alias: &Option<String>,
+    subst: &std::collections::HashMap<String, String>,
+    assoc_types: &std::collections::HashSet<String>,
+) -> bool {
+    let iface_name = match iface_ty {
+        TypeExpr::Named { name, .. } => name.as_str(),
+        _ => return true,
+    };
+    let impl_name = match impl_ty {
+        TypeExpr::Named { name, .. } => name.as_str(),
+        _ => return false,
+    };
+    // Associated types are wildcards: the impl defines them, so any concrete type is valid.
+    if assoc_types.contains(iface_name) {
+        return true;
+    }
+    // Resolve the interface-side name through Self and generic param substitution.
+    let resolved_iface = if iface_name == "Self" {
+        type_name
+    } else if let Some(concrete) = subst.get(iface_name) {
+        concrete.as_str()
+    } else {
+        iface_name
+    };
+    // impl may write `Self`, the concrete type name, or the self-alias
+    let impl_matches = |expected: &str| {
+        impl_name == expected
+            || (expected == type_name && (impl_name == "Self" || self_alias.as_deref() == Some(impl_name)))
+    };
+    impl_matches(resolved_iface)
+}
+
 /// Check that an impl block provides all required items from the interface it claims to implement,
 /// including verifying associated-type bindings declared in the interface's extends clause.
 pub fn check_impl_completeness(
@@ -68,21 +122,101 @@ pub fn check_impl_completeness(
         None => return,
     };
 
-    // Check that required hooks/methods are present.
+    // Build a substitution map from the interface's generic param names to the concrete
+    // type arguments supplied in the impl's interface type expression.
+    // e.g. `impl AddableWith[int] for Item` gives { "Rhs" -> "int" }.
+    let generic_subst: std::collections::HashMap<String, String> = {
+        let iface_args = match &impl_block.interface {
+            TypeExpr::Named { generics, .. } => generics.as_slice(),
+            _ => &[],
+        };
+        iface.generic_params
+            .iter()
+            .zip(iface_args.iter())
+            .filter_map(|(param, arg)| {
+                if let TypeExpr::Named { name: arg_name, .. } = arg {
+                    Some((param.name.clone(), arg_name.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    // Collect associated type names so they can be treated as wildcards in signature checks.
+    let assoc_type_names: std::collections::HashSet<String> = iface.items.iter()
+        .filter_map(|item| {
+            if let InterfaceItemKind::AssocType { name, .. } = &item.kind {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Check that required hooks/methods are present and have compatible signatures.
     for item in &iface.items {
         match &item.kind {
-            InterfaceItemKind::Hook { name, default, .. } if default.is_none() => {
-                if !impl_block.hooks.iter().any(|h| &h.name == name) {
-                    let hook_label = match name {
-                        crate::parser::ast::HookName::Op(s) => s.clone(),
-                        crate::parser::ast::HookName::Named(s) => s.clone(),
-                    };
-                    errors.push(AnalysisError::MissingConformance {
-                        ty: type_name.clone(),
-                        iface: iface_name.clone(),
-                        detail: format!("impl block missing required hook `{hook_label}`"),
-                        span: impl_block.span,
-                    });
+            InterfaceItemKind::Hook { name, params: iface_params, return_type: iface_ret, default, .. } if default.is_none() => {
+                let hook_label = match name {
+                    crate::parser::ast::HookName::Op(s) => s.clone(),
+                    crate::parser::ast::HookName::Named(s) => s.clone(),
+                };
+                match impl_block.hooks.iter().find(|h| &h.name == name) {
+                    None => {
+                        errors.push(AnalysisError::MissingConformance {
+                            ty: type_name.clone(),
+                            iface: iface_name.clone(),
+                            detail: format!("impl block missing required hook `{hook_label}`"),
+                            span: impl_block.span,
+                        });
+                    }
+                    Some(impl_hook) => {
+                        // Check parameter count.
+                        if impl_hook.params.len() != iface_params.len() {
+                            errors.push(AnalysisError::MissingConformance {
+                                ty: type_name.clone(),
+                                iface: iface_name.clone(),
+                                detail: format!(
+                                    "hook `{hook_label}` has {} parameter(s) but `{}` requires {}",
+                                    impl_hook.params.len(), iface_name, iface_params.len()
+                                ),
+                                span: impl_hook.span,
+                            });
+                        } else {
+                            for (impl_p, iface_p) in impl_hook.params.iter().zip(iface_params.iter()) {
+                                if !hook_param_ty_compatible(&impl_p.ty, &iface_p.ty, &type_name, &impl_block.self_alias, &generic_subst, &assoc_type_names) {
+                                    errors.push(AnalysisError::MissingConformance {
+                                        ty: type_name.clone(),
+                                        iface: iface_name.clone(),
+                                        detail: format!(
+                                            "hook `{hook_label}` parameter `{}`: expected `{}`, found `{}`",
+                                            impl_p.name,
+                                            type_expr_display(&iface_p.ty, &type_name, &generic_subst),
+                                            type_expr_display(&impl_p.ty, &type_name, &generic_subst),
+                                        ),
+                                        span: impl_hook.span,
+                                    });
+                                }
+                            }
+                            if let Some(iface_ret_ty) = iface_ret {
+                                if let Some(impl_ret_ty) = &impl_hook.return_type {
+                                    if !hook_param_ty_compatible(impl_ret_ty, iface_ret_ty, &type_name, &impl_block.self_alias, &generic_subst, &assoc_type_names) {
+                                        errors.push(AnalysisError::MissingConformance {
+                                            ty: type_name.clone(),
+                                            iface: iface_name.clone(),
+                                            detail: format!(
+                                                "hook `{hook_label}` return type: expected `{}`, found `{}`",
+                                                type_expr_display(iface_ret_ty, &type_name, &generic_subst),
+                                                type_expr_display(impl_ret_ty, &type_name, &generic_subst),
+                                            ),
+                                            span: impl_hook.span,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             InterfaceItemKind::Method(sig) if sig.body.stmts.is_empty() => {
@@ -426,7 +560,7 @@ mod tests {
     }
 
     fn addable_impl_for_point() -> ImplBlock {
-        ImplBlock {
+        ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("Addable"),
             for_type: named("Point"),
@@ -520,7 +654,7 @@ mod tests {
         // Bug 3: check_struct_conformance always passed &[] for hooks, so a
         // completely empty impl block would not produce any error for missing hooks.
         let st = point_struct();
-        let empty_impl = ImplBlock {
+        let empty_impl = ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("Addable"),
             for_type: named("Point"),
@@ -565,7 +699,7 @@ mod tests {
 
     #[test]
     fn error_when_impl_block_missing_required_hook() {
-        let empty_impl = ImplBlock {
+        let empty_impl = ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("Addable"),
             for_type: named("Point"),
@@ -593,7 +727,7 @@ mod tests {
 
     #[test]
     fn error_when_impl_block_missing_required_method() {
-        let empty_impl = ImplBlock {
+        let empty_impl = ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("Printable"),
             for_type: named("Point"),
@@ -613,7 +747,7 @@ mod tests {
 
     #[test]
     fn ok_when_impl_block_has_required_method() {
-        let impl_with_method = ImplBlock {
+        let impl_with_method = ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("Printable"),
             for_type: named("Point"),
@@ -643,7 +777,7 @@ mod tests {
     fn regression_bug4_impl_block_completeness_validated() {
         // Bug 4: impl blocks were type-checked but never validated for completeness
         // against the interface. An empty impl block should error.
-        let empty_impl = ImplBlock {
+        let empty_impl = ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("Addable"),
             for_type: named("Point"),
@@ -732,7 +866,7 @@ mod tests {
 
     fn addable_with_impl_returning(for_ty: &str, ret: &str) -> ImplBlock {
         // impl AddableWith[for_ty] for for_ty { hook +(rhs: for_ty) -> ret {} }
-        ImplBlock {
+        ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: TypeExpr::Named {
                 name: "AddableWith".into(),
@@ -760,7 +894,7 @@ mod tests {
     }
 
     fn addable_impl_for(ty: &str) -> ImplBlock {
-        ImplBlock {
+        ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("Addable"),
             for_type: named(ty),
@@ -831,7 +965,7 @@ mod tests {
 
     fn with_hook_impl_for_foo() -> ImplBlock {
         // impl WithHook for Foo { hook do_thing() {} }
-        ImplBlock {
+        ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("WithHook"),
             for_type: named("Foo"),
@@ -883,7 +1017,7 @@ mod tests {
         // impl Wrapper for Foo {} -- empty, but Wrapper: WithHook requires do_thing.
         // check_impl_completeness must walk parent interfaces and error when
         // do_thing is not provided in any impl block for Foo.
-        let empty_wrapper_impl = ImplBlock {
+        let empty_wrapper_impl = ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("Wrapper"),
             for_type: named("Foo"),
@@ -905,7 +1039,7 @@ mod tests {
     fn check_impl_completeness_walks_parent_interfaces_satisfied_by_separate_impl() {
         // impl Wrapper for Foo {} + impl WithHook for Foo { hook do_thing {} }
         // check_impl_completeness should pass because do_thing exists in another impl.
-        let empty_wrapper_impl = ImplBlock {
+        let empty_wrapper_impl = ImplBlock { self_alias: None,
             generic_params: vec![],
             interface: named("Wrapper"),
             for_type: named("Foo"),

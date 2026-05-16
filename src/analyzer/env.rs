@@ -55,6 +55,8 @@ pub enum Symbol {
         id: TypeId,
         span: Span,
     },
+    /// A transparent alias to a fully-resolved type (used for `Self` and user self-aliases).
+    TypeAlias(Ty),
     Iface {
         id: InterfaceId,
         span: Span,

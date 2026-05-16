@@ -242,6 +242,8 @@ pub struct ImplBlock {
     pub generic_params: Vec<GenericParam>,
     pub interface: TypeExpr,
     pub for_type: TypeExpr,
+    /// Optional user-defined alias for the implementing type: `impl Addable for Item(selftype)`
+    pub self_alias: Option<String>,
     pub methods: Vec<FnDef>,
     pub hooks: Vec<HookDef>,
     pub kind: ImplKind,
@@ -422,6 +424,12 @@ pub enum Expr {
         operand: Box<Expr>,
         span: Span,
     },
+    /// `EnumName:Variant`
+    EnumAccess {
+        enum_name: String,
+        variant: String,
+        span: Span,
+    },
     /// `expr?`
     Unwrap(Box<Expr>, Span),
     /// `expr as Type`
@@ -474,6 +482,7 @@ impl Expr {
             Expr::Index { span, .. } => *span,
             Expr::BinOp { span, .. } => *span,
             Expr::UnOp { span, .. } => *span,
+            Expr::EnumAccess { span, .. } => *span,
             Expr::Unwrap(_, s) => *s,
             Expr::As { span, .. } => *span,
             Expr::Match { span, .. } => *span,

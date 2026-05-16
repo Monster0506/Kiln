@@ -560,6 +560,10 @@ fn lower_typed_expr_inner(
         }
 
         TypedExprKind::GenSplice(e) => lower_typed_expr(e, builder, vars, ctx),
+
+        TypedExprKind::EnumVariant { discriminant, .. } => {
+            builder.ins().iconst(types::I64, *discriminant)
+        }
     }
 }
 

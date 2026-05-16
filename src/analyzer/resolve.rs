@@ -47,6 +47,7 @@ pub fn resolve_type_expr(
                 ),
                 "Shared" => Ty::Shared(Box::new(nth(&resolved_generics, 0))),
                 other => match env.lookup(other) {
+                    Some(Symbol::TypeAlias(ty)) => ty.clone(),
                     Some(Symbol::Type { id, .. }) if *id == crate::analyzer::ty::TypeId(0) => {
                         Ty::GenericParam(other.to_string())
                     }

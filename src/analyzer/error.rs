@@ -64,6 +64,9 @@ pub enum AnalysisError {
         method: String,
         span: Span,
     },
+
+    #[error("{span}: type `{ty}` has no field `{field}`")]
+    NoField { ty: String, field: String, span: Span },
 }
 
 impl AnalysisError {
@@ -81,6 +84,7 @@ impl AnalysisError {
             AnalysisError::NoMatchingOverload { .. } => "E010",
             AnalysisError::DuplicateImpl { .. } => "E011",
             AnalysisError::NonObjectSafeInterface { .. } => "E012",
+            AnalysisError::NoField { .. } => "E013",
         }
     }
 
@@ -98,6 +102,7 @@ impl AnalysisError {
             AnalysisError::NoMatchingOverload { .. } => "type error",
             AnalysisError::DuplicateImpl { .. } => "impl error",
             AnalysisError::NonObjectSafeInterface { .. } => "object safety error",
+            AnalysisError::NoField { .. } => "type error",
         }
     }
 
@@ -143,6 +148,9 @@ impl AnalysisError {
             AnalysisError::NonObjectSafeInterface { iface, method, .. } => {
                 format!("interface `{iface}` is not object-safe (method `{method}` uses `Self`)")
             }
+            AnalysisError::NoField { ty, field, .. } => {
+                format!("type `{ty}` has no field `{field}`")
+            }
         }
     }
 
@@ -170,6 +178,7 @@ impl AnalysisError {
             AnalysisError::NoMatchingOverload { span, .. } => *span,
             AnalysisError::DuplicateImpl { span, .. } => *span,
             AnalysisError::NonObjectSafeInterface { span, .. } => *span,
+            AnalysisError::NoField { span, .. } => *span,
         }
     }
 }

@@ -316,7 +316,8 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)
-        | TypedExprKind::Ident(_) => {}
+        | TypedExprKind::Ident(_)
+        | TypedExprKind::EnumVariant { .. } => {}
     }
 }
 

@@ -250,6 +250,11 @@ pub enum TypedExprKind {
         op: UnOp,
         operand: Box<TypedExpr>,
     },
+    EnumVariant {
+        enum_name: String,
+        variant: String,
+        discriminant: i64,
+    },
     Unwrap(Box<TypedExpr>),
     As {
         expr: Box<TypedExpr>,

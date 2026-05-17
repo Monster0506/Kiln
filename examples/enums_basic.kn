@@ -59,10 +59,10 @@ enum ExitCode {
 
 def opposite(d: Direction) -> Direction {
     return match d {
-        North => South,
-        South => North,
-        East => West,
-        West => East
+        North => Direction:South,
+        South => Direction:North,
+        East => Direction:West,
+        West => Direction:East
     }
 }
 
@@ -107,4 +107,7 @@ def is_success(code: HttpStatus) -> bool {
 }
 
 def main() -> void {
+    status: HttpStatus = HttpStatus:Ok
+    println(status)
+    println(is_success(status))
 }

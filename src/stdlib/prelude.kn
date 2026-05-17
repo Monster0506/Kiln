@@ -562,6 +562,9 @@ impl VecMethods for Vec[T] {
     def is_empty() -> bool {
         return self.len() == 0
     }
+    def length() -> int {
+        return self.len()
+    }
 }
 
 # ---- Range utilities --------------------------------------------------------

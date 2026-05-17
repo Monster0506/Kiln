@@ -22,29 +22,12 @@ enum Weekday {
 
 # ---- Enum implementing Comparable --------------------------------------------
 
-enum Priority: Comparable {
+@derive(Comparable)
+enum Priority {
     Low
     Medium
     High
     Critical
-}
-
-impl Comparable for Priority {
-    hook <=>(other: Priority) -> int {
-        lo: int = match self {
-            Low => 0,
-            Medium => 1,
-            High => 2,
-            Critical => 3
-        }
-        hi: int = match other {
-            Low => 0,
-            Medium => 1,
-            High => 2,
-            Critical => 3
-        }
-        return lo <=> hi
-    }
 }
 
 # ---- Enum implementing Display -----------------------------------------------
@@ -69,14 +52,14 @@ impl Display for Status {
 
 # ---- Enum implementing Eq ----------------------------------------------------
 
-enum Direction: Eq {
+enum Direction: PartialEq {
     North
     South
     East
     West
 }
 
-impl Eq for Direction {
+impl PartialEq for Direction {
     hook ==(other: Direction) -> bool {
         return match self {
             North => match other { North => true, _ => false },
@@ -86,6 +69,8 @@ impl Eq for Direction {
         }
     }
 }
+
+impl Eq for Direction {}
 
 # ---- Generic enum with interface conformance --------------------------------
 
@@ -97,8 +82,8 @@ enum Result[T, E]: Display {
 impl Display for Result[int, str] {
     hook to_str() -> str {
         return match self {
-            Ok { value: v } => "Ok({v})",
-            Err { error: e } => "Err({e})"
+            Ok { value: _ } => "Ok(...)",
+            Err { error: _ } => "Err(...)"
         }
     }
 }
@@ -114,7 +99,7 @@ def sort_priorities(items: Vec[Priority]) -> Vec[Priority] {
         while j < n - i - 1 {
             a: Priority = items[j]
             b: Priority = items[j + 1]
-            if (a <=> b) > 0 {
+            if (a <=> b) == Ordering:Greater {
                 items[j] = b
                 items[j + 1] = a
             }
@@ -126,4 +111,27 @@ def sort_priorities(items: Vec[Priority]) -> Vec[Priority] {
 }
 
 def main() -> void {
+    # @derive(Eq) -- Color
+    println(Color:Red == Color:Red)
+    println(Color:Red == Color:Blue)
+
+    # @derive(Comparable) -- Priority
+    println((Priority:High <=> Priority:Low) == Ordering:Greater)
+    println((Priority:Low <=> Priority:Critical) == Ordering:Less)
+    priorities: Vec[Priority] = Vec.new()
+    priorities.add(Priority:Critical)
+    priorities.add(Priority:Low)
+    priorities.add(Priority:High)
+    priorities.add(Priority:Medium)
+    sorted: Vec[Priority] = sort_priorities(priorities)
+    println(sorted)
+
+    # Manual Display impl -- Status
+    println(Status:Pending)
+    println(Status:Failed)
+
+    # Manual Eq impl -- Direction
+    println(Direction:North == Direction:North)
+    println(Direction:North == Direction:South)
+
 }

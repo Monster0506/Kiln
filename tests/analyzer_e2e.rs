@@ -1,11 +1,14 @@
 use kiln_compiler::analyzer::analyze;
+use kiln_compiler::annotations::{default_registry, run_processors};
 use kiln_compiler::lexer::Lexer;
 use kiln_compiler::parser::Parser;
 use std::fs;
 
 fn run(src: &str) -> Vec<String> {
     let tokens = Lexer::new(src).tokenize().expect("lex failed");
-    let ast = Parser::new(tokens).parse_file().expect("parse failed");
+    let mut ast = Parser::new(tokens).parse_file().expect("parse failed");
+    let registry = default_registry();
+    run_processors(&mut ast, &registry);
     match analyze(&ast) {
         Ok(_) => vec![],
         Err(errs) => errs
@@ -627,4 +630,44 @@ def test() -> void {
         errs.is_empty(),
         "for with correct enum annotation should have no errors: {errs:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// @derive(Eq, Comparable) on enums
+// ---------------------------------------------------------------------------
+
+#[test]
+fn derive_eq_on_enum_no_errors() {
+    let errs = run(r#"
+@derive(Eq)
+enum Priority { Low, Medium, High, Critical }
+"#);
+    assert!(errs.is_empty(), "@derive(Eq) on enum should have no errors: {errs:?}");
+}
+
+#[test]
+fn derive_comparable_on_enum_no_errors() {
+    let errs = run(r#"
+@derive(Comparable)
+enum Priority { Low, Medium, High, Critical }
+"#);
+    assert!(errs.is_empty(), "@derive(Comparable) on enum should have no errors: {errs:?}");
+}
+
+#[test]
+fn derive_eq_comparable_on_enum_allows_comparison() {
+    let errs = run(r#"
+@derive(Eq, Comparable)
+enum Priority { Low, Medium, High, Critical }
+def is_urgent(p: Priority) -> bool {
+    return (p <=> Priority:High) >= 0
+}
+"#);
+    assert!(errs.is_empty(), "@derive(Eq, Comparable) on enum with <=> should pass: {errs:?}");
+}
+
+#[test]
+fn analyze_enums_derive_example() {
+    let errs = analyze_file("examples/enums_derive.kn");
+    assert!(errs.is_empty(), "enums_derive.kn: {errs:?}");
 }

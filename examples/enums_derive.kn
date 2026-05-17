@@ -1,0 +1,124 @@
+# enums_derive.kn -- @derive(Eq, Comparable) on enums
+
+# ---- Basic Eq derive ----------------------------------------------------------
+
+@derive(Eq)
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+def same_color(a: Color, b: Color) -> bool {
+    return a == b
+}
+
+# ---- Basic Comparable derive --------------------------------------------------
+
+@derive(Comparable)
+enum Priority {
+    Low
+    Medium
+    High
+    Critical
+}
+
+def is_urgent(p: Priority) -> bool {
+    return (p <=> Priority:High) >= 0
+}
+
+def max_priority(a: Priority, b: Priority) -> Priority {
+    if (a <=> b) >= 0 {
+        return a
+    }
+    return b
+}
+
+# ---- Both together ------------------------------------------------------------
+
+@derive(Eq, Comparable)
+enum Severity {
+    Info
+    Warning
+    Error
+    Fatal
+}
+
+def severity_in_range(s: Severity, lo: Severity, hi: Severity) -> bool {
+    return (s <=> lo) >= 0 && (s <=> hi) <= 0
+}
+
+def deduplicate_adjacent(items: Vec[Severity]) -> Vec[Severity] {
+    result: Vec[Severity] = Vec.new()
+    mut i: int = 0
+    while i < items.length() {
+        cur: Severity = items[i]
+        if i == 0 {
+            result.add(cur)
+        } else {
+            prev: Severity = items[i - 1]
+            if !(cur == prev) {
+                result.add(cur)
+            }
+        }
+        i = i + 1
+    }
+    return result
+}
+
+# ---- Derived Comparable in a sort ---------------------------------------------
+
+@derive(Comparable)
+enum Month {
+    January
+    February
+    March
+    April
+    May
+    June
+    July
+    August
+    September
+    October
+    November
+    December
+}
+
+def earlier_month(a: Month, b: Month) -> Month {
+    if (a <=> b) <= 0 {
+        return a
+    }
+    return b
+}
+
+def months_between(start: Month, end: Month) -> int {
+    lo: int = match start {
+        January => 0, February => 1, March => 2, April => 3,
+        May => 4, June => 5, July => 6, August => 7,
+        September => 8, October => 9, November => 10, December => 11
+    }
+    hi: int = match end {
+        January => 0, February => 1, March => 2, April => 3,
+        May => 4, June => 5, July => 6, August => 7,
+        September => 8, October => 9, November => 10, December => 11
+    }
+    if hi >= lo {
+        return hi - lo
+    }
+    return 0
+}
+
+def main() -> void {
+    println(same_color(Color:Red, Color:Red))
+    println(same_color(Color:Red, Color:Blue))
+
+    println(is_urgent(Priority:Critical))
+    println(is_urgent(Priority:Low))
+    println(max_priority(Priority:Medium, Priority:High))
+
+    println(severity_in_range(Severity:Warning, Severity:Info, Severity:Error))
+    println(severity_in_range(Severity:Fatal, Severity:Info, Severity:Error))
+
+    println(earlier_month(Month:March, Month:July))
+    println(months_between(Month:April, Month:September))
+}

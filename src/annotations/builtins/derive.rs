@@ -13,18 +13,28 @@ pub fn register(registry: &mut ProcessorRegistry) {
 ///   Display    -> impl Display   (with to_str hook, no explicit params)
 ///   Comparable -> impl Ord       (with <=> hook returning Ordering), impl Comparable (marker)
 pub fn process_derive(target: AnnotationTarget, args: AnnotationArgs) -> Vec<Item> {
-    let st = match target {
-        AnnotationTarget::Struct(s) => s,
-        _ => return vec![],
-    };
     let mut items = Vec::new();
-    for (trait_name, _) in args {
-        match trait_name.as_str() {
-            "Eq" => items.extend(derive_eq(st)),
-            "Display" => items.push(derive_display(st)),
-            "Comparable" => items.extend(derive_comparable(st)),
-            _ => {}
+    match target {
+        AnnotationTarget::Struct(st) => {
+            for (trait_name, _) in args {
+                match trait_name.as_str() {
+                    "Eq" => items.extend(derive_eq(st)),
+                    "Display" => items.push(derive_display(st)),
+                    "Comparable" => items.extend(derive_comparable(st)),
+                    _ => {}
+                }
+            }
         }
+        AnnotationTarget::Enum(en) => {
+            for (trait_name, _) in args {
+                match trait_name.as_str() {
+                    "Eq" => items.extend(derive_eq_enum(en)),
+                    "Comparable" => items.extend(derive_comparable_enum(en)),
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
     }
     items
 }
@@ -50,6 +60,14 @@ fn other_param(st: &StructDef) -> Param {
     Param {
         name: "other".into(),
         ty: named(&st.name),
+        span: s(),
+    }
+}
+
+fn other_param_named(type_name: &str) -> Param {
+    Param {
+        name: "other".into(),
+        ty: named(type_name),
         span: s(),
     }
 }
@@ -85,6 +103,147 @@ fn plain_impl(interface: &str, for_type: &str, hooks: Vec<HookDef>) -> Item {
 
 fn marker_impl(interface: &str, for_type: &str) -> Item {
     plain_impl(interface, for_type, vec![])
+}
+
+// ---- Enum helpers -------------------------------------------------------------
+
+/// Generates `match scrutinee { Var0 => 0, Var1 => 1, ... }`
+fn enum_discriminant_match(scrutinee: Expr, variants: &[EnumVariant]) -> Expr {
+    let arms = variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| MatchArm {
+            pattern: Pattern::Struct {
+                variant: v.name.clone(),
+                fields: vec![],
+                span: s(),
+            },
+            guard: None,
+            body: Expr::Int(i as i64, s()),
+            span: s(),
+        })
+        .collect();
+    Expr::Match {
+        scrutinee: Box::new(scrutinee),
+        arms,
+        span: s(),
+    }
+}
+
+// ---- Eq (enum) ----------------------------------------------------------------
+
+fn derive_eq_enum(en: &EnumDef) -> Vec<Item> {
+    let self_d = enum_discriminant_match(Expr::Ident("self".into(), s()), &en.variants);
+    let other_d = enum_discriminant_match(Expr::Ident("other".into(), s()), &en.variants);
+    let body = Block {
+        stmts: vec![Stmt::Return {
+            value: Some(Expr::BinOp {
+                op: BinOp::Eq,
+                left: Box::new(self_d),
+                right: Box::new(other_d),
+                span: s(),
+            }),
+            span: s(),
+        }],
+        span: s(),
+    };
+    let hook = HookDef {
+        annotations: vec![],
+        name: HookName::Op("==".into()),
+        params: vec![other_param_named(&en.name)],
+        return_type: Some(named("bool")),
+        body,
+        span: s(),
+    };
+    vec![
+        plain_impl("PartialEq", &en.name, vec![hook]),
+        marker_impl("Eq", &en.name),
+    ]
+}
+
+// ---- Comparable (enum) --------------------------------------------------------
+
+fn derive_comparable_enum(en: &EnumDef) -> Vec<Item> {
+    let self_d = enum_discriminant_match(Expr::Ident("self".into(), s()), &en.variants);
+    let other_d = enum_discriminant_match(Expr::Ident("other".into(), s()), &en.variants);
+    let stmts = vec![
+        Stmt::VarDecl {
+            name: "self_d".into(),
+            ty: named("int"),
+            value: self_d,
+            mutable: false,
+            span: s(),
+        },
+        Stmt::VarDecl {
+            name: "other_d".into(),
+            ty: named("int"),
+            value: other_d,
+            mutable: false,
+            span: s(),
+        },
+        Stmt::If {
+            branches: vec![(
+                Expr::BinOp {
+                    op: BinOp::Lt,
+                    left: Box::new(Expr::Ident("self_d".into(), s())),
+                    right: Box::new(Expr::Ident("other_d".into(), s())),
+                    span: s(),
+                },
+                Block {
+                    stmts: vec![Stmt::Return {
+                        value: Some(Expr::EnumAccess {
+                            enum_name: "Ordering".into(),
+                            variant: "Less".into(),
+                            span: s(),
+                        }),
+                        span: s(),
+                    }],
+                    span: s(),
+                },
+            )],
+            else_branch: None,
+            span: s(),
+        },
+        Stmt::If {
+            branches: vec![(
+                Expr::BinOp {
+                    op: BinOp::Lt,
+                    left: Box::new(Expr::Ident("other_d".into(), s())),
+                    right: Box::new(Expr::Ident("self_d".into(), s())),
+                    span: s(),
+                },
+                Block {
+                    stmts: vec![Stmt::Return {
+                        value: Some(Expr::EnumAccess {
+                            enum_name: "Ordering".into(),
+                            variant: "Greater".into(),
+                            span: s(),
+                        }),
+                        span: s(),
+                    }],
+                    span: s(),
+                },
+            )],
+            else_branch: None,
+            span: s(),
+        },
+        Stmt::Return {
+            value: Some(ordering_equal()),
+            span: s(),
+        },
+    ];
+    let hook = HookDef {
+        annotations: vec![],
+        name: HookName::Op("<=>".into()),
+        params: vec![other_param_named(&en.name)],
+        return_type: Some(ordering()),
+        body: Block { stmts, span: s() },
+        span: s(),
+    };
+    vec![
+        plain_impl("Ord", &en.name, vec![hook]),
+        marker_impl("Comparable", &en.name),
+    ]
 }
 
 // ---- Eq -----------------------------------------------------------------------
@@ -537,5 +696,84 @@ mod tests {
         let args = derive_args(&["UnknownTrait"]);
         let result = process_derive(AnnotationTarget::Struct(&st), &args);
         assert!(result.is_empty());
+    }
+
+    // ---- Enum derive -----------------------------------------------------------
+
+    fn priority_enum() -> EnumDef {
+        let variants = ["Low", "Medium", "High", "Critical"]
+            .iter()
+            .map(|name| EnumVariant {
+                name: name.to_string(),
+                fields: vec![],
+                discriminant: None,
+                span: s(),
+            })
+            .collect();
+        EnumDef {
+            annotations: vec![],
+            name: "Priority".into(),
+            generic_params: vec![],
+            interfaces: vec![],
+            variants,
+            methods: vec![],
+            span: s(),
+        }
+    }
+
+    #[test]
+    fn derive_eq_on_enum_generates_two_impl_blocks() {
+        let en = priority_enum();
+        let args = derive_args(&["Eq"]);
+        let result = process_derive(AnnotationTarget::Enum(&en), &args);
+        assert_eq!(result.len(), 2, "expected PartialEq + Eq marker: {result:?}");
+        assert!(result.iter().all(|i| matches!(i, Item::ImplBlock(_))));
+    }
+
+    #[test]
+    fn derive_eq_on_enum_first_impl_is_partial_eq_for_enum() {
+        let en = priority_enum();
+        let result = process_derive(AnnotationTarget::Enum(&en), &derive_args(&["Eq"]));
+        let ib = first_impl(&result);
+        assert!(matches!(&ib.interface, TypeExpr::Named { name, .. } if name == "PartialEq"));
+        assert!(matches!(&ib.for_type, TypeExpr::Named { name, .. } if name == "Priority"));
+    }
+
+    #[test]
+    fn derive_comparable_on_enum_generates_two_impl_blocks() {
+        let en = priority_enum();
+        let args = derive_args(&["Comparable"]);
+        let result = process_derive(AnnotationTarget::Enum(&en), &args);
+        assert_eq!(result.len(), 2, "expected Ord + Comparable marker: {result:?}");
+        assert!(result.iter().all(|i| matches!(i, Item::ImplBlock(_))));
+    }
+
+    #[test]
+    fn derive_comparable_on_enum_first_impl_is_ord() {
+        let en = priority_enum();
+        let result = process_derive(AnnotationTarget::Enum(&en), &derive_args(&["Comparable"]));
+        let ib = first_impl(&result);
+        assert!(matches!(&ib.interface, TypeExpr::Named { name, .. } if name == "Ord"));
+        assert!(matches!(&ib.for_type, TypeExpr::Named { name, .. } if name == "Priority"));
+    }
+
+    #[test]
+    fn derive_comparable_on_enum_hook_is_spaceship() {
+        let en = priority_enum();
+        let result = process_derive(AnnotationTarget::Enum(&en), &derive_args(&["Comparable"]));
+        let ib = first_impl(&result);
+        assert_eq!(ib.hooks.len(), 1);
+        assert!(matches!(&ib.hooks[0].name, HookName::Op(op) if op == "<=>"));
+    }
+
+    #[test]
+    fn derive_comparable_on_enum_hook_returns_ordering() {
+        let en = priority_enum();
+        let result = process_derive(AnnotationTarget::Enum(&en), &derive_args(&["Comparable"]));
+        let ib = first_impl(&result);
+        assert!(matches!(
+            &ib.hooks[0].return_type,
+            Some(TypeExpr::Named { name, .. }) if name == "Ordering"
+        ));
     }
 }

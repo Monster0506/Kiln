@@ -117,6 +117,11 @@ fn parse_enums_interfaces() {
     parse_file("examples/enums_interfaces.kn");
 }
 
+#[test]
+fn parse_enums_derive() {
+    parse_file("examples/enums_derive.kn");
+}
+
 // ---- structs -----------------------------------------------------------------
 
 #[test]

@@ -197,11 +197,29 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
     }
 
     // Pass 0b: collect enum info for auto-generating Display (to_str) functions.
+    // First, find enums that have explicit `impl Display` blocks - skip auto-generation for those.
+    let explicit_display_impls: HashSet<String> = typed_file
+        .items
+        .iter()
+        .filter_map(|item| {
+            if let TypedItem::ImplBlock(ib) = item {
+                if ib.interface == "Display" {
+                    return Some(ib.for_type.clone());
+                }
+            }
+            None
+        })
+        .collect();
+
     let enum_variants: Vec<(String, Vec<String>)> = typed_file
         .items
         .iter()
         .filter_map(|item| {
             if let TypedItem::Enum(en) = item {
+                // Skip if user provided explicit impl Display
+                if explicit_display_impls.contains(&en.name) {
+                    return None;
+                }
                 let variants: Vec<String> = en.variants.iter().map(|v| v.name.clone()).collect();
                 Some((en.name.clone(), variants))
             } else {

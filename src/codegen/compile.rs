@@ -196,10 +196,91 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
         }
     }
 
+    // Pass 0b: collect enum info for auto-generating Display (to_str) functions.
+    let enum_variants: Vec<(String, Vec<String>)> = typed_file
+        .items
+        .iter()
+        .filter_map(|item| {
+            if let TypedItem::Enum(en) = item {
+                let variants: Vec<String> = en.variants.iter().map(|v| v.name.clone()).collect();
+                Some((en.name.clone(), variants))
+            } else {
+                None
+            }
+        })
+        .collect();
+
     // Pass 1: register all function prototypes.
     // Pre-seed func_ids with C runtime imports so Kiln code can call them by name.
     let mut func_ids: HashMap<String, FuncId> = runtime_ids.clone();
     let mut fn_jobs: Vec<FnJob> = Vec::new();
+
+    // Generate {EnumName}_to_str for each enum (auto Display impl).
+    for (enum_name, variants) in &enum_variants {
+        use crate::analyzer::typed_ast::{TypedMatchArm, TypedPattern, TypedStringSegment};
+        use crate::diagnostics::Span;
+        let s = Span::new(0, 0);
+        let fn_name = format!("{}_to_str", enum_name);
+
+        // Build match arms: each variant -> return "VariantName"
+        let arms: Vec<TypedMatchArm> = variants
+            .iter()
+            .map(|v| TypedMatchArm {
+                pattern: TypedPattern::Struct {
+                    variant: v.clone(),
+                    fields: vec![],
+                    span: s,
+                },
+                guard: None,
+                body: TypedExpr {
+                    kind: TypedExprKind::Str(vec![TypedStringSegment::Text(v.clone())]),
+                    ty: Ty::Str,
+                    span: s,
+                },
+                span: s,
+            })
+            .collect();
+
+        let match_expr = TypedExpr {
+            kind: TypedExprKind::Match {
+                scrutinee: Box::new(TypedExpr {
+                    kind: TypedExprKind::Ident("__self".into()),
+                    ty: Ty::Named(crate::analyzer::ty::TypeId(0), enum_name.clone(), vec![]),
+                    span: s,
+                }),
+                arms,
+            },
+            ty: Ty::Str,
+            span: s,
+        };
+
+        let body = TypedBlock {
+            stmts: vec![TypedStmt::Return {
+                value: Some(match_expr),
+                span: s,
+            }],
+            span: s,
+        };
+
+        // Register the function with a self parameter (the enum value).
+        let mut sig = cgx.module.make_signature();
+        sig.params.push(AbiParam::new(types::I64)); // self
+        sig.returns.push(AbiParam::new(types::I64)); // str pointer
+        let id = cgx
+            .module
+            .declare_function(&fn_name, Linkage::Export, &sig)
+            .expect("declare enum to_str");
+        func_ids.insert(fn_name.clone(), id);
+
+        fn_jobs.push(FnJob {
+            name: fn_name,
+            func_id: id,
+            params: vec![],
+            return_type: Ty::Str,
+            body,
+            self_type: Some(enum_name.clone()),
+        });
+    }
 
     for item in &typed_file.items {
         match item {

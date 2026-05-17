@@ -1102,22 +1102,23 @@ pub fn lower_binop(
         BinOp::And => builder.ins().band(lv, rv),
         BinOp::Or => builder.ins().bor(lv, rv),
         BinOp::Spaceship => {
+            // Returns Ordering discriminants: Less=0, Equal=1, Greater=2
             if is_float {
-                let neg1 = builder.ins().f64const(-1.0);
-                let zero = builder.ins().f64const(0.0);
-                let pos1 = builder.ins().f64const(1.0);
+                let less = builder.ins().iconst(types::I64, 0); // Less
+                let equal = builder.ins().iconst(types::I64, 1); // Equal
+                let greater = builder.ins().iconst(types::I64, 2); // Greater
                 let lt = builder.ins().fcmp(FloatCC::LessThan, lv, rv);
                 let gt = builder.ins().fcmp(FloatCC::GreaterThan, lv, rv);
-                let gt_val = builder.ins().select(gt, pos1, zero);
-                builder.ins().select(lt, neg1, gt_val)
+                let gt_val = builder.ins().select(gt, greater, equal);
+                builder.ins().select(lt, less, gt_val)
             } else {
-                let neg1 = builder.ins().iconst(types::I64, -1i64);
-                let zero = builder.ins().iconst(types::I64, 0);
-                let pos1 = builder.ins().iconst(types::I64, 1);
+                let less = builder.ins().iconst(types::I64, 0); // Less
+                let equal = builder.ins().iconst(types::I64, 1); // Equal
+                let greater = builder.ins().iconst(types::I64, 2); // Greater
                 let lt = builder.ins().icmp(IntCC::SignedLessThan, lv, rv);
                 let gt = builder.ins().icmp(IntCC::SignedGreaterThan, lv, rv);
-                let gt_val = builder.ins().select(gt, pos1, zero);
-                builder.ins().select(lt, neg1, gt_val)
+                let gt_val = builder.ins().select(gt, greater, equal);
+                builder.ins().select(lt, less, gt_val)
             }
         }
         BinOp::Pipe => lv,

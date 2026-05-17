@@ -369,7 +369,6 @@ impl Hash for Ordering { hook hash() -> int {} }
 impl Ord for Ordering { hook <=>(other: Ordering) -> Ordering {} }
 impl PartialOrd for Ordering { hook <(other: Ordering) -> bool {} }
 impl Debug for Ordering { hook debug_str() -> str {} }
-impl Display for Ordering { hook to_str() -> str {} }
 
 # ---- Conformance: int -------------------------------------------------------
 

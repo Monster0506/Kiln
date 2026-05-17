@@ -40,6 +40,8 @@ pub fn declare_str_runtime(module: &mut ObjectModule) -> HashMap<String, FuncId>
     let id = declare_import_i64_i64(module, "__kiln_bool_to_str");
     ids.insert("__kiln_bool_to_str".into(), id);
 
+    // __kiln_ordering_to_str removed - Ordering uses auto-generated Display like all enums
+
     ids
 }
 

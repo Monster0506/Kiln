@@ -518,6 +518,18 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
         })
         .collect();
 
+    // Pass 1d2: auto-register Display conformance for all enums.
+    // Every enum automatically implements Display, returning the variant name.
+    for item in &source.items {
+        if let Item::Enum(e) = item {
+            registry.register_conformance(
+                &e.name,
+                "Display",
+                ty::ConformanceEntry { bounds: vec![] },
+            );
+        }
+    }
+
     // Pass 1e: register interface method/hook signatures for use by infer.rs.
     for item in &source.items {
         if let Item::Interface(iface) = item {

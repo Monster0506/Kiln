@@ -1,0 +1,98 @@
+# enum_iter_basic.kn -- iterating over all variants of an enum with for x <- EnumType
+
+enum Direction {
+    North
+    South
+    East
+    West
+}
+
+enum Color {
+    Green
+    Red
+    Blue
+}
+
+enum Season {
+    Spring
+    Summer
+    Autumn
+    Winter
+}
+
+# ---- Count variants by iterating -----------------------------------------------
+
+def count_directions() -> int {
+    mut n: int = 0
+    for d <- Direction {
+        n = n + 1
+    }
+    return n
+}
+
+def count_colors() -> int {
+    mut n: int = 0
+    for c <- Color {
+        n = n + 1
+    }
+    return n
+}
+
+# ---- Using the bound variable in the body --------------------------------------
+
+def describe_direction(d: Direction) -> str {
+    return match d {
+        North => "North",
+        South => "South",
+        East => "East",
+        West => "West"
+    }
+}
+
+def all_direction_names() -> void {
+    for d <- Direction {
+        println(describe_direction(d))
+    }
+}
+
+# ---- Nested enum loops ---------------------------------------------------------
+
+def all_pairs() -> void {
+    for d <- Direction {
+        for c <- Color {
+            println(describe_direction(d))
+            println(c)
+        }
+    }
+}
+
+# ---- Break and continue in enum loops ------------------------------------------
+
+def first_color() -> Color {
+    mut result: Color = Color:Red
+    for c <- Color {
+        result = c
+        break
+    }
+    return result
+}
+
+def skip_first_direction() -> void {
+    mut seen: int = 0
+    for d <- Direction {
+        seen = seen + 1
+        if seen == 1 {
+            continue
+        }
+        println(describe_direction(d))
+    }
+}
+
+def main() -> void {
+    println(first_color())    
+    skip_first_direction()
+    println(count_directions())
+    println(count_colors())    
+#     all_direction_names()
+#     all_pairs()
+}

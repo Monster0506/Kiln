@@ -511,13 +511,27 @@ fn lower_for(
         _ => false,
     };
 
+    // For `for x <- EnumType`, the iterable is the enum type itself used as an
+    // expression. The loop iterates over discriminants 0..N where N is the
+    // variant count, and each iteration binds the discriminant as the value.
+    let enum_variant_count: Option<i64> = match &iterable.ty {
+        Ty::Named(_, name, args) if args.is_empty() => ctx
+            .layouts
+            .get_enum(name)
+            .map(|info| info.variants.len() as i64),
+        _ => None,
+    };
+
     // Store the collection pointer in a variable so it survives across blocks.
+    // For enum-type iterables, coll_val is 0 (unused) but we still declare it.
     let coll_name = format!("__for_coll_{}", binding);
     let coll_var = vars.declare(&coll_name, types::I64, builder);
     builder.def_var(coll_var, coll_val);
 
     let limit = if is_vec {
         call_fn_by_name("Vec_len", &[coll_val], builder, ctx)
+    } else if let Some(count) = enum_variant_count {
+        builder.ins().iconst(types::I64, count)
     } else {
         coll_val
     };
@@ -538,8 +552,13 @@ fn lower_for(
     let bind_var = vars.declare(binding, bind_clif_ty, builder);
     builder.def_var(bind_var, bind_zero);
 
+    // header_bb: condition check
+    // body_bb:   element setup + user body
+    // incr_bb:   index increment (continue target)
+    // exit_bb:   loop exit (break target)
     let header_bb = builder.create_block();
     let body_bb = builder.create_block();
+    let incr_bb = builder.create_block();
     let exit_bb = builder.create_block();
 
     builder.ins().jump(header_bb, &[]);
@@ -554,6 +573,7 @@ fn lower_for(
 
     // Retrieve the element for this iteration and store in the binding.
     // Vec_get returns I64 (raw bits); coerce to the binding's actual type.
+    // For enum-type iterables, the discriminant IS the index (0..N-1).
     if is_vec {
         let coll = builder.use_var(coll_var);
         let idx_now = builder.use_var(idx_var);
@@ -565,20 +585,29 @@ fn lower_for(
         builder.def_var(bind_var, idx_now);
     }
 
+    // `continue` must jump to incr_bb (not header_bb) so the index is
+    // incremented before re-checking the condition.
     loops.push(LoopCtx {
-        header: header_bb,
+        header: incr_bb,
         exit: exit_bb,
     });
     lower_typed_block(body, builder, vars, loops, ctx);
     loops.pop();
 
+    // Body fall-through goes to incr_bb.
     if block_needs_term(builder) {
-        let cur = builder.use_var(idx_var);
-        let one = builder.ins().iconst(types::I64, 1);
-        let next = builder.ins().iadd(cur, one);
-        builder.def_var(idx_var, next);
-        builder.ins().jump(header_bb, &[]);
+        builder.ins().jump(incr_bb, &[]);
     }
+
+    // incr_bb: increment the index then re-check.
+    // Seal here: all predecessors (body fall-through + any continue jumps) are now known.
+    builder.switch_to_block(incr_bb);
+    builder.seal_block(incr_bb);
+    let cur = builder.use_var(idx_var);
+    let one = builder.ins().iconst(types::I64, 1);
+    let next = builder.ins().iadd(cur, one);
+    builder.def_var(idx_var, next);
+    builder.ins().jump(header_bb, &[]);
 
     builder.seal_block(header_bb);
     builder.switch_to_block(exit_bb);

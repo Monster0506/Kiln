@@ -1,0 +1,61 @@
+# enum_iter_use.kn -- practical uses of enum iteration
+
+# ---- Enum with interface impl -------------------------------------------------
+
+enum Priority: Display {
+    Low
+    Medium
+    High
+    Critical
+}
+
+impl Display for Priority {
+    hook to_str() -> str {
+        return match self {
+            Low => "low",
+            Medium => "medium",
+            High => "high",
+            Critical => "critical"
+        }
+    }
+}
+
+# ---- Collect all enum values into a Vec ----------------------------------------
+
+def all_priorities() -> Vec[Priority] {
+    result: Vec[Priority] = Vec.new()
+    for p <- Priority {
+        result.add(p)
+    }
+    return result
+}
+
+# ---- Find first enum variant matching a predicate ------------------------------
+
+def first_high_or_above() -> Priority {
+    mut found: Priority = Low
+    for p <- Priority {
+        n: int = match p {
+            Low => 0,
+            Medium => 1,
+            High => 2,
+            Critical => 3
+        }
+        if n >= 2 {
+            found = p
+            break
+        }
+    }
+    return found
+}
+
+# ---- Annotated binding ---------------------------------------------------------
+
+def annotated_iter() -> void {
+    for p: Priority <- Priority {
+        p.to_str()
+    }
+}
+
+def main() -> void {
+}

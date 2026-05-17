@@ -2,7 +2,7 @@ use crate::analyzer::env::{Env, Symbol};
 use crate::analyzer::error::AnalysisError;
 use crate::analyzer::infer::{check_assignable, infer_typed_expr};
 use crate::analyzer::resolve::resolve_type_expr;
-use crate::analyzer::ty::{Ty, TypeRegistry};
+use crate::analyzer::ty::{Ty, TypeKind, TypeRegistry};
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedCatchHandler, TypedFnDef, TypedParam, TypedStmt,
 };
@@ -244,6 +244,14 @@ fn check_typed_stmt(
                     args.first().cloned().unwrap_or(Ty::Unknown)
                 }
                 Ty::Str => Ty::Str,
+                Ty::Named(_, name, args) if args.is_empty() => {
+                    match registry.lookup_by_name(name) {
+                        Some(entry) if matches!(&entry.kind, TypeKind::Enum { .. }) => {
+                            ti.ty.clone()
+                        }
+                        _ => Ty::Unknown,
+                    }
+                }
                 _ => Ty::Unknown,
             };
             let ann_ty = if let Some(ann) = binding_ty {

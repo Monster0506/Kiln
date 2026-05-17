@@ -568,3 +568,15 @@ fn parse_fancy_hkt() {
 fn parse_fancy_dispatch() {
     parse_file("examples/fancy-interfaces/dispatch.kn");
 }
+
+// ---- iteration ---------------------------------------------------------------
+
+#[test]
+fn parse_iteration_enum_iter_basic() {
+    parse_file("examples/iteration/enum_iter_basic.kn");
+}
+
+#[test]
+fn parse_iteration_enum_iter_use() {
+    parse_file("examples/iteration/enum_iter_use.kn");
+}

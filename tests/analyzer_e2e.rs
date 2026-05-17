@@ -572,3 +572,59 @@ def process(x: Printable) -> void {}
         "using object-safe interface as dynamic type should be fine: {errs:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Enum iteration: for x <- EnumType
+// ---------------------------------------------------------------------------
+
+#[test]
+fn for_over_enum_with_wrong_type_annotation_is_error() {
+    let errs = run(r#"
+enum Color { Red, Green, Blue }
+def test() -> void {
+    for c: int <- Color { }
+}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "binding annotated as int but iterating Color should be a type error"
+    );
+}
+
+#[test]
+fn for_over_enum_no_errors() {
+    let errs = run(r#"
+enum Direction { North, South, East, West }
+def describe(d: Direction) -> str {
+    return match d {
+        North => "N",
+        South => "S",
+        East => "E",
+        West => "W"
+    }
+}
+def all_directions() -> void {
+    for d <- Direction {
+        describe(d)
+    }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "for over enum should have no errors: {errs:?}"
+    );
+}
+
+#[test]
+fn for_over_enum_with_correct_annotation_no_errors() {
+    let errs = run(r#"
+enum Season { Spring, Summer, Autumn, Winter }
+def test() -> void {
+    for s: Season <- Season { }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "for with correct enum annotation should have no errors: {errs:?}"
+    );
+}

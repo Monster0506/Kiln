@@ -1,0 +1,86 @@
+# custom_iter_counter.kn -- a Counter struct implementing Iterator + Iterable
+
+# ---- Counter: a simple counting iterator -----------------------------------
+
+struct Counter {
+    current: int
+    stop: int
+}
+
+impl Iterator for Counter {
+    hook next() -> Option[int] {
+        if self.current >= self.stop {
+            return Option:None
+        }
+        val: int = self.current
+        self.current = self.current + 1
+        return Option:Some { value: val }
+    }
+}
+
+impl Iterable for Counter {
+    hook iter() -> Counter {
+        return self
+    }
+}
+
+# ---- Demonstrate iteration properties ------------------------------------
+
+def sum_counter(c: Counter) -> int {
+    mut total: int = 0
+    for x <- c {
+        total = total + x
+    }
+    return total
+}
+
+def first_even(c: Counter) -> int {
+    mut result: int = -1
+    for x <- c {
+        n: int = x - (x / 2) * 2
+        if n == 0 {
+            result = x
+            break
+        }
+    }
+    return result
+}
+
+def count_above(c: Counter, threshold: int) -> int {
+    mut n: int = 0
+    for x <- c {
+        if x > threshold {
+            n = n + 1
+        }
+    }
+    return n
+}
+
+def main() -> void {
+    # Basic iteration: 0..5
+    println(0)
+    c: Counter = Counter { current: 0, stop: 5 }
+    for x <- c {
+        println(x)
+    }
+
+    # Sum 0+1+2+3+4 = 10
+    c2: Counter = Counter { current: 0, stop: 5 }
+    println(sum_counter(c2))
+
+    # First even in 1..10 is 2
+    c3: Counter = Counter { current: 1, stop: 10 }
+    println(first_even(c3))
+
+    # Count values above 3 in 0..7 (4, 5, 6 -> 3)
+    c4: Counter = Counter { current: 0, stop: 7 }
+    println(count_above(c4, 3))
+
+    # Empty range: no iterations
+    c5: Counter = Counter { current: 5, stop: 5 }
+    mut ran: int = 0
+    for x <- c5 {
+        ran = ran + 1
+    }
+    println(ran)
+}

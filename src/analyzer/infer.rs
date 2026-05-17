@@ -336,11 +336,17 @@ pub fn infer_typed_expr(
                     (Ty::Named(id.clone(), ty.clone(), vec![]), ty.clone())
                 }
                 _ => {
-                    errors.push(AnalysisError::UndefinedName {
-                        name: ty.clone(),
-                        span: *s,
-                    });
-                    (Ty::Unknown, ty.clone())
+                    // Check if ty is an enum variant name (e.g. "Some" from Option:Some { ... }).
+                    if let Some(entry) = registry.enum_for_variant(ty) {
+                        let enum_ty = Ty::Named(entry.id.clone(), entry.name.clone(), vec![]);
+                        (enum_ty, ty.clone())
+                    } else {
+                        errors.push(AnalysisError::UndefinedName {
+                            name: ty.clone(),
+                            span: *s,
+                        });
+                        (Ty::Unknown, ty.clone())
+                    }
                 }
             };
             let typed_fields = fields
@@ -364,11 +370,41 @@ pub fn infer_typed_expr(
             let typed_arms: Vec<TypedMatchArm> = arms
                 .iter()
                 .map(|arm| {
-                    let body = infer_typed_expr(&arm.body, env, registry, errors);
+                    // Clone env and add struct/variant pattern field bindings for the arm body.
+                    let mut arm_env = env.clone();
+                    if let Pattern::Struct { fields, .. } = &arm.pattern {
+                        arm_env.push_scope();
+                        for (_, binding_name) in fields {
+                            if binding_name != "_" {
+                                arm_env.define(
+                                    binding_name,
+                                    Symbol::Var {
+                                        ty: Ty::Unknown,
+                                        mutable: false,
+                                        span: arm.span,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    if let Pattern::TypeBinding { name, ty, .. } = &arm.pattern {
+                        if name != "_" && ty == "_" && !registry.is_enum_variant(name) {
+                            arm_env.push_scope();
+                            arm_env.define(
+                                name,
+                                Symbol::Var {
+                                    ty: Ty::Unknown,
+                                    mutable: false,
+                                    span: arm.span,
+                                },
+                            );
+                        }
+                    }
+                    let body = infer_typed_expr(&arm.body, &arm_env, registry, errors);
                     let guard = arm
                         .guard
                         .as_ref()
-                        .map(|g| infer_typed_expr(g, env, registry, errors));
+                        .map(|g| infer_typed_expr(g, &arm_env, registry, errors));
                     TypedMatchArm {
                         pattern: lower_pattern(&arm.pattern, env, registry, errors),
                         guard,
@@ -1040,6 +1076,7 @@ fn lower_stmt_shallow(
                 binding_ty: bt,
                 iterable: infer_typed_expr(iterable, env, registry, errors),
                 body: shallow_block(body, env, registry, errors),
+                iter_ty: None,
                 span: *span,
             }
         }

@@ -331,6 +331,29 @@ fn lower_typed_expr_inner(
                     }
                 }
                 ptr
+            } else if let Some((enum_info, variant_layout)) = ctx.layouts.get_enum_variant(ty_name)
+            {
+                // Fielded enum variant construction: allocate, write discriminant, write fields.
+                let size = enum_info.payload_offset + enum_info.max_payload_size;
+                let size = ((size + 7) / 8) * 8;
+                let ptr = emit_malloc(size.max(8), ctx.module, builder);
+                let disc = builder
+                    .ins()
+                    .iconst(types::I64, variant_layout.discriminant as i64);
+                store_field(disc, ptr, 0, builder);
+                for (field_name, expr) in fields {
+                    if let Some(offset) = variant_layout
+                        .fields
+                        .iter()
+                        .find(|(fn_, _)| fn_ == field_name)
+                        .map(|(_, off)| *off)
+                    {
+                        let val = lower_typed_expr(expr, builder, vars, ctx);
+                        let coerced = coerce_to_i64(val, builder);
+                        store_field(coerced, ptr, offset, builder);
+                    }
+                }
+                ptr
             } else {
                 builder.ins().iconst(types::I64, 0)
             }

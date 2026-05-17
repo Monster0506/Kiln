@@ -239,6 +239,8 @@ fn check_typed_stmt(
             span,
         } => {
             let ti = infer_typed_expr(iterable, env, registry, errors);
+            // Determine element type and optional iterator type for custom Iterable dispatch.
+            let mut iter_ty: Option<Ty> = None;
             let elem_ty = match &ti.ty {
                 Ty::Named(_, name, args) if name == "Vec" || name == "Set" => {
                     args.first().cloned().unwrap_or(Ty::Unknown)
@@ -249,7 +251,35 @@ fn check_typed_stmt(
                         Some(entry) if matches!(&entry.kind, TypeKind::Enum { .. }) => {
                             ti.ty.clone()
                         }
-                        _ => Ty::Unknown,
+                        _ => {
+                            // Check for custom Iterable: look for an iter() method.
+                            if let Some(iter_method) = registry.find_method(name, "iter") {
+                                let it = iter_method.ret.clone();
+                                // Derive element type from Iterator::next() -> Option[Item].
+                                let item_ty = if let Ty::Named(_, iter_name, _) = &it {
+                                    registry
+                                        .find_method(iter_name, "next")
+                                        .and_then(|m| {
+                                            if let Ty::Named(_, opt_name, opt_args) = &m.ret {
+                                                if opt_name == "Option" {
+                                                    opt_args.first().cloned()
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .unwrap_or(Ty::Unknown)
+                                } else {
+                                    Ty::Unknown
+                                };
+                                iter_ty = Some(it);
+                                item_ty
+                            } else {
+                                Ty::Unknown
+                            }
+                        }
                     }
                 }
                 _ => Ty::Unknown,
@@ -284,6 +314,7 @@ fn check_typed_stmt(
                 binding_ty: ann_ty,
                 iterable: ti,
                 body: typed_body,
+                iter_ty,
                 span: *span,
             }
         }

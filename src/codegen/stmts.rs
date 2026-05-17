@@ -221,11 +221,13 @@ fn lower_typed_stmt(
             binding_ty,
             iterable,
             body,
+            iter_ty,
             ..
         } => {
             lower_for(
                 binding,
                 &binding_ty,
+                iter_ty.as_ref(),
                 iterable,
                 body,
                 builder,
@@ -511,6 +513,7 @@ fn lower_do_while(
 fn lower_for(
     binding: &str,
     binding_ty: &Ty,
+    iter_ty: Option<&Ty>,
     iterable: &TypedExpr,
     body: &TypedBlock,
     builder: &mut FunctionBuilder,
@@ -519,6 +522,15 @@ fn lower_for(
     ctx: &mut LowerCtx,
 ) {
     let coll_val = lower_typed_expr_loops(iterable, builder, vars, loops, ctx);
+
+    // Dispatch: custom Iterable (has iter_ty), Vec/Set, enum, or passthrough.
+    if let Some(it) = iter_ty {
+        lower_for_iterable(
+            binding, binding_ty, it, coll_val, iterable, body, builder, vars, loops, ctx,
+        );
+        return;
+    }
+
     let is_vec = match &iterable.ty {
         Ty::Named(_, name, _) => name == "Vec" || name == "Set",
         _ => false,
@@ -620,6 +632,116 @@ fn lower_for(
     let one = builder.ins().iconst(types::I64, 1);
     let next = builder.ins().iadd(cur, one);
     builder.def_var(idx_var, next);
+    builder.ins().jump(header_bb, &[]);
+
+    builder.seal_block(header_bb);
+    builder.switch_to_block(exit_bb);
+    builder.seal_block(exit_bb);
+}
+
+/// Custom Iterable dispatch: call iter() on the object, then loop over next() results.
+/// `Option::None` (unit variant, discriminant 1) terminates the loop.
+/// `Option::Some { value: x }` (fielded variant, discriminant 0) carries the item at offset 8.
+#[allow(clippy::too_many_arguments)]
+fn lower_for_iterable(
+    binding: &str,
+    binding_ty: &Ty,
+    iter_ty: &Ty,
+    coll_val: cranelift_codegen::ir::Value,
+    iterable: &TypedExpr,
+    body: &TypedBlock,
+    builder: &mut FunctionBuilder,
+    vars: &mut VarEnv,
+    loops: &mut Vec<LoopCtx>,
+    ctx: &mut LowerCtx,
+) {
+    // Derive the mangled function names from the type names.
+    let obj_type_name = match &iterable.ty {
+        Ty::Named(_, name, _) => name.clone(),
+        _ => return,
+    };
+    let iter_type_name = match iter_ty {
+        Ty::Named(_, name, _) => name.clone(),
+        _ => return,
+    };
+
+    // Call iter() to get the iterator.
+    let iter_fn = format!("{}_iter", obj_type_name);
+    let iter_ptr = call_fn_by_name(&iter_fn, &[coll_val], builder, ctx);
+
+    // Store iterator pointer in a variable so it persists across blocks.
+    let iter_var_name = format!("__for_iter_{}", binding);
+    let iter_var = vars.declare(&iter_var_name, types::I64, builder);
+    builder.def_var(iter_var, iter_ptr);
+
+    // Store the last Option result in a variable for use in body_bb.
+    let opt_var_name = format!("__for_opt_{}", binding);
+    let opt_var = vars.declare(&opt_var_name, types::I64, builder);
+    let zero = builder.ins().iconst(types::I64, 0);
+    builder.def_var(opt_var, zero);
+
+    // User binding variable.
+    let bind_clif_ty = clif_type(binding_ty).unwrap_or(types::I64);
+    let bind_zero = if bind_clif_ty == types::F64 {
+        builder.ins().f64const(0.0)
+    } else {
+        builder.ins().iconst(bind_clif_ty, 0)
+    };
+    let bind_var = vars.declare(binding, bind_clif_ty, builder);
+    builder.def_var(bind_var, bind_zero);
+
+    // header_bb: call next(), check for None
+    // body_bb:   extract Some.value, run user body
+    // incr_bb:   continue target (just jumps to header)
+    // exit_bb:   loop exit
+    let header_bb = builder.create_block();
+    let body_bb = builder.create_block();
+    let incr_bb = builder.create_block();
+    let exit_bb = builder.create_block();
+
+    builder.ins().jump(header_bb, &[]);
+    builder.switch_to_block(header_bb);
+
+    // Call next() on the iterator.
+    let next_fn = format!("{}_next", iter_type_name);
+    let iter_now = builder.use_var(iter_var);
+    let opt_val = call_fn_by_name(&next_fn, &[iter_now], builder, ctx);
+    builder.def_var(opt_var, opt_val);
+
+    // None has discriminant 1 (second variant, unit). Some has discriminant 0 (heap pointer).
+    // When next() returns None, opt_val IS the integer 1.
+    let none_disc = builder.ins().iconst(types::I64, 1);
+    let is_none = builder.ins().icmp(IntCC::Equal, opt_val, none_disc);
+    builder.ins().brif(is_none, exit_bb, &[], body_bb, &[]);
+
+    builder.switch_to_block(body_bb);
+    builder.seal_block(body_bb);
+
+    // Extract value from Some { value: x } at payload_offset=8.
+    let opt_ptr = builder.use_var(opt_var);
+    let raw = builder.ins().load(
+        types::I64,
+        cranelift_codegen::ir::MemFlags::new(),
+        opt_ptr,
+        8,
+    );
+    let elem = coerce_to(raw, bind_clif_ty, builder);
+    builder.def_var(bind_var, elem);
+
+    loops.push(LoopCtx {
+        header: incr_bb,
+        exit: exit_bb,
+    });
+    lower_typed_block(body, builder, vars, loops, ctx);
+    loops.pop();
+
+    if block_needs_term(builder) {
+        builder.ins().jump(incr_bb, &[]);
+    }
+
+    // incr_bb: just jump back to header (iterator state lives in the iterator object).
+    builder.switch_to_block(incr_bb);
+    builder.seal_block(incr_bb);
     builder.ins().jump(header_bb, &[]);
 
     builder.seal_block(header_bb);

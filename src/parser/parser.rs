@@ -1658,6 +1658,10 @@ impl Parser {
                     {
                         self.advance(); // consume `:`
                         let variant = self.expect_ident()?;
+                        // `EnumName:Variant { fields }` — fielded enum variant construction
+                        if allow_struct && self.peek() == &TokenKind::LBrace {
+                            return self.parse_struct_literal(variant, start);
+                        }
                         let end = self.peek_span().start;
                         return Ok(Expr::EnumAccess {
                             enum_name: name,

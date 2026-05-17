@@ -176,6 +176,8 @@ pub enum TypedStmt {
         binding_ty: Ty,
         iterable: TypedExpr,
         body: TypedBlock,
+        /// Iterator type for custom Iterable dispatch; None for Vec/enum/builtin iteration.
+        iter_ty: Option<Ty>,
         span: Span,
     },
     TryCatch {

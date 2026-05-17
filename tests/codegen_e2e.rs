@@ -206,3 +206,142 @@ def main() -> void {
     );
     assert_eq!(out.trim(), "0", "got: {out}");
 }
+
+// ---- Custom Iterator / Iterable tests ----------------------------------------
+
+#[test]
+fn custom_iterator_produces_correct_values() {
+    let out = kiln_run(
+        r#"
+struct Counter {
+    current: int
+    stop: int
+}
+
+impl Iterator for Counter {
+    hook next() -> Option[int] {
+        if self.current >= self.stop {
+            return Option:None
+        }
+        val: int = self.current
+        self.current = self.current + 1
+        return Option:Some { value: val }
+    }
+}
+
+impl Iterable for Counter {
+    hook iter() -> Counter {
+        return self
+    }
+}
+
+def main() -> void {
+    c: Counter = Counter { current: 0, stop: 3 }
+    for x <- c {
+        println(x)
+    }
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["0", "1", "2"], "got: {out}");
+}
+
+#[test]
+fn custom_iterator_break_exits_early() {
+    let out = kiln_run(
+        r#"
+struct Counter {
+    current: int
+    stop: int
+}
+
+impl Iterator for Counter {
+    hook next() -> Option[int] {
+        if self.current >= self.stop {
+            return Option:None
+        }
+        val: int = self.current
+        self.current = self.current + 1
+        return Option:Some { value: val }
+    }
+}
+
+impl Iterable for Counter {
+    hook iter() -> Counter {
+        return self
+    }
+}
+
+def main() -> void {
+    c: Counter = Counter { current: 0, stop: 10 }
+    for x <- c {
+        println(x)
+        if x == 2 { break }
+    }
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["0", "1", "2"], "got: {out}");
+}
+
+#[test]
+fn custom_iterator_empty_runs_no_iterations() {
+    let out = kiln_run(
+        r#"
+struct Counter {
+    current: int
+    stop: int
+}
+
+impl Iterator for Counter {
+    hook next() -> Option[int] {
+        if self.current >= self.stop {
+            return Option:None
+        }
+        val: int = self.current
+        self.current = self.current + 1
+        return Option:Some { value: val }
+    }
+}
+
+impl Iterable for Counter {
+    hook iter() -> Counter {
+        return self
+    }
+}
+
+def main() -> void {
+    c: Counter = Counter { current: 5, stop: 5 }
+    mut ran: int = 0
+    for x <- c {
+        ran = ran + 1
+    }
+    println(ran)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "0", "got: {out}");
+}
+
+#[test]
+fn enum_variant_with_fields_constructs_correctly() {
+    let out = kiln_run(
+        r#"
+def make_some(n: int) -> Option[int] {
+    return Option:Some { value: n }
+}
+
+def main() -> void {
+    opt: Option[int] = make_some(42)
+    result: int = match opt {
+        Some { value: v } => v,
+        None => 0
+    }
+    println(result)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "42", "got: {out}");
+}

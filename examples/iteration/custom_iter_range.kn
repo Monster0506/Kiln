@@ -1,0 +1,93 @@
+# custom_iter_range.kn -- Range and StepRange implementing Iterator + Iterable
+# Demonstrates: separate iterator type, step iteration, nested iteration
+
+# ---- RangeIter: iterator state separate from the range --------------------
+
+struct RangeIter {
+    current: int
+    stop: int
+    step: int
+}
+
+impl Iterator for RangeIter {
+    hook next() -> Option[int] {
+        if self.step > 0 {
+            if self.current >= self.stop {
+                return Option:None
+            }
+        }
+        val: int = self.current
+        self.current = self.current + self.step
+        return Option:Some { value: val }
+    }
+}
+
+# ---- Range: an integer range [start, stop) with configurable step ----------
+
+struct Range {
+    start: int
+    stop: int
+    step: int
+}
+
+impl Iterable for Range {
+    hook iter() -> RangeIter {
+        return RangeIter { current: self.start, stop: self.stop, step: self.step }
+    }
+}
+
+def make_range(start: int, stop: int) -> Range {
+    return Range { start: start, stop: stop, step: 1 }
+}
+
+def make_step_range(start: int, stop: int, step: int) -> Range {
+    return Range { start: start, stop: stop, step: step }
+}
+
+# ---- Property demonstrations ---------------------------------------------
+
+def collect_range(r: Range) -> Vec[int] {
+    result: Vec[int] = Vec.new()
+    for x <- r {
+        result.add(x)
+    }
+    return result
+}
+
+def sum_range(r: Range) -> int {
+    mut total: int = 0
+    for x <- r {
+        total = total + x
+    }
+    return total
+}
+
+def main() -> void {
+    # Forward range: 0..5
+    r: Range = make_range(0, 5)
+    for x <- r {
+        println(x)
+    }
+
+    # Step range: 0, 2, 4, 6, 8
+    r2: Range = make_step_range(0, 10, 2)
+    for x <- r2 {
+        println(x)
+    }
+
+    # Sum 1..=10 (1+2+...+10 = 55)
+    r3: Range = make_range(1, 11)
+    println(sum_range(r3))
+
+    # Collect 3..6 into a Vec and print length
+    r4: Range = make_range(3, 6)
+    v: Vec[int] = collect_range(r4)
+    println(v.length())
+
+    # Break after first value
+    r5: Range = make_range(10, 20)
+    for x <- r5 {
+        println(x)
+        break
+    }
+}

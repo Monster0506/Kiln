@@ -182,6 +182,13 @@ impl TypeRegistry {
         })
     }
 
+    /// Returns the `TypeEntry` for the enum that contains `variant_name`, if any.
+    pub fn enum_for_variant(&self, variant_name: &str) -> Option<&TypeEntry> {
+        self.entries.iter().find(|e| {
+            matches!(&e.kind, TypeKind::Enum { variant_names } if variant_names.iter().any(|v| v == variant_name))
+        })
+    }
+
     pub fn register_conformance(
         &mut self,
         type_name: &str,

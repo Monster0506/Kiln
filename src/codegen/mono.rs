@@ -736,12 +736,14 @@ fn subst_stmt(
             binding_ty,
             iterable,
             body,
+            iter_ty,
             span,
         } => TypedStmt::For {
             binding: binding.clone(),
             binding_ty: subst_ty(binding_ty, subst),
             iterable: se!(iterable),
             body: sb!(body),
+            iter_ty: iter_ty.as_ref().map(|t| subst_ty(t, subst)),
             span: *span,
         },
         TypedStmt::TryCatch {

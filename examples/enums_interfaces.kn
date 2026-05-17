@@ -118,12 +118,8 @@ def main() -> void {
     # @derive(Comparable) -- Priority
     println((Priority:High <=> Priority:Low) == Ordering:Greater)
     println((Priority:Low <=> Priority:Critical) == Ordering:Less)
-    priorities: Vec[Priority] = Vec.new()
-    priorities.add(Priority:Critical)
-    priorities.add(Priority:Low)
-    priorities.add(Priority:High)
-    priorities.add(Priority:Medium)
-    sorted: Vec[Priority] = sort_priorities(priorities)
+    println(Priority:Low < Priority:High)
+    sorted: Vec[Priority] = sort_priorities([Priority:Critical, Priority:Low, Priority:High, Priority:Medium])
     println(sorted)
 
     # Manual Display impl -- Status

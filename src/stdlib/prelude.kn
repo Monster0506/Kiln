@@ -363,11 +363,33 @@ interface VecMethods {
 
 impl Copy for Ordering {}
 impl Clone for Ordering { hook clone() -> Ordering {} }
+impl PartialEq for Ordering {
+    hook ==(other: Ordering) -> bool {
+        return match self {
+            Less => match other { Less => true, _ => false },
+            Equal => match other { Equal => true, _ => false },
+            Greater => match other { Greater => true, _ => false }
+        }
+    }
+}
 impl Eq for Ordering {}
-impl PartialEq for Ordering { hook ==(other: Ordering) -> bool {} }
 impl Hash for Ordering { hook hash() -> int {} }
-impl Ord for Ordering { hook <=>(other: Ordering) -> Ordering {} }
-impl PartialOrd for Ordering { hook <(other: Ordering) -> bool {} }
+impl Ord for Ordering {
+    hook <=>(other: Ordering) -> Ordering {
+        self_d: int = match self { Less => 0, Equal => 1, Greater => 2 }
+        other_d: int = match other { Less => 0, Equal => 1, Greater => 2 }
+        if self_d < other_d { return Ordering:Less }
+        if other_d < self_d { return Ordering:Greater }
+        return Ordering:Equal
+    }
+}
+impl PartialOrd for Ordering {
+    hook <(other: Ordering) -> bool {
+        self_d: int = match self { Less => 0, Equal => 1, Greater => 2 }
+        other_d: int = match other { Less => 0, Equal => 1, Greater => 2 }
+        return self_d < other_d
+    }
+}
 impl Debug for Ordering { hook debug_str() -> str {} }
 
 # ---- Conformance: int -------------------------------------------------------

@@ -242,6 +242,7 @@ fn derive_comparable_enum(en: &EnumDef) -> Vec<Item> {
     };
     vec![
         plain_impl("Ord", &en.name, vec![hook]),
+        partial_ord_impl_from_ord(&en.name, other_param_named(&en.name)),
         marker_impl("Comparable", &en.name),
     ]
 }
@@ -335,8 +336,41 @@ fn display_body(st: &StructDef) -> Block {
 
 // ---- Comparable ---------------------------------------------------------------
 
-/// Generates `impl Ord for T` (with <=> hook returning Ordering) and
-/// `impl Comparable for T` (marker).
+/// `impl PartialOrd for T` derived from `Ord`: `hook <` returns `(self <=> other) == Ordering:Less`.
+fn partial_ord_impl_from_ord(type_name: &str, other_param: Param) -> Item {
+    let lt_body = Block {
+        stmts: vec![Stmt::Return {
+            value: Some(Expr::BinOp {
+                op: BinOp::Eq,
+                left: Box::new(Expr::BinOp {
+                    op: BinOp::Spaceship,
+                    left: Box::new(Expr::Ident("self".into(), s())),
+                    right: Box::new(Expr::Ident("other".into(), s())),
+                    span: s(),
+                }),
+                right: Box::new(Expr::EnumAccess {
+                    enum_name: "Ordering".into(),
+                    variant: "Less".into(),
+                    span: s(),
+                }),
+                span: s(),
+            }),
+            span: s(),
+        }],
+        span: s(),
+    };
+    let hook = HookDef {
+        annotations: vec![],
+        name: HookName::Op("<".into()),
+        params: vec![other_param],
+        return_type: Some(named("bool")),
+        body: lt_body,
+        span: s(),
+    };
+    plain_impl("PartialOrd", type_name, vec![hook])
+}
+
+/// Generates `impl Ord`, `impl PartialOrd`, and `impl Comparable` for T.
 /// Lexicographic comparison: compare field-by-field, returning the first
 /// non-Equal result; return `Ordering:Equal` if all fields match.
 fn derive_comparable(st: &StructDef) -> Vec<Item> {
@@ -350,6 +384,7 @@ fn derive_comparable(st: &StructDef) -> Vec<Item> {
     };
     vec![
         plain_impl("Ord", &st.name, vec![hook]),
+        partial_ord_impl_from_ord(&st.name, other_param(st)),
         marker_impl("Comparable", &st.name),
     ]
 }
@@ -603,10 +638,10 @@ mod tests {
     // ---- Comparable -----------------------------------------------------------
 
     #[test]
-    fn derive_comparable_generates_two_impl_blocks() {
+    fn derive_comparable_generates_three_impl_blocks() {
         let st = point_struct();
         let result = process_derive(AnnotationTarget::Struct(&st), &derive_args(&["Comparable"]));
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 3);
         assert!(result.iter().all(|i| matches!(i, Item::ImplBlock(_))));
     }
 
@@ -619,10 +654,22 @@ mod tests {
     }
 
     #[test]
-    fn derive_comparable_second_impl_is_comparable_marker() {
+    fn derive_comparable_second_impl_is_partial_ord() {
         let st = point_struct();
         let result = process_derive(AnnotationTarget::Struct(&st), &derive_args(&["Comparable"]));
         let Item::ImplBlock(ib) = &result[1] else {
+            panic!()
+        };
+        assert!(matches!(&ib.interface, TypeExpr::Named { name, .. } if name == "PartialOrd"));
+        assert_eq!(ib.hooks.len(), 1);
+        assert!(matches!(&ib.hooks[0].name, HookName::Op(op) if op == "<"));
+    }
+
+    #[test]
+    fn derive_comparable_third_impl_is_comparable_marker() {
+        let st = point_struct();
+        let result = process_derive(AnnotationTarget::Struct(&st), &derive_args(&["Comparable"]));
+        let Item::ImplBlock(ib) = &result[2] else {
             panic!()
         };
         assert!(matches!(&ib.interface, TypeExpr::Named { name, .. } if name == "Comparable"));
@@ -661,12 +708,12 @@ mod tests {
     // ---- Combined -------------------------------------------------------------
 
     #[test]
-    fn derive_all_three_generates_five_impl_blocks() {
+    fn derive_all_three_generates_six_impl_blocks() {
         let st = point_struct();
         let args = derive_args(&["Eq", "Display", "Comparable"]);
         let result = process_derive(AnnotationTarget::Struct(&st), &args);
-        // Eq->2, Display->1, Comparable->2
-        assert_eq!(result.len(), 5);
+        // Eq->2, Display->1, Comparable->3
+        assert_eq!(result.len(), 6);
         assert!(result.iter().all(|i| matches!(i, Item::ImplBlock(_))));
     }
 
@@ -726,7 +773,11 @@ mod tests {
         let en = priority_enum();
         let args = derive_args(&["Eq"]);
         let result = process_derive(AnnotationTarget::Enum(&en), &args);
-        assert_eq!(result.len(), 2, "expected PartialEq + Eq marker: {result:?}");
+        assert_eq!(
+            result.len(),
+            2,
+            "expected PartialEq + Eq marker: {result:?}"
+        );
         assert!(result.iter().all(|i| matches!(i, Item::ImplBlock(_))));
     }
 
@@ -740,11 +791,15 @@ mod tests {
     }
 
     #[test]
-    fn derive_comparable_on_enum_generates_two_impl_blocks() {
+    fn derive_comparable_on_enum_generates_three_impl_blocks() {
         let en = priority_enum();
         let args = derive_args(&["Comparable"]);
         let result = process_derive(AnnotationTarget::Enum(&en), &args);
-        assert_eq!(result.len(), 2, "expected Ord + Comparable marker: {result:?}");
+        assert_eq!(
+            result.len(),
+            3,
+            "expected Ord + PartialOrd + Comparable marker: {result:?}"
+        );
         assert!(result.iter().all(|i| matches!(i, Item::ImplBlock(_))));
     }
 

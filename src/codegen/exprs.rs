@@ -461,9 +461,14 @@ fn lower_typed_expr_inner(
         TypedExprKind::Index { object, index } => {
             let ptr = lower_typed_expr(object, builder, vars, ctx);
             let idx = lower_typed_expr(index, builder, vars, ctx);
-            let offset = builder.ins().imul_imm(idx, 8);
-            let addr = builder.ins().iadd(ptr, offset);
-            builder.ins().load(types::I64, MemFlags::new(), addr, 0)
+            let is_vec = matches!(&object.ty, Ty::Named(_, name, _) if name == "Vec");
+            if is_vec {
+                call_fn_by_name("Vec_get", &[ptr, idx], builder, ctx)
+            } else {
+                let offset = builder.ins().imul_imm(idx, 8);
+                let addr = builder.ins().iadd(ptr, offset);
+                builder.ins().load(types::I64, MemFlags::new(), addr, 0)
+            }
         }
 
         TypedExprKind::BinOp { op, left, right } => {
@@ -681,7 +686,14 @@ fn lower_typed_expr_inner(
             builder.use_var(result_var)
         }
 
-        TypedExprKind::Array(_) => builder.ins().iconst(types::I64, 0),
+        TypedExprKind::Array(elems) => {
+            let vec_ptr = call_fn_by_name("Vec_new", &[], builder, ctx);
+            for elem in elems {
+                let val = lower_typed_expr(elem, builder, vars, ctx);
+                call_fn_by_name("Vec_add", &[vec_ptr, val], builder, ctx);
+            }
+            vec_ptr
+        }
 
         TypedExprKind::GenSplice(e) => lower_typed_expr(e, builder, vars, ctx),
 

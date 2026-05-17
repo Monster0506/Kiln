@@ -144,3 +144,65 @@ fn kiln_build_emits_object_file() {
     assert!(obj_path.exists(), "object file not created");
     assert!(obj_path.metadata().unwrap().len() > 0, "object file empty");
 }
+
+fn kiln_run(src: &str) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static CTR: AtomicU64 = AtomicU64::new(0);
+    let id = CTR.fetch_add(1, Ordering::Relaxed);
+    let tmp_dir = std::env::temp_dir();
+    let src_path = tmp_dir.join(format!("kiln_run_test_{id}.kn"));
+    std::fs::write(&src_path, src).expect("write src");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kiln"))
+        .args(["run", src_path.to_str().unwrap()])
+        .output()
+        .expect("run kiln run");
+    assert!(
+        output.status.success(),
+        "kiln run failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
+fn array_literal_length_is_correct() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    v: Vec[int] = [10, 20, 30]
+    println(v.length())
+}
+"#,
+    );
+    assert_eq!(out.trim(), "3", "expected length 3, got: {out}");
+}
+
+#[test]
+fn array_literal_elements_are_accessible() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    v: Vec[int] = [7, 8, 9]
+    println(v[0])
+    println(v[1])
+    println(v[2])
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["7", "8", "9"], "got: {out}");
+}
+
+#[test]
+fn empty_array_literal_has_zero_length() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    v: Vec[int] = []
+    println(v.length())
+}
+"#,
+    );
+    assert_eq!(out.trim(), "0", "got: {out}");
+}

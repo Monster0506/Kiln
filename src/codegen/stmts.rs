@@ -102,6 +102,19 @@ fn lower_typed_stmt(
                         store_field(coerced, ptr, off, builder);
                     }
                 }
+                TypedExprKind::Index { object, index } => {
+                    let ptr = lower_typed_expr_loops(object, builder, vars, loops, ctx);
+                    let idx = lower_typed_expr_loops(index, builder, vars, loops, ctx);
+                    let coerced = coerce_to_i64(val, builder);
+                    let is_vec = matches!(&object.ty, Ty::Named(_, name, _) if name == "Vec");
+                    if is_vec {
+                        call_fn_by_name("Vec_set", &[ptr, idx, coerced], builder, ctx);
+                    } else {
+                        let offset = builder.ins().imul_imm(idx, 8);
+                        let addr = builder.ins().iadd(ptr, offset);
+                        builder.ins().store(MemFlags::new(), coerced, addr, 0);
+                    }
+                }
                 _ => {
                     lower_typed_expr_loops(target, builder, vars, loops, ctx);
                 }

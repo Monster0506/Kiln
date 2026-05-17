@@ -642,7 +642,10 @@ fn derive_eq_on_enum_no_errors() {
 @derive(Eq)
 enum Priority { Low, Medium, High, Critical }
 "#);
-    assert!(errs.is_empty(), "@derive(Eq) on enum should have no errors: {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "@derive(Eq) on enum should have no errors: {errs:?}"
+    );
 }
 
 #[test]
@@ -651,7 +654,10 @@ fn derive_comparable_on_enum_no_errors() {
 @derive(Comparable)
 enum Priority { Low, Medium, High, Critical }
 "#);
-    assert!(errs.is_empty(), "@derive(Comparable) on enum should have no errors: {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "@derive(Comparable) on enum should have no errors: {errs:?}"
+    );
 }
 
 #[test]
@@ -663,7 +669,10 @@ def is_urgent(p: Priority) -> bool {
     return (p <=> Priority:High) >= 0
 }
 "#);
-    assert!(errs.is_empty(), "@derive(Eq, Comparable) on enum with <=> should pass: {errs:?}");
+    assert!(
+        errs.is_empty(),
+        "@derive(Eq, Comparable) on enum with <=> should pass: {errs:?}"
+    );
 }
 
 #[test]

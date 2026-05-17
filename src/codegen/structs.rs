@@ -2,7 +2,7 @@ use crate::analyzer::ty::Ty;
 use crate::analyzer::typed_ast::{TypedEnumDef, TypedStructDef};
 use crate::parser::ast::{EnumDef, EnumVariant, StructDef, TypeExpr};
 use cranelift_module::FuncId;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 fn ty_size(ty: &Ty) -> u32 {
     match ty {
@@ -25,6 +25,7 @@ pub struct FieldInfo {
 
 pub struct StructInfo {
     fields: Vec<(String, FieldInfo)>,
+    indirect_fields: HashSet<String>,
     pub size: u32,
 }
 
@@ -42,6 +43,10 @@ impl StructInfo {
 
     pub fn fields(&self) -> &[(String, FieldInfo)] {
         &self.fields
+    }
+
+    pub fn is_indirect(&self, field_name: &str) -> bool {
+        self.indirect_fields.contains(field_name)
     }
 }
 
@@ -94,16 +99,27 @@ impl StructLayouts {
         self.type_ids.insert(st.name.clone(), type_id);
         let mut offset: u32 = 8;
         let mut fields = Vec::new();
+        let mut indirect_fields = HashSet::new();
         for f in &st.fields {
-            let size = ty_size(&f.ty);
-            let align = ty_align(&f.ty);
+            // @indirect fields are always pointer-sized regardless of actual type.
+            let size = if f.is_indirect { 8 } else { ty_size(&f.ty) };
+            let align = if f.is_indirect { 8 } else { ty_align(&f.ty) };
             offset = align_up(offset, align);
             fields.push((f.name.clone(), FieldInfo { offset, size }));
+            if f.is_indirect {
+                indirect_fields.insert(f.name.clone());
+            }
             offset += size;
         }
         let size = align_up(offset, 8);
-        self.structs
-            .insert(st.name.clone(), StructInfo { fields, size });
+        self.structs.insert(
+            st.name.clone(),
+            StructInfo {
+                fields,
+                indirect_fields,
+                size,
+            },
+        );
     }
 
     pub fn register_typed_enum(&mut self, en: &TypedEnumDef) {
@@ -166,8 +182,14 @@ impl StructLayouts {
             offset += size;
         }
         let size = align_up(offset, 8);
-        self.structs
-            .insert(st.name.clone(), StructInfo { fields, size });
+        self.structs.insert(
+            st.name.clone(),
+            StructInfo {
+                fields,
+                indirect_fields: HashSet::new(),
+                size,
+            },
+        );
     }
 
     pub fn register_enum(&mut self, en: &EnumDef) {
@@ -280,6 +302,13 @@ impl StructLayouts {
     /// Iterate over all registered struct names and their layouts.
     pub fn struct_names(&self) -> impl Iterator<Item = &str> {
         self.structs.keys().map(|s| s.as_str())
+    }
+
+    /// Return true if the named field of the named struct is @indirect.
+    pub fn is_indirect_field(&self, type_name: &str, field_name: &str) -> bool {
+        self.structs
+            .get(type_name)
+            .map_or(false, |info| info.is_indirect(field_name))
     }
 }
 

@@ -251,6 +251,11 @@ fn collect_expr(
         TypedExprKind::As { expr, .. } => collect_expr(expr, params, registry, out),
         TypedExprKind::Spawn(inner) => collect_expr(inner, params, registry, out),
         TypedExprKind::Ref { expr, .. } => collect_expr(expr, params, registry, out),
+        TypedExprKind::Array(elems) => {
+            for e in elems {
+                collect_expr(e, params, registry, out);
+            }
+        }
         TypedExprKind::Gen { body } => collect_block(body, params, registry, out),
         TypedExprKind::GenSplice(inner) => collect_expr(inner, params, registry, out),
         TypedExprKind::Str(segs) => {

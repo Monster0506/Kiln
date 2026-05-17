@@ -17,6 +17,16 @@ pub enum TypedItem {
     Enum(TypedEnumDef),
     ImplBlock(TypedImplBlock),
     Interface(TypedInterfaceDef),
+    Global(TypedGlobalVar),
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedGlobalVar {
+    pub name: String,
+    pub ty: Ty,
+    pub init: TypedExpr,
+    pub mutable: bool,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +37,7 @@ pub struct TypedFnDef {
     pub return_type: Ty,
     pub body: TypedBlock,
     pub is_builtin: bool,
+    pub is_inline: bool,
     pub span: Span,
 }
 
@@ -50,6 +61,7 @@ pub struct TypedField {
     pub name: String,
     pub ty: Ty,
     pub is_priv: bool,
+    pub is_indirect: bool,
     pub span: Span,
 }
 
@@ -273,6 +285,7 @@ pub enum TypedExprKind {
         mutable: bool,
         expr: Box<TypedExpr>,
     },
+    Array(Vec<TypedExpr>),
     Gen {
         body: TypedBlock,
     },

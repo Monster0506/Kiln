@@ -1,0 +1,58 @@
+# deprecated.kn -- @deprecated annotation
+#
+# @deprecated marks a symbol as obsolete. Calling a @deprecated function
+# from a non-deprecated function emits a compile-time warning to stderr:
+#
+#   warning: call to deprecated function 'format_v1' in 'main'
+#
+# The warning is non-fatal -- the program still compiles and runs.
+# Usage: kiln run examples/annotations/deprecated.kn
+#        (watch stderr for warnings during compilation)
+
+# ---- Old API (deprecated) ----------------------------------------------------
+
+@deprecated
+def parse_int_v1(s: str) -> int {
+    return 0
+}
+
+@deprecated
+def format_v1(n: int) -> str {
+    return "{n}"
+}
+
+# ---- New API (current) -------------------------------------------------------
+
+def parse_int(s: str) -> int {
+    return 0
+}
+
+def format(n: int) -> str {
+    return "{n}"
+}
+
+# ---- Struct with a deprecated field ------------------------------------------
+
+struct Config {
+    timeout: int
+    @deprecated retries: int   # superseded by retry_policy
+    retry_policy: int
+}
+
+# ---- main --------------------------------------------------------------------
+# The calls to format_v1 and parse_int_v1 each trigger a compile-time warning.
+
+def main() -> void {
+    old_result: str = format_v1(42)     # warning: deprecated
+    println(old_result)                  # 42
+
+    new_result: str = format(99)
+    println(new_result)                  # 99
+
+    ignored: int = parse_int_v1("0")    # warning: deprecated
+    println(ignored)                     # 0
+
+    c: Config = Config { timeout: 30, retries: 3, retry_policy: 5 }
+    println(c.timeout)                   # 30
+    println(c.retry_policy)              # 5
+}

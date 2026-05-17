@@ -103,14 +103,23 @@ pub fn lower_typed_match(
                 } else if let Some((enum_info, variant_layout)) =
                     ctx.layouts.get_enum_variant(variant)
                 {
-                    let disc_raw = builder
-                        .ins()
-                        .load(types::I32, MemFlags::new(), scrutinee, 0);
-                    let disc_64 = builder.ins().uextend(types::I64, disc_raw);
                     let expected = builder
                         .ins()
                         .iconst(types::I64, variant_layout.discriminant as i64);
-                    let cmp = builder.ins().icmp(IntCC::Equal, disc_64, expected);
+                    let cmp = if variant_layout.fields.is_empty() {
+                        // Unit variant: scrutinee is a raw I64 discriminant, not a pointer.
+                        let s64 = coerce_to_i64(scrutinee, builder);
+                        builder.ins().icmp(IntCC::Equal, s64, expected)
+                    } else {
+                        // Fielded variant: scrutinee is a heap pointer;
+                        // load the discriminant (I32) from offset 0.
+                        let disc_raw =
+                            builder
+                                .ins()
+                                .load(types::I32, MemFlags::new(), scrutinee, 0);
+                        let disc_64 = builder.ins().uextend(types::I64, disc_raw);
+                        builder.ins().icmp(IntCC::Equal, disc_64, expected)
+                    };
 
                     let arm_bb = builder.create_block();
                     let next_bb = builder.create_block();

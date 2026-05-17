@@ -38,9 +38,14 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
                 } else {
                     // Multi-arg container: bounds matched positionally to args.
                     entries.iter().any(|entry| {
-                        entry.bounds.iter().enumerate().all(|(i, (_, bound_iface))| {
-                            args.get(i).map_or(true, |a| satisfies(a, bound_iface, registry))
-                        })
+                        entry
+                            .bounds
+                            .iter()
+                            .enumerate()
+                            .all(|(i, (_, bound_iface))| {
+                                args.get(i)
+                                    .map_or(true, |a| satisfies(a, bound_iface, registry))
+                            })
                     })
                 };
                 if ok {
@@ -49,7 +54,10 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
             }
             // Check shorthand operator variants (e.g. `AddableWith[X]` implies `Addable`).
             if let Some(with_iface) = operator_shorthand_to_with(iface) {
-                if !registry.get_conformances(name.as_str(), with_iface).is_empty() {
+                if !registry
+                    .get_conformances(name.as_str(), with_iface)
+                    .is_empty()
+                {
                     return true;
                 }
             }
@@ -69,7 +77,6 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
         }
     }
 }
-
 
 /// Maps a shorthand operator interface to its heterogeneous `*With` variant.
 /// User-defined types implementing `AddableWith[X]` satisfy the `Addable` bound.

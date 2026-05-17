@@ -71,6 +71,9 @@ pub enum AnalysisError {
         field: String,
         span: Span,
     },
+
+    #[error("{span}: unknown annotation `{name}`")]
+    UnknownAnnotation { name: String, span: Span },
 }
 
 impl AnalysisError {
@@ -89,6 +92,7 @@ impl AnalysisError {
             AnalysisError::DuplicateImpl { .. } => "E011",
             AnalysisError::NonObjectSafeInterface { .. } => "E012",
             AnalysisError::NoField { .. } => "E013",
+            AnalysisError::UnknownAnnotation { .. } => "E014",
         }
     }
 
@@ -107,6 +111,7 @@ impl AnalysisError {
             AnalysisError::DuplicateImpl { .. } => "impl error",
             AnalysisError::NonObjectSafeInterface { .. } => "object safety error",
             AnalysisError::NoField { .. } => "type error",
+            AnalysisError::UnknownAnnotation { .. } => "annotation error",
         }
     }
 
@@ -155,6 +160,9 @@ impl AnalysisError {
             AnalysisError::NoField { ty, field, .. } => {
                 format!("type `{ty}` has no field `{field}`")
             }
+            AnalysisError::UnknownAnnotation { name, .. } => {
+                format!("unknown annotation `{name}`")
+            }
         }
     }
 
@@ -183,6 +191,7 @@ impl AnalysisError {
             AnalysisError::DuplicateImpl { span, .. } => *span,
             AnalysisError::NonObjectSafeInterface { span, .. } => *span,
             AnalysisError::NoField { span, .. } => *span,
+            AnalysisError::UnknownAnnotation { span, .. } => *span,
         }
     }
 }

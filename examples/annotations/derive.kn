@@ -1,0 +1,113 @@
+# derive.kn -- @derive(Eq, Display, Comparable) examples
+#
+# @derive generates impl blocks automatically:
+#   Eq         -> impl PartialEq (field-by-field ==) + impl Eq (marker)
+#   Display    -> impl Display   (to_str with interpolated fields)
+#   Comparable -> impl Ord       (lexicographic <=> returning Ordering) + impl Comparable
+
+# ---- Basic: all three traits on a two-field struct ---------------------------
+
+@derive(Eq, Display, Comparable)
+struct Point {
+    x: int
+    y: int
+}
+
+impl Addable for Point {
+    hook +(rhs: Self) -> Self {
+        return Point {x: self.x*2 + rhs.x*2, y: self.y + rhs.y}
+    }
+}
+
+# ---- Eq only -----------------------------------------------------------------
+
+@derive(Eq)
+struct Color {
+    r: int
+    g: int
+    b: int
+}
+
+# ---- Display only ------------------------------------------------------------
+
+@derive(Display)
+struct Version {
+    major: int
+    minor: int
+    patch: int
+}
+
+# ---- Comparable only ---------------------------------------------------------
+
+@derive(Comparable)
+struct Priority {
+    level: int
+}
+
+# ---- Zero-field struct -------------------------------------------------------
+
+@derive(Eq, Display, Comparable)
+struct Unit { }
+
+# ---- Explicit impl overrides derived one; other derives still apply ----------
+
+@derive(Eq, Display)
+struct Celsius {
+    value: float
+}
+
+impl Display for Celsius {
+    hook to_str() -> str {
+        return "{value} C"
+    }
+}
+
+# ---- main --------------------------------------------------------------------
+
+def main() -> void {
+    # Point: Eq
+    p1: Point = Point { x: 1, y: 2 }
+    p2: Point = Point { x: 1, y: 2 }
+    p3: Point = Point { x: 3, y: 4 }
+    println(p1 == p2)        # true
+    println(p1 == p3)        # false
+    
+    println(p1 + p2)
+
+    # Point: Display
+    println("{p1}")           # Point { x: 1, y: 2 }
+
+    # Point: Comparable (returns Ordering)
+    cmp: Ordering = p1 <=> p3
+    println(cmp)             # Less
+
+    # Color: Eq only
+    red: Color = Color { r: 255, g: 0, b: 0 }
+    red2: Color = Color { r: 255, g: 0, b: 0 }
+    blue: Color = Color { r: 0, g: 0, b: 255 }
+    println(red == red2)     # true
+    println(red == blue)     # false
+
+    # Version: Display only
+    v: Version = Version { major: 1, minor: 2, patch: 3 }
+    println("{v}")            # Version { major: 1, minor: 2, patch: 3 }
+
+    # Priority: Comparable only
+    hi: Priority = Priority { level: 10 }
+    lo: Priority = Priority { level: 1 }
+    println(hi <=> lo)       # Greater
+
+    # Unit: zero fields
+    u1: Unit = Unit { }
+    u2: Unit = Unit { }
+    println(u1 == u2)        # true
+    println("{u1}")           # Unit {  }
+
+    # Celsius: Eq derived, Display overridden
+    t1: Celsius = Celsius { value: 100.0 }
+    t2: Celsius = Celsius { value: 100.0 }
+    t3: Celsius = Celsius { value: 0.0 }
+    println("{t1}")           # 100 C  (explicit impl)
+    println(t1 == t2)        # true   (derived Eq)
+    println(t1 == t3)        # false  (derived Eq)
+}

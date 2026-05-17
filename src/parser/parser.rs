@@ -122,6 +122,45 @@ impl Parser {
         }
     }
 
+    /// Like `expect_ident` but also accepts reserved keywords in field-access position.
+    /// Needed for `target.annotation.field`, `obj.type`, etc.
+    fn expect_field_name(&mut self) -> Result<String, ParseError> {
+        let span = self.peek_span();
+        let name = match self.peek().clone() {
+            TokenKind::Ident(s) => s,
+            // Keywords that are valid field names in dot-access
+            tok => match Self::keyword_as_str(&tok) {
+                Some(s) => s.to_string(),
+                None => {
+                    return Err(ParseError::Unexpected {
+                        found: tok,
+                        expected: "field name".into(),
+                        span,
+                    })
+                }
+            },
+        };
+        self.advance();
+        Ok(name)
+    }
+
+    fn keyword_as_str(tok: &TokenKind) -> Option<&'static str> {
+        match tok {
+            TokenKind::Annotation => Some("annotation"),
+            TokenKind::Processor => Some("processor"),
+            TokenKind::Struct => Some("struct"),
+            TokenKind::Enum => Some("enum"),
+            TokenKind::Interface => Some("interface"),
+            TokenKind::Impl => Some("impl"),
+            TokenKind::Def => Some("def"),
+            TokenKind::Type => Some("type"),
+            TokenKind::Return => Some("return"),
+            TokenKind::Import => Some("import"),
+            TokenKind::Export => Some("export"),
+            _ => None,
+        }
+    }
+
     pub fn parse_file(&mut self) -> Result<SourceFile, ParseError> {
         let start = self.peek_span().start;
         let mut items = Vec::new();
@@ -159,6 +198,10 @@ impl Parser {
             TokenKind::Type => Ok(Item::TypeAlias(self.parse_type_alias()?)),
             TokenKind::Import => Ok(Item::Import(self.parse_import()?)),
             TokenKind::Export => Ok(Item::Export(self.parse_export()?)),
+            TokenKind::Mut => Ok(Item::Global(self.parse_global(true)?)),
+            TokenKind::Ident(_) if self.is_global_var_decl() => {
+                Ok(Item::Global(self.parse_global(false)?))
+            }
             found => Err(ParseError::Unexpected {
                 found,
                 expected: "item declaration".into(),
@@ -200,6 +243,34 @@ impl Parser {
             });
         }
         Ok(anns)
+    }
+
+    /// Returns true when the current position looks like `ident: Type = expr` at item level
+    /// (an immutable module-level variable).
+    fn is_global_var_decl(&self) -> bool {
+        // ident : ...
+        matches!(self.tokens.get(self.pos), Some(t) if matches!(t.kind, TokenKind::Ident(_)))
+            && matches!(self.tokens.get(self.pos + 1), Some(t) if t.kind == TokenKind::Colon)
+    }
+
+    fn parse_global(&mut self, mutable: bool) -> Result<GlobalVar, ParseError> {
+        let start = self.peek_span().start;
+        if mutable {
+            self.expect(TokenKind::Mut)?;
+        }
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::Colon)?;
+        let ty = self.parse_type()?;
+        self.expect(TokenKind::Eq)?;
+        let value = self.parse_expr(0)?;
+        let end = self.peek_span().start;
+        Ok(GlobalVar {
+            name,
+            ty,
+            value,
+            mutable,
+            span: Span::new(start, end),
+        })
     }
 
     fn parse_import(&mut self) -> Result<Import, ParseError> {
@@ -506,9 +577,27 @@ impl Parser {
                 });
                 break;
             }
+            self.eat(&TokenKind::Mut); // allow `mut self` and `mut param`
             let pname = self.expect_ident()?;
-            self.expect(TokenKind::Colon)?;
-            let ty = self.parse_type()?;
+            // `self` with no type annotation gets implicit type `Self`
+            let ty = if self.peek() == &TokenKind::Colon {
+                self.advance();
+                self.parse_type()?
+            } else if pname == "self" {
+                let sp = ps;
+                TypeExpr::Named {
+                    name: "Self".to_string(),
+                    generics: vec![],
+                    bindings: vec![],
+                    span: sp,
+                }
+            } else {
+                return Err(ParseError::Unexpected {
+                    found: self.peek().clone(),
+                    expected: "Colon".into(),
+                    span: self.peek_span(),
+                });
+            };
             let end = self.peek_span();
             params.push(Param {
                 name: pname,
@@ -1628,6 +1717,17 @@ impl Parser {
                     span: start,
                 })
             }
+            TokenKind::LBracket => {
+                self.advance();
+                let mut elems = Vec::new();
+                while self.peek() != &TokenKind::RBracket && self.peek() != &TokenKind::Eof {
+                    elems.push(self.parse_expr(0)?);
+                    self.eat(&TokenKind::Comma);
+                }
+                let end = self.peek_span();
+                self.expect(TokenKind::RBracket)?;
+                Ok(Expr::Array(elems, Span::new(start.start, end.start)))
+            }
             TokenKind::Match => self.parse_match_expr(),
             TokenKind::Spawn => {
                 self.advance();
@@ -1656,7 +1756,7 @@ impl Parser {
         match self.peek().clone() {
             TokenKind::Dot => {
                 self.advance();
-                let field = self.expect_ident()?;
+                let field = self.expect_field_name()?;
                 if self.peek() == &TokenKind::LParen {
                     let args = self.parse_arg_list()?;
                     let span = Span::new(start.start, self.peek_span().start);

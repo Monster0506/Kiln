@@ -9,7 +9,7 @@ use crate::codegen::memory::store_field;
 use crate::codegen::names::binop_fn_suffix;
 use crate::codegen::types::clif_type;
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{types, AbiParam, Block as ClifBlock, InstBuilder};
+use cranelift_codegen::ir::{types, AbiParam, Block as ClifBlock, InstBuilder, MemFlags};
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{Linkage, Module};
 
@@ -81,7 +81,12 @@ fn lower_typed_stmt(
             let val = lower_typed_expr_loops(value, builder, vars, loops, ctx);
             match &target.kind {
                 TypedExprKind::Ident(name) => {
-                    if let Some(var) = vars.get(name) {
+                    if let Some(&data_id) = ctx.global_vars.get(name.as_str()) {
+                        let gv = ctx.module.declare_data_in_func(data_id, &mut builder.func);
+                        let addr = builder.ins().global_value(types::I64, gv);
+                        let coerced = coerce_to_i64(val, builder);
+                        builder.ins().store(MemFlags::new(), coerced, addr, 0);
+                    } else if let Some(var) = vars.get(name) {
                         let coerced = if let Some(var_ty) = vars.get_type(name) {
                             coerce_to(val, var_ty, builder)
                         } else {
@@ -110,7 +115,13 @@ fn lower_typed_stmt(
             let use_native = matches!(target.ty, Ty::Int | Ty::Float | Ty::Bool);
             match &target.kind {
                 TypedExprKind::Ident(name) => {
-                    if let Some(var) = vars.get(name) {
+                    if let Some(&data_id) = ctx.global_vars.get(name.as_str()) {
+                        let gv = ctx.module.declare_data_in_func(data_id, &mut builder.func);
+                        let addr = builder.ins().global_value(types::I64, gv);
+                        let cur = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+                        let result = lower_binop(op, cur, rhs_val, builder, ctx.module);
+                        builder.ins().store(MemFlags::new(), result, addr, 0);
+                    } else if let Some(var) = vars.get(name) {
                         let cur = builder.use_var(var);
                         let result = if !use_native {
                             if let Some(type_name) = type_name_of(&target.ty) {
@@ -244,61 +255,104 @@ fn lower_typed_stmt(
             let mut inner_vars = vars.clone();
 
             {
-                let enter_sig = {
+                use cranelift_codegen::ir::{StackSlotData, StackSlotKind};
+
+                // Allocate the jmp_buf in THIS (Cranelift) function's stack frame.
+                // 8 x 8 bytes = 64 bytes: [rip, rsp, rbx, rbp, r12, r13, r14, r15].
+                // The jmp_buf lives at the same address for the duration of the try
+                // block, so __kiln_longjmp can safely jump back into this frame.
+                let slot = builder.func.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    64,
+                    8,
+                ));
+                let jmpbuf_addr = builder.ins().stack_addr(types::I64, slot, 0);
+
+                // __kiln_exc_push(jmpbuf_addr): register this frame
+                let push_sig = {
                     let mut s = ctx.module.make_signature();
+                    s.params.push(AbiParam::new(types::I64));
+                    s
+                };
+                let push_id = ctx
+                    .module
+                    .declare_function("__kiln_exc_push", Linkage::Import, &push_sig)
+                    .unwrap_or_else(|_| {
+                        if let Some(cranelift_module::FuncOrDataId::Func(id)) =
+                            ctx.module.get_name("__kiln_exc_push")
+                        {
+                            id
+                        } else {
+                            panic!("__kiln_exc_push not found")
+                        }
+                    });
+                let push_ref = ctx.module.declare_func_in_func(push_id, builder.func);
+                builder.ins().call(push_ref, &[jmpbuf_addr]);
+
+                // __kiln_setjmp(jmpbuf_addr) -> i32: saves this frame's context.
+                // Returns 0 on initial entry; __kiln_longjmp makes it return 1.
+                let setjmp_sig = {
+                    let mut s = ctx.module.make_signature();
+                    s.params.push(AbiParam::new(types::I64));
                     s.returns.push(AbiParam::new(types::I32));
                     s
                 };
-                let exit_sig = ctx.module.make_signature();
-
-                let enter_id = ctx
+                let setjmp_id = ctx
                     .module
-                    .declare_function("__kiln_try_enter", Linkage::Import, &enter_sig)
+                    .declare_function("__kiln_setjmp", Linkage::Import, &setjmp_sig)
                     .unwrap_or_else(|_| {
                         if let Some(cranelift_module::FuncOrDataId::Func(id)) =
-                            ctx.module.get_name("__kiln_try_enter")
+                            ctx.module.get_name("__kiln_setjmp")
                         {
                             id
                         } else {
-                            panic!("__kiln_try_enter not found")
+                            panic!("__kiln_setjmp not found")
                         }
                     });
-                let exit_id = ctx
+                let setjmp_ref = ctx.module.declare_func_in_func(setjmp_id, builder.func);
+                let call = builder.ins().call(setjmp_ref, &[jmpbuf_addr]);
+                let frame = builder.inst_results(call)[0];
+
+                // __kiln_exc_pop(): unregisters the frame (called on both paths)
+                let pop_sig = ctx.module.make_signature();
+                let pop_id = ctx
                     .module
-                    .declare_function("__kiln_try_exit", Linkage::Import, &exit_sig)
+                    .declare_function("__kiln_exc_pop", Linkage::Import, &pop_sig)
                     .unwrap_or_else(|_| {
                         if let Some(cranelift_module::FuncOrDataId::Func(id)) =
-                            ctx.module.get_name("__kiln_try_exit")
+                            ctx.module.get_name("__kiln_exc_pop")
                         {
                             id
                         } else {
-                            panic!("__kiln_try_exit not found")
+                            panic!("__kiln_exc_pop not found")
                         }
                     });
+                let pop_ref = ctx.module.declare_func_in_func(pop_id, builder.func);
 
-                let enter_ref = ctx.module.declare_func_in_func(enter_id, builder.func);
-                let exit_ref = ctx.module.declare_func_in_func(exit_id, builder.func);
+                let izero = builder.ins().iconst(types::I32, 0);
+                let is_exc = builder.ins().icmp(IntCC::NotEqual, frame, izero);
 
                 let try_body_bb = builder.create_block();
                 let exc_bb = builder.create_block();
                 let merge_bb = builder.create_block();
 
-                let call = builder.ins().call(enter_ref, &[]);
-                let frame = builder.inst_results(call)[0];
-                let izero = builder.ins().iconst(types::I32, 0);
-                let is_exc = builder.ins().icmp(IntCC::NotEqual, frame, izero);
                 builder.ins().brif(is_exc, exc_bb, &[], try_body_bb, &[]);
 
+                // --- normal (no exception) path ---
                 builder.switch_to_block(try_body_bb);
                 builder.seal_block(try_body_bb);
                 lower_typed_block(body, builder, &mut inner_vars, loops, ctx);
                 if block_needs_term(builder) {
-                    builder.ins().call(exit_ref, &[]);
+                    builder.ins().call(pop_ref, &[]);
                     builder.ins().jump(merge_bb, &[]);
                 }
 
+                // --- exception path (reached via longjmp) ---
                 builder.switch_to_block(exc_bb);
                 builder.seal_block(exc_bb);
+                // Pop the frame first so that any raise inside the handler
+                // propagates to an outer try-catch rather than looping.
+                builder.ins().call(pop_ref, &[]);
                 if let Some(handler) = handlers_clone.first() {
                     let mut hv = vars.clone();
                     if !handler.binding.is_empty() {

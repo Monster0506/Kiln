@@ -1,5 +1,8 @@
 use crate::analyzer::ty::Ty;
-use crate::analyzer::typed_ast::{TypedBlock, TypedHookDef, TypedItem, TypedParam};
+use crate::analyzer::typed_ast::{
+    TypedBlock, TypedExpr, TypedExprKind, TypedGlobalVar, TypedHookDef, TypedItem, TypedParam,
+    TypedStmt,
+};
 use crate::analyzer::TypedFile;
 use crate::codegen::context::CodegenContext;
 use crate::codegen::exceptions::declare_exception_runtime;
@@ -12,7 +15,7 @@ use crate::codegen::types::clif_type;
 use crate::parser::ast::HookName;
 use cranelift_codegen::ir::{types, AbiParam, InstBuilder};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{FuncId, FuncOrDataId, Linkage, Module};
+use cranelift_module::{DataDescription, DataId, FuncId, FuncOrDataId, Linkage, Module};
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
@@ -165,6 +168,24 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
             .ok();
     }
 
+    // Pass 0a: declare module-level globals as writable 8-byte data slots.
+    let mut global_data_ids: HashMap<String, DataId> = HashMap::new();
+    let mut global_items: Vec<TypedGlobalVar> = Vec::new();
+    for item in &typed_file.items {
+        if let TypedItem::Global(g) = item {
+            let data_name = format!("__kiln_global_{}", g.name);
+            let data_id = cgx
+                .module
+                .declare_data(&data_name, Linkage::Local, true, false)
+                .expect("global data decl");
+            let mut desc = DataDescription::new();
+            desc.define_zeroinit(8);
+            cgx.module.define_data(data_id, &desc).ok();
+            global_data_ids.insert(g.name.clone(), data_id);
+            global_items.push(g.clone());
+        }
+    }
+
     // Pass 0: build struct/enum layouts.
     let mut layouts = StructLayouts::new();
     for item in &typed_file.items {
@@ -274,6 +295,64 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
         }
     }
 
+    // Register __kiln_init_globals: a synthetic void function that runs all global initializers.
+    let init_globals_id = {
+        let sig = cgx.module.make_signature(); // no params, no return
+        cgx.module
+            .declare_function("__kiln_init_globals", Linkage::Local, &sig)
+            .expect("declare __kiln_init_globals")
+    };
+    func_ids.insert("__kiln_init_globals".into(), init_globals_id);
+    {
+        use crate::diagnostics::Span;
+        let s = Span::new(0, 0);
+        let init_stmts: Vec<TypedStmt> = global_items
+            .iter()
+            .map(|g| TypedStmt::Assign {
+                target: TypedExpr {
+                    kind: TypedExprKind::Ident(g.name.clone()),
+                    ty: g.ty.clone(),
+                    span: s,
+                },
+                value: g.init.clone(),
+                span: s,
+            })
+            .collect();
+        fn_jobs.push(FnJob {
+            name: "__kiln_init_globals".into(),
+            func_id: init_globals_id,
+            params: vec![],
+            return_type: Ty::Void,
+            body: TypedBlock {
+                stmts: init_stmts,
+                span: s,
+            },
+            self_type: None,
+        });
+    }
+
+    // Build the inline_bodies map: @inline functions with single-return bodies
+    // can be expanded at call sites instead of emitting a function call.
+    let inline_bodies: HashMap<
+        String,
+        (Vec<(String, Ty)>, crate::analyzer::typed_ast::TypedBlock),
+    > = {
+        let mut map = HashMap::new();
+        for item in &typed_file.items {
+            if let TypedItem::Function(f) = item {
+                if f.is_inline && !f.is_builtin {
+                    let params: Vec<(String, Ty)> = f
+                        .params
+                        .iter()
+                        .map(|p| (p.name.clone(), p.ty.clone()))
+                        .collect();
+                    map.insert(f.name.clone(), (params, f.body.clone()));
+                }
+            }
+        }
+        map
+    };
+
     // Pass 2: compile each function body.
     let mut fbc = FunctionBuilderContext::new();
     // Pre-seed defined_ids so @builtin wrappers for runtime imports are never compiled.
@@ -341,11 +420,24 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
             module: &mut cgx.module,
             layouts: &layouts,
             func_ids: &func_ids,
+            global_vars: &global_data_ids,
             closure_counter: 0,
             self_type: job.self_type.clone(),
             return_clif_type,
             defined_thunks: &mut defined_thunks,
+            inline_bodies: &inline_bodies,
         };
+
+        // Inject __kiln_init_globals call at the top of main.
+        if is_main {
+            if let Some(&init_id) = lower_ctx.func_ids.get("__kiln_init_globals") {
+                let func_ref = lower_ctx
+                    .module
+                    .declare_func_in_func(init_id, &mut builder.func);
+                builder.ins().call(func_ref, &[]);
+            }
+        }
+
         lower_typed_block(
             &job.body,
             &mut builder,

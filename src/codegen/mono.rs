@@ -245,6 +245,7 @@ fn specialize_hook_as_fn(
         return_type: subst_ty(&hook.return_type, subst),
         body,
         is_builtin: false,
+        is_inline: false,
         span: hook.span,
     }
 }
@@ -508,6 +509,11 @@ fn seed_expr(
             TypedClosureBody::Expr(e) => seed_expr(e, generic_fns, queue),
             TypedClosureBody::Block(b) => seed_block(b, generic_fns, queue),
         },
+        TypedExprKind::Array(elems) => {
+            for e in elems {
+                seed_expr(e, generic_fns, queue);
+            }
+        }
         TypedExprKind::Unwrap(inner)
         | TypedExprKind::Spawn(inner)
         | TypedExprKind::GenSplice(inner) => seed_expr(inner, generic_fns, queue),
@@ -595,6 +601,7 @@ fn specialize_fn(
         return_type,
         body,
         is_builtin: false,
+        is_inline: f.is_inline,
         span: f.span,
     }
 }
@@ -771,6 +778,7 @@ fn subst_stmt(
             return_type: subst_ty(&f.return_type, subst),
             body: sb!(&f.body),
             is_builtin: f.is_builtin,
+            is_inline: f.is_inline,
             span: f.span,
         }),
         TypedStmt::Break(s) => TypedStmt::Break(*s),
@@ -941,6 +949,7 @@ fn subst_expr(
             mutable: *mutable,
             expr: Box::new(se!(e)),
         },
+        TypedExprKind::Array(elems) => TypedExprKind::Array(elems.iter().map(|e| se!(e)).collect()),
         TypedExprKind::Gen { body } => TypedExprKind::Gen { body: sb!(body) },
         TypedExprKind::GenSplice(inner) => TypedExprKind::GenSplice(Box::new(se!(inner))),
         TypedExprKind::Str(segs) => TypedExprKind::Str(
@@ -1019,7 +1028,10 @@ mod tests {
         let hooks: HashMap<(String, String), (TypedHookDef, Ty)> = HashMap::new();
         let mut reqs: Vec<ImplHookReq> = Vec::new();
         let mut subst = HashMap::new();
-        subst.insert("T".to_string(), Ty::Named(TypeId(1), "Circle".into(), vec![]));
+        subst.insert(
+            "T".to_string(),
+            Ty::Named(TypeId(1), "Circle".into(), vec![]),
+        );
         assert_eq!(
             rewrite_method_fn("T_draw", &subst, &hooks, &mut reqs),
             "Circle_draw"
@@ -1044,7 +1056,11 @@ mod tests {
         let mut subst = HashMap::new();
         subst.insert(
             "T".to_string(),
-            Ty::Named(TypeId(99), "Vec".into(), vec![Ty::Named(TypeId(1), "Item".into(), vec![])]),
+            Ty::Named(
+                TypeId(99),
+                "Vec".into(),
+                vec![Ty::Named(TypeId(1), "Item".into(), vec![])],
+            ),
         );
         assert_eq!(
             rewrite_method_fn("T_to_str", &subst, &hooks, &mut reqs),
@@ -1055,9 +1071,14 @@ mod tests {
     #[test]
     fn contains_type_param_generic_param() {
         assert!(contains_type_param(&Ty::GenericParam("T".into())));
-        assert!(!contains_type_param(&Ty::Named(TypeId(1), "Circle".into(), vec![])));
+        assert!(!contains_type_param(&Ty::Named(
+            TypeId(1),
+            "Circle".into(),
+            vec![]
+        )));
         assert!(contains_type_param(&Ty::Named(
-            TypeId(99), "Vec".into(),
+            TypeId(99),
+            "Vec".into(),
             vec![Ty::GenericParam("T".into())]
         )));
     }

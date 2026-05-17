@@ -1,9 +1,11 @@
 use clap::{Parser, Subcommand};
 use kiln_compiler::analyzer::analyze;
+use kiln_compiler::annotations::{default_registry, run_processors};
 use kiln_compiler::codegen::{compile::compile, context::CodegenContext, emit};
 use kiln_compiler::diagnostics::SourceMap;
 use kiln_compiler::lexer::Lexer;
 use kiln_compiler::parser::Parser as KilnParser;
+use kiln_compiler::test_harness::inject_harness;
 use std::fs;
 use std::path::PathBuf;
 
@@ -53,6 +55,14 @@ enum Command {
         #[arg(long)]
         verbose: bool,
     },
+    /// Run @test-annotated functions in a source file
+    Test {
+        /// Path to the .kn source file
+        file: PathBuf,
+        /// Show linker stderr output
+        #[arg(long)]
+        verbose: bool,
+    },
 }
 
 fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf {
@@ -71,7 +81,7 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
         std::process::exit(1);
     });
 
-    let ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
+    let mut ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
         let msg = e.message();
         if let Some(span) = e.span() {
             let snippet = map.render_diagnostic(&src, span, &path);
@@ -81,6 +91,17 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
         }
         std::process::exit(1);
     });
+
+    // Strip @test-annotated functions from production builds.
+    ast.items.retain(|item| {
+        if let kiln_compiler::parser::ast::Item::Function(f) = item {
+            return !f.annotations.iter().any(|a| a.name == "test");
+        }
+        true
+    });
+
+    let registry = default_registry();
+    run_processors(&mut ast, &registry);
 
     let typed_file = analyze(&ast).unwrap_or_else(|errs| {
         emit_analysis_errors(&errs, &map, &src, &path);
@@ -184,7 +205,7 @@ fn main() {
                 std::process::exit(1);
             });
 
-            let ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
+            let mut ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
                 let msg = e.message();
                 if let Some(span) = e.span() {
                     let snippet = map.render_diagnostic(&src, span, &path);
@@ -194,6 +215,9 @@ fn main() {
                 }
                 std::process::exit(1);
             });
+
+            let registry = default_registry();
+            run_processors(&mut ast, &registry);
 
             match kiln_compiler::analyzer::analyze(&ast) {
                 Ok(_) => println!("ok"),
@@ -224,7 +248,7 @@ fn main() {
                     }
                     std::process::exit(1);
                 });
-                let ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
+                let mut ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
                     let msg = e.message();
                     if let Some(span) = e.span() {
                         let snippet = map.render_diagnostic(&src, span, &path);
@@ -234,6 +258,8 @@ fn main() {
                     }
                     std::process::exit(1);
                 });
+                let registry = default_registry();
+                run_processors(&mut ast, &registry);
                 let typed_file = analyze(&ast).unwrap_or_else(|errs| {
                     emit_analysis_errors(&errs, &map, &src, &path);
                     std::process::exit(1);
@@ -272,6 +298,78 @@ fn main() {
                     std::process::exit(1);
                 });
             std::process::exit(status.code().unwrap_or(0));
+        }
+
+        Command::Test { file, verbose } => {
+            let path = file.to_string_lossy().to_string();
+            let src = fs::read_to_string(&file).unwrap_or_else(|e| {
+                eprintln!("error reading {path}: {e}");
+                std::process::exit(1);
+            });
+            let map = SourceMap::new(&src);
+            let tokens = Lexer::new(&src).tokenize().unwrap_or_else(|errors| {
+                for e in &errors {
+                    let snippet = map.render_diagnostic(&src, e.span(), &path);
+                    emit_error(e.kind(), e.code(), &e.message(), &snippet);
+                }
+                std::process::exit(1);
+            });
+            let mut ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
+                let msg = e.message();
+                if let Some(span) = e.span() {
+                    let snippet = map.render_diagnostic(&src, span, &path);
+                    emit_error(e.kind(), e.code(), &msg, &snippet);
+                } else {
+                    emit_error_no_span(e.kind(), e.code(), &msg);
+                }
+                std::process::exit(1);
+            });
+            let registry = default_registry();
+            run_processors(&mut ast, &registry);
+            inject_harness(&mut ast);
+            let typed_file = analyze(&ast).unwrap_or_else(|errs| {
+                emit_analysis_errors(&errs, &map, &src, &path);
+                std::process::exit(1);
+            });
+            let module_name = file
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("module");
+            let mut cgx = CodegenContext::new(module_name);
+            compile(&typed_file, &mut cgx).unwrap_or_else(|e| {
+                eprintln!("codegen error: {e}");
+                std::process::exit(1);
+            });
+            let obj_bytes = emit::emit_object(cgx).unwrap_or_else(|e| {
+                eprintln!("emit error: {e}");
+                std::process::exit(1);
+            });
+            let exe_path = std::env::temp_dir().join(format!(
+                "kiln_test_{}.exe",
+                file.file_stem().and_then(|s| s.to_str()).unwrap_or("out")
+            ));
+            let tmp_obj = std::env::temp_dir().join(format!(
+                "kiln_test_{}.o",
+                file.file_stem().and_then(|s| s.to_str()).unwrap_or("out")
+            ));
+            emit::link_executable(&obj_bytes, &tmp_obj, &exe_path, verbose).unwrap_or_else(|e| {
+                eprintln!("link error: {e}");
+                std::process::exit(1);
+            });
+            let _ = fs::remove_file(&tmp_obj);
+            let status = std::process::Command::new(&exe_path)
+                .status()
+                .unwrap_or_else(|e| {
+                    eprintln!("run error: {e}");
+                    std::process::exit(1);
+                });
+            let _ = fs::remove_file(&exe_path);
+            if status.success() {
+                println!("all tests passed");
+            } else {
+                eprintln!("tests failed");
+                std::process::exit(status.code().unwrap_or(1));
+            }
         }
 
         Command::Parse { file } => {

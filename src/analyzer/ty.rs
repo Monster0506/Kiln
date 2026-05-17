@@ -175,6 +175,13 @@ impl TypeRegistry {
         self.entries.iter().find(|e| e.id == *id)
     }
 
+    /// Returns true if `name` is a variant name of any registered enum.
+    pub fn is_enum_variant(&self, name: &str) -> bool {
+        self.entries.iter().any(|e| {
+            matches!(&e.kind, TypeKind::Enum { variant_names } if variant_names.iter().any(|v| v == name))
+        })
+    }
+
     pub fn register_conformance(
         &mut self,
         type_name: &str,

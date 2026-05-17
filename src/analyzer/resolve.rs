@@ -93,7 +93,6 @@ pub fn resolve_type_expr(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

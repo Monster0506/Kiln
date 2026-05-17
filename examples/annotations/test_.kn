@@ -1,0 +1,104 @@
+# test_.kn -- @test annotation examples
+#
+# Annotation parameters:
+#   @test             -- normal test: passes if returns, fails if raises
+#   @test(failing)    -- expected-to-fail: passes if raises, fails if returns
+#   @test(isolate)    -- same semantics as @test for now; marks test as isolated
+#
+# Run tests:    kiln test  examples/annotations/test_.kn
+# Build binary: kiln build examples/annotations/test_.kn
+#               (test functions are STRIPPED -- they do not appear in the binary)
+#
+# How test stripping works:
+#   kiln build calls ast.items.retain(...) before analysis, removing every
+#   function annotated @test. The resulting binary has no test symbols at all.
+#
+# Proof of stripping:
+#   kiln build examples/annotations/test_.kn --no-link
+#   strings test_.o | grep "test_"      # nothing -- symbols were never emitted
+
+# ---- Helpers under test -------------------------------------------------------
+
+def add(a: int, b: int) -> int {
+    return a + b
+}
+
+def divide(a: int, b: int) -> int {
+    if b == 0 { raise "division by zero" }
+    return a / b
+}
+
+def clamp(v: int, lo: int, hi: int) -> int {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+
+def is_palindrome(s: str) -> bool {
+    return s == s
+}
+
+# ---- @test -- normal tests (pass if return, fail if raise) -------------------
+
+@test
+def test_add_positives() -> void {
+    if add(2, 3) != 5 { raise "expected 5" }
+}
+
+@test
+def test_add_zero() -> void {
+    if add(0, 42) != 42 { raise "expected 42" }
+}
+
+@test
+def test_add_negatives() -> void {
+    if add(-3, -4) != -7 { raise "expected -7" }
+}
+
+@test
+def test_clamp_below_min() -> void {
+    if clamp(-5, 0, 10) != 0 { raise "expected 0" }
+}
+
+@test
+def test_clamp_above_max() -> void {
+    if clamp(15, 0, 10) != 10 { raise "expected 10" }
+}
+
+@test
+def test_clamp_within_range() -> void {
+    if clamp(5, 0, 10) != 5 { raise "expected 5" }
+}
+
+# ---- @test(failing) -- expected-to-fail tests --------------------------------
+#
+# These tests MUST raise. If they return normally the harness itself raises,
+# which fails the whole suite. Use this to document known-bad inputs.
+
+@test(failing)
+def test_divide_by_zero_raises() -> void {
+    # divide(n, 0) raises "division by zero" -- this test passes only if it raises
+    divide(10, 0)
+}
+
+@test(failing)
+def test_wrong_arithmetic_raises() -> void {
+    # Intentionally wrong assertion -- proves harness catches the raise
+    if add(2, 2) != 99 { raise "add(2,2) is not 99" }
+}
+
+# ---- @test(isolate) -- isolation-marked tests --------------------------------
+#
+# Currently runs inline (subprocess isolation is not yet implemented).
+# Marks the test as logically independent; useful for documentation
+# and future isolation support.
+
+@test(isolate)
+def test_add_isolated() -> void {
+    if add(100, 200) != 300 { raise "expected 300" }
+}
+
+@test(isolate)
+def test_clamp_isolated_edge() -> void {
+    if clamp(0, 0, 0) != 0 { raise "expected 0" }
+}

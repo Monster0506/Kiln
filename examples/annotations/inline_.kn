@@ -1,0 +1,77 @@
+# inline_.kn -- @inline annotation
+#
+# @inline on a function with a single-return body causes the compiler to expand
+# the call site directly instead of emitting a function call.
+#
+# Proof: run with `kiln run` and watch stderr -- the compiler prints:
+#   [kiln] inlining 'square' at call site
+#   [kiln] inlining 'cube' at call site
+#   ...
+# for every expansion. Functions with multi-statement bodies (abs_int,
+# distance_sq) fall back to a regular call and do NOT appear in the log.
+#
+# Usage: kiln run examples/annotations/inline_.kn   (stderr shows inline log)
+
+# ---- Single-return helpers (will be inlined) ---------------------------------
+
+@inline
+def square(n: int) -> int {
+    return n * n
+}
+
+@inline
+def cube(n: int) -> int {
+    return n * n * n
+}
+
+@inline
+def double(n: int) -> int {
+    return n + n
+}
+
+@inline
+def min(a: int, b: int) -> int {
+    if a < b { return a }
+    return b
+}
+
+@inline
+def max(a: int, b: int) -> int {
+    if a > b { return a }
+    return b
+}
+
+# clamp calls min/max -- those get inlined first, then clamp itself is inlined.
+@inline
+def clamp(v: int, lo: int, hi: int) -> int {
+    return max(lo, min(v, hi))
+}
+
+# ---- Multi-statement helpers (NOT inlined, regular call) ---------------------
+
+@inline
+def abs_int(n: int) -> int {
+    if n < 0 { return 0 - n }
+    return n
+}
+
+@inline
+def distance_sq(ax: int, ay: int, bx: int, by: int) -> int {
+    dx: int = abs_int(ax - bx)
+    dy: int = abs_int(ay - by)
+    return square(dx) + square(dy)
+}
+
+# ---- main --------------------------------------------------------------------
+
+def main() -> void {
+    println(square(9))               # 81  -- inlined
+    println(cube(3))                 # 27  -- inlined
+    println(double(14))              # 28  -- inlined
+    println(min(4, 11))              # 4   -- inlined
+    println(max(4, 11))              # 11  -- inlined
+    println(clamp(15, 0, 10))        # 10  -- inlined (calls max/min which are also inlined)
+    println(clamp(0 - 3, 0, 10))     # 0   -- inlined
+    println(abs_int(0 - 7))          # 7   -- regular call (multi-statement body)
+    println(distance_sq(0, 0, 3, 4)) # 25  -- regular call (multi-statement body)
+}

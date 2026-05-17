@@ -22,8 +22,8 @@ use crate::analyzer::env::{Env, FnOverload, GenericBound, Symbol};
 use crate::analyzer::resolve::resolve_type_expr;
 use crate::analyzer::ty::MethodEntry;
 use crate::analyzer::typed_ast::{
-    TypedEnumDef, TypedEnumVariant, TypedField, TypedFnDef, TypedHookDef, TypedImplBlock,
-    TypedInterfaceDef, TypedInterfaceMethod, TypedItem, TypedParam, TypedStructDef,
+    TypedEnumDef, TypedEnumVariant, TypedField, TypedFnDef, TypedGlobalVar, TypedHookDef,
+    TypedImplBlock, TypedInterfaceDef, TypedInterfaceMethod, TypedItem, TypedParam, TypedStructDef,
 };
 use crate::diagnostics::Span;
 use crate::parser::ast::{HookName, ImplKind, Item, SourceFile, TypeExpr};
@@ -98,6 +98,93 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
     // Register None/Some now that Option has been processed from the prelude.
     register_option_symbols(&mut env, &registry);
+
+    // Deprecation warnings: scan all non-deprecated function bodies for calls
+    // to @deprecated functions and emit warnings to stderr.
+    {
+        let deprecated: std::collections::HashSet<String> = source
+            .items
+            .iter()
+            .filter_map(|item| {
+                if let Item::Function(f) = item {
+                    if f.annotations.iter().any(|a| a.name == "deprecated") {
+                        Some(f.name.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if !deprecated.is_empty() {
+            for item in &source.items {
+                if let Item::Function(f) = item {
+                    if f.annotations.iter().any(|a| a.name == "deprecated") {
+                        continue;
+                    }
+                    warn_deprecated_in_block(&f.body, &deprecated, &f.name);
+                }
+            }
+        }
+    }
+
+    // Pass 1a: register module-level globals into the environment.
+    for item in &source.items {
+        if let Item::Global(g) = item {
+            let ty = resolve::resolve_type_expr(&g.ty, &env, &mut errors);
+            env.define(
+                &g.name,
+                env::Symbol::Var {
+                    ty,
+                    mutable: g.mutable,
+                    span: g.span,
+                },
+            );
+        }
+    }
+
+    // Pass 1a2: check that all annotation uses name a declared or built-in annotation.
+    {
+        const BUILTIN_ANNOTATIONS: &[&str] = &[
+            "static",
+            "builtin",
+            "deprecated",
+            "inline",
+            "indirect",
+            "derive",
+            "test",
+        ];
+        let declared: std::collections::HashSet<String> = source
+            .items
+            .iter()
+            .filter_map(|i| {
+                if let Item::AnnotationDef(a) = i {
+                    Some(a.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for item in &source.items {
+            let anns: &[crate::parser::ast::AnnotationUse] = match item {
+                Item::Function(f) => &f.annotations,
+                Item::Struct(s) => &s.annotations,
+                Item::Enum(e) => &e.annotations,
+                _ => &[],
+            };
+            for ann in anns {
+                if !BUILTIN_ANNOTATIONS.contains(&ann.name.as_str())
+                    && !declared.contains(&ann.name)
+                {
+                    errors.push(error::AnalysisError::UnknownAnnotation {
+                        name: ann.name.clone(),
+                        span: ann.span,
+                    });
+                }
+            }
+        }
+    }
 
     // Pass 1b: resolve top-level function signatures, grouping overloads.
     {
@@ -627,6 +714,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     return_type: ret,
                     body,
                     is_builtin: f.annotations.iter().any(|a| a.name == "builtin"),
+                    is_inline: f.annotations.iter().any(|a| a.name == "inline"),
                     span: f.span,
                 }));
             }
@@ -642,6 +730,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         name: f.name.clone(),
                         ty: resolve_type_expr(&f.ty, &env, &mut errors),
                         is_priv: f.is_priv,
+                        is_indirect: f.annotations.iter().any(|a| a.name == "indirect"),
                         span: f.span,
                     })
                     .collect();
@@ -680,6 +769,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                                 name: f.name.clone(),
                                 ty: resolve_type_expr(&f.ty, &env, &mut errors),
                                 is_priv: f.is_priv,
+                                is_indirect: false,
                                 span: f.span,
                             })
                             .collect(),
@@ -880,6 +970,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         return_type: ret,
                         body,
                         is_builtin: false,
+                        is_inline: method.annotations.iter().any(|a| a.name == "inline"),
                         span: method.span,
                     });
                 }
@@ -1071,6 +1162,18 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 }));
             }
 
+            Item::Global(g) => {
+                let ty = resolve_type_expr(&g.ty, &env, &mut errors);
+                let init = infer::infer_typed_expr(&g.value, &mut env, &registry, &mut errors);
+                typed_items.push(TypedItem::Global(TypedGlobalVar {
+                    name: g.name.clone(),
+                    ty,
+                    init,
+                    mutable: g.mutable,
+                    span: g.span,
+                }));
+            }
+
             _ => {}
         }
     }
@@ -1140,6 +1243,109 @@ fn type_expr_uses_self(ty: &TypeExpr) -> bool {
         }
         TypeExpr::Ref { inner, .. } => type_expr_uses_self(inner),
         TypeExpr::GenSplice(..) => false,
+    }
+}
+
+fn warn_deprecated_in_block(
+    block: &crate::parser::ast::Block,
+    deprecated: &std::collections::HashSet<String>,
+    caller: &str,
+) {
+    for stmt in &block.stmts {
+        warn_deprecated_in_stmt(stmt, deprecated, caller);
+    }
+}
+
+fn warn_deprecated_in_stmt(
+    stmt: &crate::parser::ast::Stmt,
+    deprecated: &std::collections::HashSet<String>,
+    caller: &str,
+) {
+    use crate::parser::ast::Stmt;
+    match stmt {
+        Stmt::Expr(e)
+        | Stmt::Return { value: Some(e), .. }
+        | Stmt::Raise { value: Some(e), .. } => {
+            warn_deprecated_in_expr(e, deprecated, caller);
+        }
+        Stmt::VarDecl { value, .. } | Stmt::Assign { value, .. } => {
+            warn_deprecated_in_expr(value, deprecated, caller);
+        }
+        Stmt::CompoundAssign { rhs, .. } => {
+            warn_deprecated_in_expr(rhs, deprecated, caller);
+        }
+        Stmt::If {
+            branches,
+            else_branch,
+            ..
+        } => {
+            for (cond, body) in branches {
+                warn_deprecated_in_expr(cond, deprecated, caller);
+                warn_deprecated_in_block(body, deprecated, caller);
+            }
+            if let Some(b) = else_branch {
+                warn_deprecated_in_block(b, deprecated, caller);
+            }
+        }
+        Stmt::While { cond, body, .. } => {
+            warn_deprecated_in_expr(cond, deprecated, caller);
+            warn_deprecated_in_block(body, deprecated, caller);
+        }
+        Stmt::For { iterable, body, .. } => {
+            warn_deprecated_in_expr(iterable, deprecated, caller);
+            warn_deprecated_in_block(body, deprecated, caller);
+        }
+        Stmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            ..
+        } => {
+            warn_deprecated_in_block(body, deprecated, caller);
+            for h in handlers {
+                warn_deprecated_in_block(&h.body, deprecated, caller);
+            }
+            if let Some(b) = finally {
+                warn_deprecated_in_block(b, deprecated, caller);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn warn_deprecated_in_expr(
+    expr: &crate::parser::ast::Expr,
+    deprecated: &std::collections::HashSet<String>,
+    caller: &str,
+) {
+    use crate::parser::ast::Expr;
+    match expr {
+        Expr::Call { callee, args, .. } => {
+            if let Expr::Ident(name, _) = callee.as_ref() {
+                if deprecated.contains(name) {
+                    eprintln!(
+                        "warning: call to deprecated function '{}' in '{}'",
+                        name, caller
+                    );
+                }
+            }
+            warn_deprecated_in_expr(callee, deprecated, caller);
+            for a in args {
+                warn_deprecated_in_expr(a, deprecated, caller);
+            }
+        }
+        Expr::BinOp { left, right, .. } => {
+            warn_deprecated_in_expr(left, deprecated, caller);
+            warn_deprecated_in_expr(right, deprecated, caller);
+        }
+        Expr::UnOp { operand: inner, .. } => warn_deprecated_in_expr(inner, deprecated, caller),
+        Expr::Field { object, .. } => warn_deprecated_in_expr(object, deprecated, caller),
+        Expr::Tuple(exprs, _) => {
+            for e in exprs {
+                warn_deprecated_in_expr(e, deprecated, caller);
+            }
+        }
+        _ => {}
     }
 }
 

@@ -488,6 +488,14 @@ pub fn infer_typed_expr(
             mk(TypedExprKind::Gen { body: tb }, Ty::Unknown, span)
         }
 
+        Expr::Array(elems, _) => {
+            let typed: Vec<_> = elems
+                .iter()
+                .map(|e| infer_typed_expr(e, env, registry, errors))
+                .collect();
+            mk(TypedExprKind::Array(typed), Ty::Unknown, span)
+        }
+
         Expr::GenSplice(e, _) => {
             let te = infer_typed_expr(e, env, registry, errors);
             let ty = te.ty.clone();
@@ -874,11 +882,24 @@ fn lower_pattern(
     match pat {
         Pattern::Wildcard(s) => TypedPattern::Wildcard(*s),
         Pattern::Literal(e) => TypedPattern::Literal(infer_typed_expr(e, env, registry, errors)),
-        Pattern::TypeBinding { ty, name, span } => TypedPattern::TypeBinding {
-            ty: ty.clone(),
-            name: name.clone(),
-            span: *span,
-        },
+        Pattern::TypeBinding { ty, name, span } => {
+            // A bare-ident pattern like `Less` (parsed as TypeBinding with ty="_")
+            // may actually be a unit enum variant. Promote it to a Struct pattern
+            // so the match codegen can do a proper discriminant comparison.
+            if ty == "_" && registry.is_enum_variant(name) {
+                TypedPattern::Struct {
+                    variant: name.clone(),
+                    fields: vec![],
+                    span: *span,
+                }
+            } else {
+                TypedPattern::TypeBinding {
+                    ty: ty.clone(),
+                    name: name.clone(),
+                    span: *span,
+                }
+            }
+        }
         Pattern::InterfaceGuard {
             interface,
             name,
@@ -1066,6 +1087,7 @@ fn lower_stmt_shallow(
                 return_type: ret,
                 body,
                 is_builtin: false,
+                is_inline: f.annotations.iter().any(|a| a.name == "inline"),
                 span: f.span,
             })
         }
@@ -1107,12 +1129,25 @@ fn infer_binop(
             (Ty::Float, Ty::Float) => Ty::Float,
             (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ty::Float,
             (Ty::Unknown, _) | (_, Ty::Unknown) => Ty::Unknown,
-            // Any type with a name and matching operands may implement the operator
-            // via hooks; let conformance checking catch actual violations later.
-            (Ty::Named(_, _, _), _)
-            | (_, Ty::Named(_, _, _))
-            | (Ty::GenericParam(_), _)
-            | (_, Ty::GenericParam(_)) => Ty::Unknown,
+            // Named left operand: look up the actual return type from the hook registry
+            // so expressions like `p1 + p2` carry the correct result type downstream.
+            (Ty::Named(_, ln, _), _) => {
+                let op_str = match op {
+                    Add => "+",
+                    Sub => "-",
+                    Mul => "*",
+                    Div => "/",
+                    Mod => "%",
+                    _ => "",
+                };
+                registry
+                    .find_method(ln, op_str)
+                    .map(|m| m.ret.clone())
+                    .unwrap_or(Ty::Unknown)
+            }
+            (Ty::GenericParam(_), _) | (_, Ty::Named(_, _, _)) | (_, Ty::GenericParam(_)) => {
+                Ty::Unknown
+            }
             (l, r) if l == r && type_name_of(l).is_some() => l.clone(),
             _ => {
                 errors.push(AnalysisError::TypeMismatch {
@@ -1198,9 +1233,10 @@ pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
         (Ty::Interface(_, _), _) => true,
         (_, Ty::Interface(_, _)) => true,
 
-        (Ty::Named(_, en, ea), Ty::Named(_, fn_, fa)) if en == fn_ => {
-            ea.iter().zip(fa.iter()).all(|(e, f)| types_compatible(e, f))
-        }
+        (Ty::Named(_, en, ea), Ty::Named(_, fn_, fa)) if en == fn_ => ea
+            .iter()
+            .zip(fa.iter())
+            .all(|(e, f)| types_compatible(e, f)),
         (Ty::Callable(ep, er), Ty::Callable(fp, fr)) => {
             ep.len() == fp.len()
                 && ep

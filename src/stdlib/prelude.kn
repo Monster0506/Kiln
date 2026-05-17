@@ -15,32 +15,6 @@ struct Vec[T] {
     def clear() -> void
 }
 
-@builtin
-struct Map[K, V] {
-    def new() -> Map[K, V]
-    def get(key: K) -> V
-    def set(key: K, value: V) -> void
-    def contains(key: K) -> bool
-    def remove(key: K) -> void
-    def len() -> int
-}
-
-@builtin
-struct Set[T] {
-    def new() -> Set[T]
-    def add(item: T) -> void
-    def contains(item: T) -> bool
-    def remove(item: T) -> void
-    def len() -> int
-}
-
-@builtin
-struct Shared[T] {
-    def new(value: T) -> Shared[T]
-    def get() -> T
-    def set(value: T) -> void
-}
-
 # ---- Builtin function declarations ------------------------------------------
 
 @builtin
@@ -574,6 +548,11 @@ def println[T: Display](item: T) -> void {
     __kiln_println(item.to_str())
 }
 
+# def println() -> void {
+#     __kiln_println("")
+# }
+
+
 # ---- Vec utility methods ----------------------------------------------------
 
 impl VecMethods for Vec[T] {
@@ -588,22 +567,24 @@ impl VecMethods for Vec[T] {
 
 # ---- Range utilities --------------------------------------------------------
 
-def range(start: int, stop: int) -> Vec[int] {
-    mut result: Vec[int] = Vec.new()
-    mut i: int = start
-    while i < stop {
-        result.add(i)
-        i = i + 1
-    }
-    return result
-}
 
-def range(start: float, stop: float, step: float) -> Vec[float] {
-    mut result: Vec[float] = Vec.new()
-    mut i: float = start
+
+
+def range(start: int, stop: int, step: int) -> Vec[int] {
+    mut result: Vec[int] = Vec.new()
+    mut i: int= start
     while i < stop {
         result.add(i)
         i = i + step
     }
     return result
+}
+
+
+def range(start: int, stop: int) -> Vec[int] {
+    return range(start, stop, 1)
+}
+
+def range(stop: int) -> Vec[int] {
+    return range(0, stop, 1)
 }

@@ -1,0 +1,59 @@
+# indirect.kn -- @indirect annotation
+#
+# @indirect on a struct field tells the memory layout pass to store that field
+# as a pointer to heap-allocated memory. Reading the field dereferences the
+# pointer; writing it (via struct literal) allocates heap space and stores
+# the pointer in the struct slot.
+#
+# This is required for recursive struct types and can be applied to any field
+# to force indirection.
+#
+# Proof: the fields below work correctly through read-write-dereference cycles,
+# verifying that the extra level of indirection is transparent to user code.
+#
+# Usage: kiln run examples/annotations/indirect.kn
+
+# ---- Simple struct with @indirect primitive field ----------------------------
+# The @indirect y field is stored as a heap pointer rather than inline.
+
+struct Point {
+    x: int
+    @indirect y: int
+}
+
+# ---- Recursive struct (requires @indirect to break infinite layout) ----------
+
+struct ListNode {
+    value: int
+    @indirect next: Option[ListNode]
+}
+
+# ---- Tree node with two @indirect children -----------------------------------
+
+struct TreeNode {
+    value: int
+    @indirect left: Option[TreeNode]
+    @indirect right: Option[TreeNode]
+}
+
+# ---- main --------------------------------------------------------------------
+
+def main() -> void {
+    # Point: x is direct, y is @indirect (heap pointer). Both values read back
+    # correctly, proving the extra dereference is transparent.
+    p: Point = Point { x: 3, y: 4 }
+    println(p.x)                 # 3  (direct field)
+    println(p.y)                 # 4  (indirect -- dereferences heap pointer)
+
+    p2: Point = Point { x: 100, y: 200 }
+    println(p2.x)                # 100
+    println(p2.y)                # 200 (indirect)
+
+    # ListNode with only a direct value field accessed.
+    leaf: ListNode = ListNode { value: 10, next: None }
+    println(leaf.value)          # 10
+
+    # TreeNode with two @indirect child fields.
+    t: TreeNode = TreeNode { value: 7, left: None, right: None }
+    println(t.value)             # 7
+}

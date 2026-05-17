@@ -1,1 +1,3 @@
-a
+def main() -> void {
+    println("error example")
+}

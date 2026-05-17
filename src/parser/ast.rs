@@ -110,6 +110,16 @@ pub enum Item {
     TypeAlias(TypeAlias),
     Import(Import),
     Export(Export),
+    Global(GlobalVar),
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobalVar {
+    pub name: String,
+    pub ty: TypeExpr,
+    pub value: Expr,
+    pub mutable: bool,
+    pub span: Span,
 }
 
 /// A bodyless function declaration, only valid inside `@builtin` struct bodies.
@@ -458,6 +468,8 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    /// `[a, b, c]` array/list literal
+    Array(Vec<Expr>, Span),
     /// `gen { ... }` quasi-quotation block
     Gen {
         body: Block,
@@ -483,6 +495,7 @@ impl Expr {
             Expr::BinOp { span, .. } => *span,
             Expr::UnOp { span, .. } => *span,
             Expr::EnumAccess { span, .. } => *span,
+            Expr::Array(_, s) => *s,
             Expr::Unwrap(_, s) => *s,
             Expr::As { span, .. } => *span,
             Expr::Match { span, .. } => *span,

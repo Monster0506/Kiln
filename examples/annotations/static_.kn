@@ -1,0 +1,92 @@
+# static_.kn -- @static on impl-block hooks
+#
+# @static marks a hook as callable on the type itself rather than an instance.
+# The hook receives no implicit self; it returns a new value or acts as a
+# factory / class-level operation.
+#
+# Usage:  TypeName.hook_name(args)   (not  instance.hook_name(args))
+
+# ---- Factory hook ------------------------------------------------------------
+
+struct Vec2 {
+    x: float
+    y: float
+}
+
+impl Constructable for Vec2 {
+    @static
+    hook new() -> Vec2 {
+        return Vec2 { x: 0.0, y: 0.0 }
+    }
+}
+
+impl Display for Vec2 {
+    hook to_str() -> str {
+        return "({x}, {y})"
+    }
+}
+
+# ---- Zero and identity factories ---------------------------------------------
+
+struct Matrix2 {
+    a: float
+    b: float
+    c: float
+    d: float
+}
+
+impl Constructable for Matrix2 {
+    @static
+    hook new() -> Matrix2 {
+        return Matrix2 { a: 0.0, b: 0.0, c: 0.0, d: 0.0 }
+    }
+}
+
+impl Default for Matrix2 {
+    @static
+    hook default() -> Matrix2 {
+        return Matrix2 { a: 1.0, b: 0.0, c: 0.0, d: 1.0 }
+    }
+}
+
+impl Display for Matrix2 {
+    hook to_str() -> str {
+        return "[{a} {b}; {c} {d}]"
+    }
+}
+
+# ---- Enum-like constants via @static -----------------------------------------
+
+struct Direction {
+    dx: int
+    dy: int
+}
+
+impl Display for Direction {
+    hook to_str() -> str {
+        return "({dx},{dy})"
+    }
+}
+
+impl Empty for Direction {
+    @static
+    hook empty() -> Direction {
+        return Direction { dx: 0, dy: 0 }
+    }
+}
+
+# ---- main --------------------------------------------------------------------
+
+def main() -> void {
+    origin: Vec2 = Vec2.new()
+    println("{origin}")          # (0, 0)
+
+    zero: Matrix2 = Matrix2.new()
+    println("{zero}")             # [0 0; 0 0]
+
+    identity: Matrix2 = Matrix2.default()
+    println("{identity}")         # [1 0; 0 1]
+
+    stop: Direction = Direction.empty()
+    println("{stop}")             # (0,0)
+}

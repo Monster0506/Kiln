@@ -1,6 +1,8 @@
 use crate::analyzer::infer::type_name_of;
 use crate::analyzer::ty::Ty;
-use crate::analyzer::typed_ast::{TypedClosureBody, TypedExpr, TypedExprKind, TypedStringSegment};
+use crate::analyzer::typed_ast::{
+    TypedBlock, TypedClosureBody, TypedExpr, TypedExprKind, TypedStmt, TypedStringSegment,
+};
 use crate::codegen::match_::lower_typed_match;
 use crate::codegen::memory::{emit_malloc, load_field, store_field};
 use crate::codegen::strings::emit_str_literal;
@@ -11,7 +13,7 @@ use cranelift_codegen::ir::{
     types, AbiParam, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type, Value,
 };
 use cranelift_frontend::{FunctionBuilder, Variable};
-use cranelift_module::{FuncId, FuncOrDataId, Linkage, Module};
+use cranelift_module::{DataId, FuncId, FuncOrDataId, Linkage, Module};
 use cranelift_object::ObjectModule;
 use std::collections::{HashMap, HashSet};
 
@@ -22,10 +24,56 @@ pub struct LowerCtx<'a> {
     pub module: &'a mut ObjectModule,
     pub layouts: &'a StructLayouts,
     pub func_ids: &'a HashMap<String, FuncId>,
+    pub global_vars: &'a HashMap<String, DataId>,
     pub closure_counter: usize,
     pub self_type: Option<String>,
     pub return_clif_type: Option<Type>,
     pub defined_thunks: &'a mut HashSet<String>,
+    /// Bodies of @inline functions available for expansion at call sites.
+    pub inline_bodies: &'a HashMap<String, (Vec<(String, Ty)>, TypedBlock)>,
+}
+
+/// Substitute Ident nodes in a TypedExpr based on a parameter->argument map.
+/// Only handles the expression forms produced by simple arithmetic helpers.
+fn inline_subst(expr: TypedExpr, subst: &HashMap<String, TypedExpr>) -> TypedExpr {
+    let ty = expr.ty.clone();
+    let span = expr.span;
+    let kind = match expr.kind {
+        TypedExprKind::Ident(ref name) => {
+            if let Some(rep) = subst.get(name) {
+                return rep.clone();
+            }
+            expr.kind
+        }
+        TypedExprKind::BinOp { op, left, right } => TypedExprKind::BinOp {
+            op,
+            left: Box::new(inline_subst(*left, subst)),
+            right: Box::new(inline_subst(*right, subst)),
+        },
+        TypedExprKind::UnOp { op, operand } => TypedExprKind::UnOp {
+            op,
+            operand: Box::new(inline_subst(*operand, subst)),
+        },
+        TypedExprKind::Call {
+            callee,
+            args,
+            generic_bounds,
+            generic_params,
+            param_tys,
+        } => TypedExprKind::Call {
+            callee: Box::new(inline_subst(*callee, subst)),
+            args: args.into_iter().map(|a| inline_subst(a, subst)).collect(),
+            generic_bounds,
+            generic_params,
+            param_tys,
+        },
+        TypedExprKind::Field { object, field } => TypedExprKind::Field {
+            object: Box::new(inline_subst(*object, subst)),
+            field,
+        },
+        other => other,
+    };
+    TypedExpr { kind, ty, span }
 }
 
 /// Maps variable names to their Cranelift `Variable` and declared Cranelift type.
@@ -142,6 +190,11 @@ fn lower_typed_expr_inner(
                     return builder.use_var(self_var);
                 }
             }
+            if let Some(&data_id) = ctx.global_vars.get(name.as_str()) {
+                let gv = ctx.module.declare_data_in_func(data_id, &mut builder.func);
+                let addr = builder.ins().global_value(types::I64, gv);
+                return builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+            }
             if let Some(var) = vars.get(name) {
                 return builder.use_var(var);
             }
@@ -256,15 +309,25 @@ fn lower_typed_expr_inner(
                 let type_id = ctx.layouts.get_type_id(ty_name).unwrap_or(0) as i64;
                 let tag = builder.ins().iconst(types::I64, type_id);
                 store_field(tag, ptr, 0, builder);
-                let field_offsets: Vec<(String, u32)> = fields
+                let field_offsets: Vec<(String, u32, bool)> = fields
                     .iter()
-                    .filter_map(|(n, _)| info.field_offset(n).map(|off| (n.clone(), off)))
+                    .filter_map(|(n, _)| {
+                        info.field_offset(n)
+                            .map(|off| (n.clone(), off, info.is_indirect(n)))
+                    })
                     .collect();
                 for (i, (_, expr)) in fields.iter().enumerate() {
                     let val = lower_typed_expr(expr, builder, vars, ctx);
                     let coerced = coerce_to_i64(val, builder);
-                    if let Some((_, offset)) = field_offsets.get(i) {
-                        store_field(coerced, ptr, *offset, builder);
+                    if let Some((_, offset, is_indirect)) = field_offsets.get(i) {
+                        if *is_indirect {
+                            // Heap-allocate 8 bytes for the value, store pointer in struct slot.
+                            let field_ptr = emit_malloc(8, ctx.module, builder);
+                            builder.ins().store(MemFlags::new(), coerced, field_ptr, 0);
+                            store_field(field_ptr, ptr, *offset, builder);
+                        } else {
+                            store_field(coerced, ptr, *offset, builder);
+                        }
                     }
                 }
                 ptr
@@ -274,12 +337,56 @@ fn lower_typed_expr_inner(
         }
 
         TypedExprKind::Call { callee, args, .. } => {
+            // Check for @inline expansion: single-return bodies expand at call site.
+            if let TypedExprKind::Ident(fn_name) = &callee.kind {
+                if let Some((params, body)) = ctx.inline_bodies.get(fn_name.as_str()) {
+                    if body.stmts.len() == 1 {
+                        if let TypedStmt::Return {
+                            value: Some(ret_expr),
+                            ..
+                        } = &body.stmts[0]
+                        {
+                            let subst: HashMap<String, TypedExpr> = params
+                                .iter()
+                                .zip(args.iter())
+                                .map(|((pname, _), arg)| (pname.clone(), arg.clone()))
+                                .collect();
+                            let expanded = inline_subst(ret_expr.clone(), &subst);
+                            eprintln!("[kiln] inlining '{}' at call site", fn_name);
+                            return lower_typed_expr(&expanded, builder, vars, ctx);
+                        }
+                    }
+                }
+            }
             let arg_vals: Vec<Value> = args
                 .iter()
                 .map(|a| lower_typed_expr(a, builder, vars, ctx))
                 .collect();
             match &callee.kind {
-                TypedExprKind::Ident(name) => call_fn_by_name(name, &arg_vals, builder, ctx),
+                TypedExprKind::Ident(name) => {
+                    // println/print expect a KilnStr pointer. When the argument type is
+                    // not Str, call to_str on it first so structs and other types display
+                    // correctly instead of being treated as raw KilnStr pointers.
+                    if (name == "println" || name == "print") && args.len() == 1 {
+                        if args[0].ty != Ty::Str {
+                            let raw = arg_vals[0];
+                            let to_str_fn = type_name_of(&args[0].ty)
+                                .map(|n| format!("{}_to_str", n))
+                                .filter(|fn_name| ctx.func_ids.contains_key(fn_name.as_str()))
+                                .unwrap_or_else(|| "__kiln_to_str_dispatch".to_string());
+                            let str_val = call_fn_by_name(&to_str_fn, &[raw], builder, ctx);
+                            // Call the C runtime directly so we don't re-enter the compiled
+                            // generic println body (which would call to_str on the str again).
+                            let rt_fn = if name == "println" {
+                                "__kiln_println"
+                            } else {
+                                "__kiln_print"
+                            };
+                            return call_fn_by_name(rt_fn, &[str_val], builder, ctx);
+                        }
+                    }
+                    call_fn_by_name(name, &arg_vals, builder, ctx)
+                }
                 _ => {
                     let fat_ptr = lower_typed_expr(callee, builder, vars, ctx);
                     indirect_call(fat_ptr, &arg_vals, builder, ctx)
@@ -327,15 +434,25 @@ fn lower_typed_expr_inner(
 
         TypedExprKind::Field { object, field } => {
             let ptr = lower_typed_expr(object, builder, vars, ctx);
-            let offset = if let Some(type_name) = type_name_of(&object.ty) {
+            let type_name = type_name_of(&object.ty);
+            let offset = if let Some(tn) = &type_name {
                 ctx.layouts
-                    .field_offset_for_type(&type_name, field)
+                    .field_offset_for_type(tn, field)
                     .or_else(|| ctx.layouts.find_field_offset(field))
             } else {
                 ctx.layouts.find_field_offset(field)
             };
             if let Some(off) = offset {
-                load_field(ptr, off, builder)
+                let field_val = load_field(ptr, off, builder);
+                // @indirect fields store a heap pointer; dereference it to get the value.
+                if let Some(tn) = &type_name {
+                    if ctx.layouts.is_indirect_field(tn, field) {
+                        return builder
+                            .ins()
+                            .load(types::I64, MemFlags::new(), field_val, 0);
+                    }
+                }
+                field_val
             } else {
                 builder.ins().iconst(types::I64, 0)
             }
@@ -474,10 +591,12 @@ fn lower_typed_expr_inner(
                     module: ctx.module,
                     layouts: ctx.layouts,
                     func_ids: ctx.func_ids,
+                    global_vars: ctx.global_vars,
                     closure_counter: ctx.closure_counter,
                     self_type: None,
                     return_clif_type: None,
                     defined_thunks: ctx.defined_thunks,
+                    inline_bodies: ctx.inline_bodies,
                 };
 
                 let result = match body {
@@ -561,6 +680,8 @@ fn lower_typed_expr_inner(
             }
             builder.use_var(result_var)
         }
+
+        TypedExprKind::Array(_) => builder.ins().iconst(types::I64, 0),
 
         TypedExprKind::GenSplice(e) => lower_typed_expr(e, builder, vars, ctx),
 
@@ -1095,15 +1216,19 @@ mod tests {
         let mut vars = VarEnv::new();
         let layouts = StructLayouts::new();
         let func_ids = HashMap::new();
+        let global_vars = HashMap::new();
         let mut thunks = HashSet::new();
+        let empty_inline: HashMap<String, (Vec<(String, Ty)>, TypedBlock)> = HashMap::new();
         let mut lctx = LowerCtx {
             module: &mut cgx.module,
             layouts: &layouts,
             func_ids: &func_ids,
+            global_vars: &global_vars,
             closure_counter: 0,
             self_type: None,
             return_clif_type: None,
             defined_thunks: &mut thunks,
+            inline_bodies: &empty_inline,
         };
         let val = f(&mut builder, &mut vars, &mut lctx);
         assert_eq!(builder.func.dfg.value_type(val), ret_ty);

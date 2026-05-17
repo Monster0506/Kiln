@@ -393,6 +393,7 @@ pub fn check_fn_def(
         return_type: ret,
         body,
         is_builtin: false,
+        is_inline: f.annotations.iter().any(|a| a.name == "inline"),
         span: f.span,
     }
 }

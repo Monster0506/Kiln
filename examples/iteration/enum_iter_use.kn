@@ -33,7 +33,7 @@ def all_priorities() -> Vec[Priority] {
 # ---- Find first enum variant matching a predicate ------------------------------
 
 def first_high_or_above() -> Priority {
-    mut found: Priority = Low
+    mut found: Priority = Priority:Low
     for p <- Priority {
         n: int = match p {
             Low => 0,
@@ -53,9 +53,12 @@ def first_high_or_above() -> Priority {
 
 def annotated_iter() -> void {
     for p: Priority <- Priority {
-        p.to_str()
+        println(p)
     }
 }
 
 def main() -> void {
+    annotated_iter()
+    println(all_priorities())
+    println(first_high_or_above())
 }

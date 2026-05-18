@@ -1,0 +1,40 @@
+# entry_.kn -- @entry annotation example
+#
+# @entry marks any function as the program entry point.
+# It is an alternative to naming the function `main`.
+#
+# The annotated function:
+#   - is emitted under the linker symbol `main`
+#   - receives the __kiln_init_globals call (global vars are initialised)
+#   - uses the i64 return ABI expected by the OS
+#
+# Run:   kiln run  examples/annotations/entry_.kn
+# Build: kiln build examples/annotations/entry_.kn
+
+# ---- Helpers ------------------------------------------------------------------
+
+def greet(name: str) -> void {
+    println("hello, {name}!")
+}
+
+def add(a: int, b: int) -> int {
+    return a + b
+}
+
+# ---- Global variable initialised via __kiln_init_globals ----------------------
+
+mut counter: int = 0
+
+# ---- Entry point --------------------------------------------------------------
+#
+# The function is named `start` rather than `main`.
+# @entry makes the compiler emit it as the `main` linker symbol.
+
+@entry
+def start() -> void {
+    greet("world")
+    result: int = add(10, 32)
+    println(result)
+    counter = counter + 1
+    println(counter)
+}

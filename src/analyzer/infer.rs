@@ -47,6 +47,14 @@ pub fn infer_typed_expr(
                     Ty::Unknown
                 }
                 Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), name.clone(), vec![]),
+                Some(Symbol::StructField { ty }) => {
+                    let ty = ty.clone();
+                    errors.push(AnalysisError::BareFieldAccess {
+                        field: name.clone(),
+                        span,
+                    });
+                    ty
+                }
                 _ => {
                     errors.push(AnalysisError::UndefinedName {
                         name: name.clone(),

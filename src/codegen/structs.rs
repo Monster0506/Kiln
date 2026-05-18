@@ -308,7 +308,7 @@ impl StructLayouts {
     pub fn is_indirect_field(&self, type_name: &str, field_name: &str) -> bool {
         self.structs
             .get(type_name)
-            .map_or(false, |info| info.is_indirect(field_name))
+            .is_some_and(|info| info.is_indirect(field_name))
     }
 }
 

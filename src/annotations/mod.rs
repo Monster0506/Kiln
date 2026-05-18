@@ -71,7 +71,7 @@ pub fn run_processors(source: &mut SourceFile, registry: &ProcessorRegistry) {
 
     for item in new_items {
         let is_dup = if let Item::ImplBlock(ib) = &item {
-            impl_key(ib).map_or(false, |k| existing.contains(&k))
+            impl_key(ib).is_some_and(|k| existing.contains(&k))
         } else {
             false
         };

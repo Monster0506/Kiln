@@ -15,35 +15,35 @@ struct Rational {
 
 impl AddableWith[Rational] for Rational {
     hook +(rhs: Rational) -> Rational {
-        n: int = numer * rhs.denom + rhs.numer * denom
-        d: int = denom * rhs.denom
+        n: int = self.numer * rhs.denom + rhs.numer * self.denom
+        d: int = self.denom * rhs.denom
         return Rational { numer: n, denom: d }
     }
 }
 
 impl SubtractableWith[Rational] for Rational {
     hook -(rhs: Rational) -> Rational {
-        n: int = numer * rhs.denom - rhs.numer * denom
-        d: int = denom * rhs.denom
+        n: int = self.numer * rhs.denom - rhs.numer * self.denom
+        d: int = self.denom * rhs.denom
         return Rational { numer: n, denom: d }
     }
 }
 
 impl MultipliableWith[Rational] for Rational {
     hook *(rhs: Rational) -> Rational {
-        return Rational { numer: numer * rhs.numer, denom: denom * rhs.denom }
+        return Rational { numer: self.numer * rhs.numer, denom: self.denom * rhs.denom }
     }
 }
 
 impl DividableWith[Rational] for Rational {
     hook /(rhs: Rational) -> Rational {
-        return Rational { numer: numer * rhs.denom, denom: denom * rhs.numer }
+        return Rational { numer: self.numer * rhs.denom, denom: self.denom * rhs.numer }
     }
 }
 
 impl Negatable for Rational {
     hook -() -> Rational {
-        return Rational { numer: 0 - numer, denom: denom }
+        return Rational { numer: 0 - self.numer, denom: self.denom }
     }
 }
 
@@ -61,8 +61,8 @@ impl One for Rational {
 
 impl ComparableWith[Rational] for Rational {
     hook <=>(rhs: Rational) -> Ordering {
-        lhs_scaled: int = numer * rhs.denom
-        rhs_scaled: int = rhs.numer * denom
+        lhs_scaled: int = self.numer * rhs.denom
+        rhs_scaled: int = rhs.numer * self.denom
         if lhs_scaled < rhs_scaled { return Ordering:Less }
         if lhs_scaled > rhs_scaled { return Ordering:Greater }
         return Ordering:Equal

@@ -20,11 +20,11 @@ struct IntSliceIter {
 
 impl Iterator for IntSliceIter {
     hook next() -> Option[int] {
-        if pos >= slice.len {
+        if self.pos >= self.slice.len {
             return None
         }
-        val: int = slice.data.get(pos)
-        pos = pos + 1
+        val: int = self.slice.data.get(self.pos)
+        self.pos = self.pos + 1
         return Some(val)
     }
 }
@@ -37,7 +37,7 @@ impl Iterable for IntSlice {
 
 impl Indexable for IntSlice {
     hook [](index: int) -> int {
-        return data.get(index)
+        return self.data.get(index)
     }
 }
 

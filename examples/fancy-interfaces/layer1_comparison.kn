@@ -13,14 +13,14 @@ struct Fahrenheit {
 
 impl EquatableWith[Temperature] for Temperature {
     hook ==(rhs: Temperature) -> bool {
-        return celsius == rhs.celsius
+        return self.celsius == rhs.celsius
     }
 }
 
 impl ComparableWith[Temperature] for Temperature {
     hook <=>(rhs: Temperature) -> Ordering {
-        if celsius < rhs.celsius { return Ordering:Less }
-        if celsius > rhs.celsius { return Ordering:Greater }
+        if self.celsius < rhs.celsius { return Ordering:Less }
+        if self.celsius > rhs.celsius { return Ordering:Greater }
         return Ordering:Equal
     }
 }
@@ -28,7 +28,7 @@ impl ComparableWith[Temperature] for Temperature {
 impl EquatableWith[Fahrenheit] for Temperature {
     hook ==(rhs: Fahrenheit) -> bool {
         converted: float = (rhs.degrees - 32.0) * 5.0 / 9.0
-        return celsius == converted
+        return self.celsius == converted
     }
 }
 
@@ -44,14 +44,14 @@ struct Score {
 
 impl EquatableWith[Score] for Score {
     hook ==(rhs: Score) -> bool {
-        return points == rhs.points
+        return self.points == rhs.points
     }
 }
 
 impl ComparableWith[Score] for Score {
     hook <=>(rhs: Score) -> Ordering {
-        if points < rhs.points { return Ordering:Less }
-        if points > rhs.points { return Ordering:Greater }
+        if self.points < rhs.points { return Ordering:Less }
+        if self.points > rhs.points { return Ordering:Greater }
         return Ordering:Equal
     }
 }

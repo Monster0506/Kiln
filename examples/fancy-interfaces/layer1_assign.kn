@@ -13,13 +13,13 @@ struct Counter {
 
 impl AddAssignableWith[int] for Counter {
     hook +=(rhs: int) {
-        value = value + rhs
+        self.value = self.value + rhs
     }
 }
 
 impl SubtractAssignableWith[int] for Counter {
     hook -=(rhs: int) {
-        value = value - rhs
+        self.value = self.value - rhs
     }
 }
 

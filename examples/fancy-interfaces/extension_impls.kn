@@ -33,26 +33,26 @@ struct ExternalColor {
 
 extension impl Displayable for ExternalPoint {
     hook display() -> str {
-        return "({x}, {y})"
+        return "({self.x}, {self.y})"
     }
 }
 
 extension impl Displayable for ExternalColor {
     hook display() -> str {
-        return "rgb({r}, {g}, {b})"
+        return "rgb({self.r}, {self.g}, {self.b})"
     }
 }
 
 extension impl Serializable for ExternalPoint {
     hook to_json() -> str {
-        return "x={x} y={y}"
+        return "x={self.x} y={self.y}"
     }
 }
 
 extension impl Hashable for ExternalPoint {
     hook hash() -> int {
-        xi: int = (x * 1000.0) as int
-        yi: int = (y * 1000.0) as int
+        xi: int = (self.x * 1000.0) as int
+        yi: int = (self.y * 1000.0) as int
         return xi * 31 + yi
     }
 }

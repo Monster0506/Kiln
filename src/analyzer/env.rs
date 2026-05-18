@@ -57,6 +57,11 @@ pub enum Symbol {
     },
     /// A transparent alias to a fully-resolved type (used for `Self` and user self-aliases).
     TypeAlias(Ty),
+    /// A struct field name injected into method/hook scope. Resolving a bare name
+    /// against this variant is an error: the user must write `self.field` explicitly.
+    StructField {
+        ty: Ty,
+    },
     Iface {
         id: InterfaceId,
         span: Span,

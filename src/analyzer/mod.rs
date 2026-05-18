@@ -972,14 +972,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         },
                     );
                     for (fname, fty) in &struct_fields {
-                        env.define(
-                            fname,
-                            Symbol::Var {
-                                ty: fty.clone(),
-                                mutable: true,
-                                span: impl_block.span,
-                            },
-                        );
+                        env.define(fname, Symbol::StructField { ty: fty.clone() });
                     }
                     let ret = resolve_type_expr(&method.return_type, &env, &mut errors);
                     let mut params: Vec<TypedParam> = Vec::new();
@@ -1059,14 +1052,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         },
                     );
                     for (fname, fty) in &struct_fields {
-                        env.define(
-                            fname,
-                            Symbol::Var {
-                                ty: fty.clone(),
-                                mutable: true,
-                                span: impl_block.span,
-                            },
-                        );
+                        env.define(fname, Symbol::StructField { ty: fty.clone() });
                     }
                     let ret = hook
                         .return_type
@@ -1208,7 +1194,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
             Item::Global(g) => {
                 let ty = resolve_type_expr(&g.ty, &env, &mut errors);
-                let init = infer::infer_typed_expr(&g.value, &mut env, &registry, &mut errors);
+                let init = infer::infer_typed_expr(&g.value, &env, &registry, &mut errors);
                 typed_items.push(TypedItem::Global(TypedGlobalVar {
                     name: g.name.clone(),
                     ty,

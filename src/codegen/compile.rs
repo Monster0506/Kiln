@@ -530,9 +530,7 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
         // Inject __kiln_init_globals call at the top of main.
         if is_main {
             if let Some(&init_id) = lower_ctx.func_ids.get("__kiln_init_globals") {
-                let func_ref = lower_ctx
-                    .module
-                    .declare_func_in_func(init_id, &mut builder.func);
+                let func_ref = lower_ctx.module.declare_func_in_func(init_id, builder.func);
                 builder.ins().call(func_ref, &[]);
             }
         }

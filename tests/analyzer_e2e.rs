@@ -680,3 +680,76 @@ fn analyze_enums_derive_example() {
     let errs = analyze_file("examples/enums_derive.kn");
     assert!(errs.is_empty(), "enums_derive.kn: {errs:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Implicit self field fall-through removal
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bare_field_name_in_method_body_is_error() {
+    let errs = run(r#"
+interface Summable {
+    hook sum() -> int
+}
+
+struct Point { x: int, y: int }
+
+impl Summable for Point {
+    hook sum() -> int {
+        return x + y
+    }
+}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "bare field names `x` and `y` inside method body must be errors"
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("x") || e.contains("field") || e.contains("self")),
+        "error should mention the bare name or suggest `self.x`: {errs:?}"
+    );
+}
+
+#[test]
+fn explicit_self_field_in_method_body_passes() {
+    let errs = run(r#"
+interface Summable {
+    hook sum() -> int
+}
+
+struct Point { x: int, y: int }
+
+impl Summable for Point {
+    hook sum() -> int {
+        return self.x + self.y
+    }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "explicit self.x in method body should pass: {errs:?}"
+    );
+}
+
+#[test]
+fn method_param_same_name_as_field_resolves_to_param() {
+    let errs = run(r#"
+interface Scalable {
+    hook scale(value: int) -> int
+}
+
+struct Wrapper { value: int }
+
+impl Scalable for Wrapper {
+    hook scale(value: int) -> int {
+        return value
+    }
+}
+"#);
+    // value is a parameter -- resolves to param, not a bare field access error
+    assert!(
+        errs.is_empty(),
+        "method param named same as field should resolve to param without error: {errs:?}"
+    );
+}

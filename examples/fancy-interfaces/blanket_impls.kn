@@ -23,7 +23,7 @@ struct Wrapper {
 
 impl Displayable for Wrapper {
     hook display() -> str {
-        return "{label}({inner})"
+        return "{self.label}({self.inner})"
     }
 }
 
@@ -56,7 +56,7 @@ struct Pair {
 
 impl Displayable for Pair {
     hook display() -> str {
-        return "({first}, {second})"
+        return "({self.first}, {self.second})"
     }
 }
 

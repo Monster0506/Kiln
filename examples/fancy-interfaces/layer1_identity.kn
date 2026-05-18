@@ -34,7 +34,7 @@ impl One for Counter {
 
 impl Clonable for Counter {
     hook clone() -> Counter {
-        return Counter { value: value }
+        return Counter { value: self.value }
     }
 }
 
@@ -50,7 +50,7 @@ impl Empty for StringBuffer {
 
 impl Clonable for StringBuffer {
     hook clone() -> StringBuffer {
-        return StringBuffer { data: data }
+        return StringBuffer { data: self.data }
     }
 }
 

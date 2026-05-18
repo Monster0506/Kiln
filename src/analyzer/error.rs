@@ -74,6 +74,9 @@ pub enum AnalysisError {
 
     #[error("{span}: unknown annotation `{name}`")]
     UnknownAnnotation { name: String, span: Span },
+
+    #[error("{span}: `{field}` is a struct field; write `self.{field}` to access it")]
+    BareFieldAccess { field: String, span: Span },
 }
 
 impl AnalysisError {
@@ -93,6 +96,7 @@ impl AnalysisError {
             AnalysisError::NonObjectSafeInterface { .. } => "E012",
             AnalysisError::NoField { .. } => "E013",
             AnalysisError::UnknownAnnotation { .. } => "E014",
+            AnalysisError::BareFieldAccess { .. } => "E015",
         }
     }
 
@@ -112,6 +116,7 @@ impl AnalysisError {
             AnalysisError::NonObjectSafeInterface { .. } => "object safety error",
             AnalysisError::NoField { .. } => "type error",
             AnalysisError::UnknownAnnotation { .. } => "annotation error",
+            AnalysisError::BareFieldAccess { .. } => "name error",
         }
     }
 
@@ -163,6 +168,9 @@ impl AnalysisError {
             AnalysisError::UnknownAnnotation { name, .. } => {
                 format!("unknown annotation `{name}`")
             }
+            AnalysisError::BareFieldAccess { field, .. } => {
+                format!("`{field}` is a struct field; write `self.{field}` to access it")
+            }
         }
     }
 
@@ -192,6 +200,7 @@ impl AnalysisError {
             AnalysisError::NonObjectSafeInterface { span, .. } => *span,
             AnalysisError::NoField { span, .. } => *span,
             AnalysisError::UnknownAnnotation { span, .. } => *span,
+            AnalysisError::BareFieldAccess { span, .. } => *span,
         }
     }
 }

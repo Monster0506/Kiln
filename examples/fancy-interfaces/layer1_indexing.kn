@@ -9,13 +9,13 @@ struct IntArray {
 
 impl IndexableWith[int] for IntArray {
     hook [](index: int) -> int {
-        return data.get(index)
+        return self.data.get(index)
     }
 }
 
 impl MutableIndexableWith[int] for IntArray {
     hook []=(index: int, value: int) {
-        data.set(index, value)
+        self.data.set(index, value)
     }
 }
 
@@ -27,13 +27,13 @@ struct StrMap {
 
 impl IndexableWith[str] for StrMap {
     hook [](index: str) -> str {
-        return data.get(index)
+        return self.data.get(index)
     }
 }
 
 impl MutableIndexableWith[str] for StrMap {
     hook []=(index: str, value: str) {
-        data.set(index, value)
+        self.data.set(index, value)
     }
 }
 

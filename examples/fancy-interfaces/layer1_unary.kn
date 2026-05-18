@@ -10,14 +10,14 @@ struct Vec2 {
 
 impl Negatable for Vec2 {
     hook -() -> Vec2 {
-        return Vec2 { x: 0.0 - x, y: 0.0 - y }
+        return Vec2 { x: 0.0 - self.x, y: 0.0 - self.y }
     }
 }
 
 impl Normalizeable for Vec2 {
     hook +() -> Vec2 {
-        len: float = x * x + y * y
-        return Vec2 { x: x / len, y: y / len }
+        len: float = self.x * self.x + self.y * self.y
+        return Vec2 { x: self.x / len, y: self.y / len }
     }
 }
 
@@ -27,7 +27,7 @@ struct BitFlags {
 
 impl Invertible for BitFlags {
     hook !() -> BitFlags {
-        return BitFlags { bits: 0 - bits - 1 }
+        return BitFlags { bits: 0 - self.bits - 1 }
     }
 }
 
@@ -37,7 +37,7 @@ struct BoolWrapper {
 
 impl Invertible for BoolWrapper {
     hook !() -> BoolWrapper {
-        if value {
+        if self.value {
             return BoolWrapper { value: false }
         }
         return BoolWrapper { value: true }

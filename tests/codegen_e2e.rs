@@ -51,13 +51,13 @@ struct Vec2 {
 }
 impl Addable for Vec2 {
     hook +(rhs: Vec2) -> Vec2 {
-        return Vec2 { x: x + rhs.x, y: y + rhs.y }
+        return Vec2 { x: self.x + rhs.x, y: self.y + rhs.y }
     }
 }
 impl Normalizeable for Vec2 {
     hook +() -> Vec2 {
-        len: float = x * x + y * y
-        return Vec2 { x: x / len, y: y / len }
+        len: float = self.x * self.x + self.y * self.y
+        return Vec2 { x: self.x / len, y: self.y / len }
     }
 }
 def main() -> void {}
@@ -75,7 +75,7 @@ struct Vec2 {
 }
 impl Negatable for Vec2 {
     hook -() -> Vec2 {
-        return Vec2 { x: 0.0 - x, y: 0.0 - y }
+        return Vec2 { x: 0.0 - self.x, y: 0.0 - self.y }
     }
 }
 def negate(v: Vec2) -> Vec2 {
@@ -96,7 +96,7 @@ struct Vec2 {
 }
 impl Addable for Vec2 {
     hook +(rhs: Vec2) -> Vec2 {
-        return Vec2 { x: x + rhs.x, y: y + rhs.y }
+        return Vec2 { x: self.x + rhs.x, y: self.y + rhs.y }
     }
 }
 def add_vecs(a: Vec2, b: Vec2) -> Vec2 {

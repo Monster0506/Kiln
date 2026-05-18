@@ -23,11 +23,11 @@ struct RangeIter {
 
 impl Iterator for RangeIter {
     hook next() -> Option[int] {
-        if current >= stop {
+        if self.current >= self.stop {
             return None
         }
-        result: int = current
-        current = current + 1
+        result: int = self.current
+        self.current = self.current + 1
         return Some(result)
     }
 }
@@ -41,12 +41,12 @@ struct Filtered {
 
 impl Iterator for Filtered {
     hook next() -> Option[int] {
-        v: Option[int] = inner.next()
+        v: Option[int] = self.inner.next()
         if v == None {
             return None
         }
         x: int = v?
-        if x > threshold {
+        if x > self.threshold {
             return Some(x)
         }
         return None
@@ -71,7 +71,7 @@ impl From[Celsius] for Kelvin {
 
 impl Into[Kelvin] for Celsius {
     hook into() -> Kelvin {
-        return Kelvin { degrees: degrees + 273.15 }
+        return Kelvin { degrees: self.degrees + 273.15 }
     }
 }
 

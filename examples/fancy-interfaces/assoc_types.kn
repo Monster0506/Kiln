@@ -52,11 +52,11 @@ struct IntRange {
 
 impl Iterator for IntRange {
     hook next() -> Option[int] {
-        if current >= stop {
+        if self.current >= self.stop {
             return None
         }
-        val: int = current
-        current = current + 1
+        val: int = self.current
+        self.current = self.current + 1
         return Some(val)
     }
 }

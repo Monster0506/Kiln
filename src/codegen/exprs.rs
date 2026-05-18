@@ -191,7 +191,7 @@ fn lower_typed_expr_inner(
                 }
             }
             if let Some(&data_id) = ctx.global_vars.get(name.as_str()) {
-                let gv = ctx.module.declare_data_in_func(data_id, &mut builder.func);
+                let gv = ctx.module.declare_data_in_func(data_id, builder.func);
                 let addr = builder.ins().global_value(types::I64, gv);
                 return builder.ins().load(types::I64, MemFlags::new(), addr, 0);
             }
@@ -280,14 +280,6 @@ fn lower_typed_expr_inner(
                 let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
                 return builder.ins().func_addr(types::I64, func_ref);
             }
-            if let (Some(self_var), Some(type_name)) = (vars.get("__self"), &ctx.self_type) {
-                let self_ptr = builder.use_var(self_var);
-                if let Some(layout) = ctx.layouts.get_struct(type_name) {
-                    if let Some(offset) = layout.field_offset(name) {
-                        return load_field(self_ptr, offset, builder);
-                    }
-                }
-            }
             builder.ins().iconst(types::I64, 0)
         }
 
@@ -335,7 +327,7 @@ fn lower_typed_expr_inner(
             {
                 // Fielded enum variant construction: allocate, write discriminant, write fields.
                 let size = enum_info.payload_offset + enum_info.max_payload_size;
-                let size = ((size + 7) / 8) * 8;
+                let size = size.div_ceil(8) * 8;
                 let ptr = emit_malloc(size.max(8), ctx.module, builder);
                 let disc = builder
                     .ins()
@@ -390,23 +382,24 @@ fn lower_typed_expr_inner(
                     // println/print expect a KilnStr pointer. When the argument type is
                     // not Str, call to_str on it first so structs and other types display
                     // correctly instead of being treated as raw KilnStr pointers.
-                    if (name == "println" || name == "print") && args.len() == 1 {
-                        if args[0].ty != Ty::Str {
-                            let raw = arg_vals[0];
-                            let to_str_fn = type_name_of(&args[0].ty)
-                                .map(|n| format!("{}_to_str", n))
-                                .filter(|fn_name| ctx.func_ids.contains_key(fn_name.as_str()))
-                                .unwrap_or_else(|| "__kiln_to_str_dispatch".to_string());
-                            let str_val = call_fn_by_name(&to_str_fn, &[raw], builder, ctx);
-                            // Call the C runtime directly so we don't re-enter the compiled
-                            // generic println body (which would call to_str on the str again).
-                            let rt_fn = if name == "println" {
-                                "__kiln_println"
-                            } else {
-                                "__kiln_print"
-                            };
-                            return call_fn_by_name(rt_fn, &[str_val], builder, ctx);
-                        }
+                    if (name == "println" || name == "print")
+                        && args.len() == 1
+                        && args[0].ty != Ty::Str
+                    {
+                        let raw = arg_vals[0];
+                        let to_str_fn = type_name_of(&args[0].ty)
+                            .map(|n| format!("{}_to_str", n))
+                            .filter(|fn_name| ctx.func_ids.contains_key(fn_name.as_str()))
+                            .unwrap_or_else(|| "__kiln_to_str_dispatch".to_string());
+                        let str_val = call_fn_by_name(&to_str_fn, &[raw], builder, ctx);
+                        // Call the C runtime directly so we don't re-enter the compiled
+                        // generic println body (which would call to_str on the str again).
+                        let rt_fn = if name == "println" {
+                            "__kiln_println"
+                        } else {
+                            "__kiln_print"
+                        };
+                        return call_fn_by_name(rt_fn, &[str_val], builder, ctx);
                     }
                     call_fn_by_name(name, &arg_vals, builder, ctx)
                 }

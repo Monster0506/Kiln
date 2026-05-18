@@ -44,7 +44,7 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
                             .enumerate()
                             .all(|(i, (_, bound_iface))| {
                                 args.get(i)
-                                    .map_or(true, |a| satisfies(a, bound_iface, registry))
+                                    .is_none_or(|a| satisfies(a, bound_iface, registry))
                             })
                     })
                 };

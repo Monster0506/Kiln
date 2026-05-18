@@ -83,7 +83,7 @@ fn lower_typed_stmt(
             match &target.kind {
                 TypedExprKind::Ident(name) => {
                     if let Some(&data_id) = ctx.global_vars.get(name.as_str()) {
-                        let gv = ctx.module.declare_data_in_func(data_id, &mut builder.func);
+                        let gv = ctx.module.declare_data_in_func(data_id, builder.func);
                         let addr = builder.ins().global_value(types::I64, gv);
                         let coerced = coerce_to_i64(val, builder);
                         builder.ins().store(MemFlags::new(), coerced, addr, 0);
@@ -130,7 +130,7 @@ fn lower_typed_stmt(
             match &target.kind {
                 TypedExprKind::Ident(name) => {
                     if let Some(&data_id) = ctx.global_vars.get(name.as_str()) {
-                        let gv = ctx.module.declare_data_in_func(data_id, &mut builder.func);
+                        let gv = ctx.module.declare_data_in_func(data_id, builder.func);
                         let addr = builder.ins().global_value(types::I64, gv);
                         let cur = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
                         let result = lower_binop(op, cur, rhs_val, builder, ctx.module);
@@ -227,7 +227,7 @@ fn lower_typed_stmt(
         } => {
             lower_for(
                 binding,
-                &binding_ty,
+                binding_ty,
                 iter_ty.as_ref(),
                 iterable,
                 body,

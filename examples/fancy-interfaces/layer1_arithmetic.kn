@@ -14,13 +14,13 @@ struct Vec2 {
 
 impl AddableWith[Vec2] for Vec2 {
     hook +(rhs: Vec2) -> Vec2 {
-        return Vec2 { x: x + rhs.x, y: y + rhs.y }
+        return Vec2 { x: self.x + rhs.x, y: self.y + rhs.y }
     }
 }
 
 impl MultipliableWith[float] for Vec2 {
     hook *(rhs: float) -> Vec2 {
-        return Vec2 { x: x * rhs, y: y * rhs }
+        return Vec2 { x: self.x * rhs, y: self.y * rhs }
     }
 }
 
@@ -32,13 +32,13 @@ struct Meters {
 
 impl AddableWith[Meters] for Meters {
     hook +(rhs: Meters) -> Meters {
-        return Meters { value: value + rhs.value }
+        return Meters { value: self.value + rhs.value }
     }
 }
 
 impl MultipliableWith[float] for Meters {
     hook *(rhs: float) -> Meters {
-        return Meters { value: value * rhs }
+        return Meters { value: self.value * rhs }
     }
 }
 

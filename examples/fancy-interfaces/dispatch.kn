@@ -45,49 +45,49 @@ struct Triangle {
 
 impl Drawable for Circle {
     hook draw() -> void {
-        print("drawing circle r={radius}")
+        print("drawing circle r={self.radius}")
     }
 
     hook area() -> float {
-        return radius * radius * 3.14159
+        return self.radius * self.radius * 3.14159
     }
 }
 
 impl Drawable for Rectangle {
     hook draw() -> void {
-        print("drawing rect {width}x{height}")
+        print("drawing rect {self.width}x{self.height}")
     }
 
     hook area() -> float {
-        return width * height
+        return self.width * self.height
     }
 }
 
 impl Drawable for Triangle {
     hook draw() -> void {
-        print("drawing triangle b={base} h={height}")
+        print("drawing triangle b={self.base} h={self.height}")
     }
 
     hook area() -> float {
-        return base * height * 0.5
+        return self.base * self.height * 0.5
     }
 }
 
 impl Displayable for Circle {
     hook display() -> str {
-        return "Circle(r={radius})"
+        return "Circle(r={self.radius})"
     }
 }
 
 impl Displayable for Rectangle {
     hook display() -> str {
-        return "Rect({width}x{height})"
+        return "Rect({self.width}x{self.height})"
     }
 }
 
 impl Displayable for Triangle {
     hook display() -> str {
-        return "Triangle(b={base}, h={height})"
+        return "Triangle(b={self.base}, h={self.height})"
     }
 }
 

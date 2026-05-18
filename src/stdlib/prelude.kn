@@ -4,6 +4,11 @@
 
 # ---- Builtin struct declarations --------------------------------------------
 
+struct VecIter[T] {
+    vec: Vec[T]
+    index: int
+}
+
 @builtin
 struct Vec[T] {
     def new() -> Vec[T]
@@ -499,7 +504,21 @@ impl[T] Addable for Vec[T] { hook +(rhs: Vec[T]) -> Vec[T] {} }
 impl Zero for Vec[T] { @static hook zero() -> Vec[T] {} }
 impl Semigroup for Vec[T] {}
 impl Monoid for Vec[T] {}
-impl Iterable for Vec[T] {}
+impl[T] Iterable for Vec[T] {
+    hook iter() -> VecIter[T] {
+        return VecIter { vec: self, index: 0 }
+    }
+}
+impl[T] Iterator for VecIter[T] {
+    hook next() -> Option[T] {
+        if self.index >= self.vec.len() {
+            return Option:None
+        }
+        val: T = self.vec.get(self.index)
+        self.index = self.index + 1
+        return Option:Some { value: val }
+    }
+}
 impl Foldable for Vec[T] {}
 impl[T] IndexableWith[int] for Vec[T] { hook [](index: int) -> T {} }
 impl Indexable for Vec[T] {}

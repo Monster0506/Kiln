@@ -177,6 +177,38 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
         new_items.push(TypedItem::Function(f));
     }
 
+    // Process any impl_reqs added by For-statement dispatch (iter/next hooks).
+    let mut extra_fns: Vec<TypedFnDef> = Vec::new();
+    loop {
+        let pending: Vec<ImplHookReq> = std::mem::take(&mut impl_reqs);
+        if pending.is_empty() {
+            break;
+        }
+        for (base, method_suffix, concrete_ty) in pending {
+            let fn_name = format!("{}_{}", type_mono_name(&concrete_ty), method_suffix);
+            if impl_done.contains(&fn_name) {
+                continue;
+            }
+            impl_done.insert(fn_name.clone());
+            if let Some((hook, for_type_ty)) = generic_impl_hooks.get(&(base, method_suffix)) {
+                let inner_subst = derive_impl_subst(for_type_ty, &concrete_ty);
+                let fn_def = specialize_hook_as_fn(
+                    &fn_name,
+                    hook,
+                    &inner_subst,
+                    &concrete_ty,
+                    &generic_fns,
+                    &generic_impl_hooks,
+                    &mut impl_reqs,
+                );
+                extra_fns.push(fn_def);
+            }
+        }
+    }
+    for f in extra_fns {
+        new_items.push(TypedItem::Function(f));
+    }
+
     TypedFile {
         items: new_items,
         span: file.span,
@@ -738,14 +770,27 @@ fn subst_stmt(
             body,
             iter_ty,
             span,
-        } => TypedStmt::For {
-            binding: binding.clone(),
-            binding_ty: subst_ty(binding_ty, subst),
-            iterable: se!(iterable),
-            body: sb!(body),
-            iter_ty: iter_ty.as_ref().map(|t| subst_ty(t, subst)),
-            span: *span,
-        },
+        } => {
+            let new_iterable = se!(iterable);
+            let new_iter_ty = iter_ty.as_ref().map(|t| subst_ty(t, subst));
+            // Emit impl_reqs for iter() and next() so monomorphized hooks are compiled.
+            if let Some(it) = &new_iter_ty {
+                impl_reqs.push((type_base_name(it), "next".to_string(), it.clone()));
+                impl_reqs.push((
+                    type_base_name(&new_iterable.ty),
+                    "iter".to_string(),
+                    new_iterable.ty.clone(),
+                ));
+            }
+            TypedStmt::For {
+                binding: binding.clone(),
+                binding_ty: subst_ty(binding_ty, subst),
+                iterable: new_iterable,
+                body: sb!(body),
+                iter_ty: new_iter_ty,
+                span: *span,
+            }
+        }
         TypedStmt::TryCatch {
             body,
             handlers,
@@ -975,7 +1020,7 @@ fn subst_expr(
 // Method function name rewriting
 // ---------------------------------------------------------------------------
 
-fn type_base_name(ty: &Ty) -> String {
+pub fn type_base_name(ty: &Ty) -> String {
     match ty {
         Ty::Named(_, name, _) | Ty::GenericParam(name) => name.clone(),
         _ => type_mono_name(ty),

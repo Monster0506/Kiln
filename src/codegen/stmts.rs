@@ -6,6 +6,7 @@ use crate::codegen::exprs::{
     VarEnv,
 };
 use crate::codegen::memory::store_field;
+use crate::codegen::mono::type_mono_name;
 use crate::codegen::names::binop_fn_suffix;
 use crate::codegen::types::clif_type;
 use cranelift_codegen::ir::condcodes::IntCC;
@@ -523,18 +524,14 @@ fn lower_for(
 ) {
     let coll_val = lower_typed_expr_loops(iterable, builder, vars, loops, ctx);
 
-    // Dispatch: custom Iterable (has iter_ty), Vec/Set, enum, or passthrough.
+    // Dispatch: custom Iterable (has iter_ty) or enum.
+    // Vec routes through iter_ty (set by the analyzer via VecIter).
     if let Some(it) = iter_ty {
         lower_for_iterable(
             binding, binding_ty, it, coll_val, iterable, body, builder, vars, loops, ctx,
         );
         return;
     }
-
-    let is_vec = match &iterable.ty {
-        Ty::Named(_, name, _) => name == "Vec" || name == "Set",
-        _ => false,
-    };
 
     // For `for x <- EnumType`, the iterable is the enum type itself used as an
     // expression. The loop iterates over discriminants 0..N where N is the
@@ -547,15 +544,7 @@ fn lower_for(
         _ => None,
     };
 
-    // Store the collection pointer in a variable so it survives across blocks.
-    // For enum-type iterables, coll_val is 0 (unused) but we still declare it.
-    let coll_name = format!("__for_coll_{}", binding);
-    let coll_var = vars.declare(&coll_name, types::I64, builder);
-    builder.def_var(coll_var, coll_val);
-
-    let limit = if is_vec {
-        call_fn_by_name("Vec_len", &[coll_val], builder, ctx)
-    } else if let Some(count) = enum_variant_count {
+    let limit = if let Some(count) = enum_variant_count {
         builder.ins().iconst(types::I64, count)
     } else {
         coll_val
@@ -596,19 +585,9 @@ fn lower_for(
     builder.switch_to_block(body_bb);
     builder.seal_block(body_bb);
 
-    // Retrieve the element for this iteration and store in the binding.
-    // Vec_get returns I64 (raw bits); coerce to the binding's actual type.
-    // For enum-type iterables, the discriminant IS the index (0..N-1).
-    if is_vec {
-        let coll = builder.use_var(coll_var);
-        let idx_now = builder.use_var(idx_var);
-        let raw = call_fn_by_name("Vec_get", &[coll, idx_now], builder, ctx);
-        let elem = coerce_to(raw, bind_clif_ty, builder);
-        builder.def_var(bind_var, elem);
-    } else {
-        let idx_now = builder.use_var(idx_var);
-        builder.def_var(bind_var, idx_now);
-    }
+    // For enum-type iterables the discriminant IS the index (0..N-1).
+    let idx_now = builder.use_var(idx_var);
+    builder.def_var(bind_var, idx_now);
 
     // `continue` must jump to incr_bb (not header_bb) so the index is
     // incremented before re-checking the condition.
@@ -655,18 +634,18 @@ fn lower_for_iterable(
     loops: &mut Vec<LoopCtx>,
     ctx: &mut LowerCtx,
 ) {
-    // Derive the mangled function names from the type names.
-    let obj_type_name = match &iterable.ty {
-        Ty::Named(_, name, _) => name.clone(),
-        _ => return,
-    };
-    let iter_type_name = match iter_ty {
-        Ty::Named(_, name, _) => name.clone(),
-        _ => return,
-    };
+    if !matches!(iterable.ty, Ty::Named(_, _, _)) {
+        return;
+    }
+    if !matches!(iter_ty, Ty::Named(_, _, _)) {
+        return;
+    }
+
+    // Use monomorphized names so Vec[int]->Vec_int_iter, VecIter[int]->VecIter_int_next.
+    let iter_fn = format!("{}_iter", type_mono_name(&iterable.ty));
+    let next_fn = format!("{}_next", type_mono_name(iter_ty));
 
     // Call iter() to get the iterator.
-    let iter_fn = format!("{}_iter", obj_type_name);
     let iter_ptr = call_fn_by_name(&iter_fn, &[coll_val], builder, ctx);
 
     // Store iterator pointer in a variable so it persists across blocks.
@@ -703,7 +682,6 @@ fn lower_for_iterable(
     builder.switch_to_block(header_bb);
 
     // Call next() on the iterator.
-    let next_fn = format!("{}_next", iter_type_name);
     let iter_now = builder.use_var(iter_var);
     let opt_val = call_fn_by_name(&next_fn, &[iter_now], builder, ctx);
     builder.def_var(opt_var, opt_val);

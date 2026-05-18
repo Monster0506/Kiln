@@ -357,12 +357,28 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     env.pop_scope();
                 }
             } else {
+                let has_generics = !s.generic_params.is_empty();
+                if has_generics {
+                    env.push_scope();
+                    for gp in &s.generic_params {
+                        env.define(
+                            &gp.name,
+                            Symbol::Type {
+                                id: TypeId(0),
+                                span: gp.span,
+                            },
+                        );
+                    }
+                }
                 let fields: Vec<(String, Ty)> = s
                     .fields
                     .iter()
                     .map(|f| (f.name.clone(), resolve_type_expr(&f.ty, &env, &mut errors)))
                     .collect();
                 registry.register_struct_fields(&s.name, fields);
+                if has_generics {
+                    env.pop_scope();
+                }
             }
         }
     }
@@ -735,6 +751,19 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 if !s.is_builtin {
                     conformance::check_struct_conformance(s, &interfaces, &all_impls, &mut errors);
                 }
+                let has_struct_generics = !s.generic_params.is_empty();
+                if has_struct_generics {
+                    env.push_scope();
+                    for gp in &s.generic_params {
+                        env.define(
+                            &gp.name,
+                            Symbol::Type {
+                                id: TypeId(0),
+                                span: gp.span,
+                            },
+                        );
+                    }
+                }
                 let fields: Vec<TypedField> = s
                     .fields
                     .iter()
@@ -746,6 +775,9 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         span: f.span,
                     })
                     .collect();
+                if has_struct_generics {
+                    env.pop_scope();
+                }
                 typed_items.push(TypedItem::Struct(TypedStructDef {
                     name: s.name.clone(),
                     is_builtin: s.is_builtin,

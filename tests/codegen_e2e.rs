@@ -345,3 +345,71 @@ def main() -> void {
     );
     assert_eq!(out.trim(), "42", "got: {out}");
 }
+
+// ---- Vec Iterable / VecIter tests -------------------------------------------
+
+#[test]
+fn vec_for_loop_iterates_all_elements() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    v: Vec[int] = [10, 20, 30]
+    for x <- v {
+        println(x)
+    }
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["10", "20", "30"], "got: {out}");
+}
+
+#[test]
+fn vec_for_loop_empty_vec_runs_zero_iterations() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    v: Vec[int] = []
+    mut ran: int = 0
+    for x <- v {
+        ran = ran + 1
+    }
+    println(ran)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "0", "got: {out}");
+}
+
+#[test]
+fn vec_for_loop_sum_elements() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    v: Vec[int] = [1, 2, 3, 4, 5]
+    mut total: int = 0
+    for x <- v {
+        total = total + x
+    }
+    println(total)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "15", "got: {out}");
+}
+
+#[test]
+fn vec_for_loop_break_exits_early() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    v: Vec[int] = [1, 2, 3, 4, 5]
+    for x <- v {
+        println(x)
+        break
+    }
+}
+"#,
+    );
+    assert_eq!(out.trim(), "1", "got: {out}");
+}

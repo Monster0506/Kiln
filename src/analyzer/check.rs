@@ -1,6 +1,6 @@
 use crate::analyzer::env::{Env, Symbol};
 use crate::analyzer::error::AnalysisError;
-use crate::analyzer::infer::{check_assignable, infer_typed_expr};
+use crate::analyzer::infer::{check_assignable, infer_typed_expr, substitute_t};
 use crate::analyzer::resolve::resolve_type_expr;
 use crate::analyzer::ty::{Ty, TypeKind, TypeRegistry};
 use crate::analyzer::typed_ast::{
@@ -242,7 +242,14 @@ fn check_typed_stmt(
             // Determine element type and optional iterator type for custom Iterable dispatch.
             let mut iter_ty: Option<Ty> = None;
             let elem_ty = match &ti.ty {
-                Ty::Named(_, name, args) if name == "Vec" || name == "Set" => {
+                Ty::Named(_, name, args) if name == "Vec" => {
+                    let elem = args.first().cloned().unwrap_or(Ty::Unknown);
+                    if let Some(iter_method) = registry.find_method("Vec", "iter") {
+                        iter_ty = Some(substitute_t(&iter_method.ret, &elem));
+                    }
+                    elem
+                }
+                Ty::Named(_, name, args) if name == "Set" => {
                     args.first().cloned().unwrap_or(Ty::Unknown)
                 }
                 Ty::Str => Ty::Str,

@@ -1222,7 +1222,7 @@ fn infer_binop(
 // Generic substitution (replaces GenericParam wildcards with a concrete type)
 // ---------------------------------------------------------------------------
 
-fn substitute_t(ty: &Ty, concrete: &Ty) -> Ty {
+pub fn substitute_t(ty: &Ty, concrete: &Ty) -> Ty {
     match ty {
         Ty::GenericParam(_) => concrete.clone(),
         Ty::Named(id, name, args) => Ty::Named(

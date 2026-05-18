@@ -11,8 +11,6 @@ pub enum MatchDomain {
     Enum {
         variants: Vec<String>,
     },
-    /// Option[T] -- must cover Some(_) and None.
-    Option,
     /// A | B | C union type.
     Union {
         types: Vec<String>,
@@ -51,19 +49,6 @@ pub fn check_exhaustiveness(
                     errors.push(AnalysisError::NonExhaustiveMatch { span: *span });
                     return;
                 }
-            }
-        }
-        MatchDomain::Option => {
-            let has_some = arms.iter().any(|a| {
-                matches!(&a.pattern,
-                Pattern::Struct { variant, .. } if variant == "Some")
-            });
-            let has_none = arms.iter().any(|a| {
-                matches!(&a.pattern, Pattern::Struct { variant, .. } if variant == "None")
-                    || matches!(&a.pattern, Pattern::TypeBinding { ty, .. } if ty == "None")
-            });
-            if !has_some || !has_none {
-                errors.push(AnalysisError::NonExhaustiveMatch { span: *span });
             }
         }
         MatchDomain::Union { types } => {
@@ -199,5 +184,125 @@ mod tests {
         let mut errs = vec![];
         check_exhaustiveness(&arms, &domain, &s(), &mut errs);
         assert_eq!(errs.len(), 1);
+    }
+
+    #[test]
+    fn option_some_struct_and_none_struct_exhaustive() {
+        let arms = vec![
+            MatchArm {
+                pattern: Pattern::Struct {
+                    variant: "Some".into(),
+                    fields: vec![],
+                    span: s(),
+                },
+                guard: None,
+                body: dummy_body(),
+                span: s(),
+            },
+            MatchArm {
+                pattern: Pattern::Struct {
+                    variant: "None".into(),
+                    fields: vec![],
+                    span: s(),
+                },
+                guard: None,
+                body: dummy_body(),
+                span: s(),
+            },
+        ];
+        let domain = MatchDomain::Enum {
+            variants: vec!["Some".into(), "None".into()],
+        };
+        let mut errs = vec![];
+        check_exhaustiveness(&arms, &domain, &s(), &mut errs);
+        assert!(
+            errs.is_empty(),
+            "Some + None (both Struct) must be exhaustive"
+        );
+    }
+
+    #[test]
+    fn option_some_struct_and_bare_none_typebinding_exhaustive() {
+        // Bare `None` in a match arm is parsed as TypeBinding { ty: "None" }.
+        // The Enum path must accept it as covering the None variant.
+        let arms = vec![
+            MatchArm {
+                pattern: Pattern::Struct {
+                    variant: "Some".into(),
+                    fields: vec![],
+                    span: s(),
+                },
+                guard: None,
+                body: dummy_body(),
+                span: s(),
+            },
+            MatchArm {
+                pattern: Pattern::TypeBinding {
+                    ty: "None".into(),
+                    name: "_".into(),
+                    span: s(),
+                },
+                guard: None,
+                body: dummy_body(),
+                span: s(),
+            },
+        ];
+        let domain = MatchDomain::Enum {
+            variants: vec!["Some".into(), "None".into()],
+        };
+        let mut errs = vec![];
+        check_exhaustiveness(&arms, &domain, &s(), &mut errs);
+        assert!(
+            errs.is_empty(),
+            "Some (Struct) + None (TypeBinding) must be exhaustive: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn option_missing_none_via_enum_is_error() {
+        let arms = vec![MatchArm {
+            pattern: Pattern::Struct {
+                variant: "Some".into(),
+                fields: vec![],
+                span: s(),
+            },
+            guard: None,
+            body: dummy_body(),
+            span: s(),
+        }];
+        let domain = MatchDomain::Enum {
+            variants: vec!["Some".into(), "None".into()],
+        };
+        let mut errs = vec![];
+        check_exhaustiveness(&arms, &domain, &s(), &mut errs);
+        assert_eq!(
+            errs.len(),
+            1,
+            "Some-only Option match must be non-exhaustive"
+        );
+    }
+
+    #[test]
+    fn option_missing_some_via_enum_is_error() {
+        let arms = vec![MatchArm {
+            pattern: Pattern::TypeBinding {
+                ty: "None".into(),
+                name: "_".into(),
+                span: s(),
+            },
+            guard: None,
+            body: dummy_body(),
+            span: s(),
+        }];
+        let domain = MatchDomain::Enum {
+            variants: vec!["Some".into(), "None".into()],
+        };
+        let mut errs = vec![];
+        check_exhaustiveness(&arms, &domain, &s(), &mut errs);
+        assert_eq!(
+            errs.len(),
+            1,
+            "None-only Option match must be non-exhaustive"
+        );
     }
 }

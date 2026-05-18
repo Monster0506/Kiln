@@ -2,6 +2,7 @@ use crate::analyzer::constrain::Constraint;
 use crate::analyzer::error::AnalysisError;
 use crate::analyzer::infer::type_name_of;
 use crate::analyzer::ty::{Ty, TypeRegistry};
+use crate::diagnostics::Span;
 
 /// Returns `true` if `ty` satisfies `iface` according to the registry.
 ///
@@ -105,33 +106,40 @@ pub fn solve(constraints: &[Constraint], registry: &TypeRegistry) -> Vec<Analysi
     for c in constraints {
         if !satisfies(&c.ty, &c.iface, registry) {
             let context = c.reason.context_string();
-            let (note, note_span) = match &c.reason {
+            let notes: Vec<(String, Option<Span>)> = match &c.reason {
                 crate::analyzer::constrain::ConstraintReason::GenericBoundCheck {
                     fn_name,
                     is_explicit,
+                    decl_span,
                     source_span,
                     source_desc,
                     ..
-                } if !source_desc.is_empty() => {
-                    let verb = if *is_explicit {
-                        "required by"
-                    } else {
-                        "inferred from"
-                    };
-                    (
-                        format!("bound {verb} {source_desc} in `{fn_name}`"),
-                        *source_span,
-                    )
+                } => {
+                    let mut ns = Vec::new();
+                    if !source_desc.is_empty() {
+                        let verb = if *is_explicit {
+                            "required by"
+                        } else {
+                            "inferred from"
+                        };
+                        ns.push((
+                            format!("bound {verb} {source_desc} in `{fn_name}`"),
+                            *source_span,
+                        ));
+                    }
+                    if *is_explicit {
+                        ns.push(("bound declared here".to_string(), *decl_span));
+                    }
+                    ns
                 }
-                _ => (String::new(), None),
+                _ => vec![],
             };
             errors.push(AnalysisError::BoundViolation {
                 ty: c.ty.to_string(),
                 iface: c.iface.clone(),
                 context,
                 span: c.span,
-                note,
-                note_span,
+                notes,
             });
         }
     }

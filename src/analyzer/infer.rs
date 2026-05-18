@@ -357,9 +357,23 @@ pub fn infer_typed_expr(
                     }
                 }
             };
+            let known_fields: Option<Vec<String>> = registry
+                .get_struct_fields(&concrete_ty_name)
+                .map(|fs| fs.iter().map(|(n, _)| n.clone()).collect());
             let typed_fields = fields
                 .iter()
-                .map(|(name, expr)| (name.clone(), infer_typed_expr(expr, env, registry, errors)))
+                .map(|(fname, expr)| {
+                    if let Some(ref kf) = known_fields {
+                        if !kf.iter().any(|n| n == fname) {
+                            errors.push(AnalysisError::NoField {
+                                ty: concrete_ty_name.clone(),
+                                field: fname.clone(),
+                                span,
+                            });
+                        }
+                    }
+                    (fname.clone(), infer_typed_expr(expr, env, registry, errors))
+                })
                 .collect();
             mk(
                 TypedExprKind::StructLiteral {
@@ -743,6 +757,7 @@ fn infer_call_ident(
                 TypedExprKind::Call {
                     callee: Box::new(callee),
                     args: typed_args,
+                    fn_name: name.to_string(),
                     generic_bounds: all_bounds,
                     generic_params: gparams.clone(),
                     param_tys: declared_param_tys,
@@ -785,6 +800,7 @@ fn infer_call_ident(
                         TypedExprKind::Call {
                             callee: Box::new(callee),
                             args: typed_args,
+                            fn_name: name.to_string(),
                             generic_bounds: all_bounds,
                             generic_params: overload.generic_params.clone(),
                             param_tys: declared_param_tys,
@@ -803,6 +819,7 @@ fn infer_call_ident(
                         TypedExprKind::Call {
                             callee: Box::new(callee),
                             args: typed_args,
+                            fn_name: name.to_string(),
                             generic_bounds: vec![],
                             generic_params: vec![],
                             param_tys: vec![],
@@ -833,6 +850,7 @@ fn infer_call_ident(
                 TypedExprKind::Call {
                     callee: Box::new(callee),
                     args: typed_args,
+                    fn_name: name.to_string(),
                     generic_bounds: vec![],
                     generic_params: vec![],
                     param_tys: vec![],
@@ -844,11 +862,29 @@ fn infer_call_ident(
     }
 }
 
+fn param_matches_arg(pt: &Ty, arg_ty: &Ty) -> bool {
+    match pt {
+        Ty::Unknown | Ty::GenericParam(_) => true,
+        Ty::Named(_, pname, pargs) => match arg_ty {
+            Ty::Named(_, aname, aargs) => {
+                pname == aname
+                    && pargs.len() == aargs.len()
+                    && pargs
+                        .iter()
+                        .zip(aargs)
+                        .all(|(p, a)| param_matches_arg(p, a))
+            }
+            _ => false,
+        },
+        _ => *pt == *arg_ty,
+    }
+}
+
 fn find_best_overload<'a>(
     overloads: &'a [FnOverload],
     args: &[TypedExpr],
 ) -> Option<&'a FnOverload> {
-    // Exact match: all param types equal arg types (Ty::Unknown is a wildcard).
+    // Exact/generic match: GenericParam and Unknown on the param side are wildcards.
     for o in overloads {
         if o.params.len() != args.len() {
             continue;
@@ -857,12 +893,12 @@ fn find_best_overload<'a>(
             .params
             .iter()
             .zip(args.iter())
-            .all(|((_, pt), arg)| *pt == Ty::Unknown || pt == &arg.ty);
+            .all(|((_, pt), arg)| param_matches_arg(pt, &arg.ty));
         if matches {
             return Some(o);
         }
     }
-    // Relaxed match: allow Unknown on either side.
+    // Relaxed match: also allow Unknown on the arg side.
     for o in overloads {
         if o.params.len() != args.len() {
             continue;
@@ -871,7 +907,7 @@ fn find_best_overload<'a>(
             .params
             .iter()
             .zip(args.iter())
-            .all(|((_, pt), arg)| *pt == Ty::Unknown || arg.ty == Ty::Unknown || pt == &arg.ty);
+            .all(|((_, pt), arg)| param_matches_arg(pt, &arg.ty) || arg.ty == Ty::Unknown);
         if matches {
             return Some(o);
         }

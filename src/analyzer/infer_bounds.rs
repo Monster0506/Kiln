@@ -87,6 +87,7 @@ fn collect_stmt(
                             param: p.clone(),
                             iface: iface.to_string(),
                             is_explicit: false,
+                            decl_span: None,
                             source_span: Some(*span),
                             source_desc: format!("use of `{sym}=` on `{p}`"),
                         });
@@ -167,6 +168,7 @@ fn collect_expr(
                             param: p.clone(),
                             iface: iface.to_string(),
                             is_explicit: false,
+                            decl_span: None,
                             source_span: Some(expr.span),
                             source_desc: format!("use of `{sym}` on `{p}`"),
                         });
@@ -188,6 +190,7 @@ fn collect_expr(
                             param: param.clone(),
                             iface,
                             is_explicit: false,
+                            decl_span: None,
                             source_span: Some(expr.span),
                             source_desc: format!("call to `{param}.{hook}()`"),
                         });

@@ -39,10 +39,8 @@ pub enum AnalysisError {
         iface: String,
         context: String,
         span: Span,
-        /// Span in the generic function body where this bound was inferred (for the note line).
-        note_span: Option<Span>,
-        /// Human-readable explanation for the note, e.g. "required because `sum` uses `+=` on `T`".
-        note: String,
+        /// Notes to display after the error, in order. Each is (text, optional source span).
+        notes: Vec<(String, Option<Span>)>,
     },
 
     #[error("{span}: field `{field}` is private")]
@@ -80,6 +78,12 @@ pub enum AnalysisError {
 
     #[error("{span}: duplicate definition of `{name}` with the same parameter signature")]
     DuplicateSignature { name: String, span: Span },
+
+    #[error("{span}: implementation of `{name}` must omit bounds; bounds are declared canonically on the declaration")]
+    BoundsOnImplementation { name: String, span: Span },
+
+    #[error("{span}: `{name}` is declared but never implemented")]
+    MissingImplementation { name: String, span: Span },
 }
 
 impl AnalysisError {
@@ -101,6 +105,8 @@ impl AnalysisError {
             AnalysisError::UnknownAnnotation { .. } => "E014",
             AnalysisError::BareFieldAccess { .. } => "E015",
             AnalysisError::DuplicateSignature { .. } => "E016",
+            AnalysisError::BoundsOnImplementation { .. } => "E017",
+            AnalysisError::MissingImplementation { .. } => "E018",
         }
     }
 
@@ -122,6 +128,8 @@ impl AnalysisError {
             AnalysisError::UnknownAnnotation { .. } => "annotation error",
             AnalysisError::BareFieldAccess { .. } => "name error",
             AnalysisError::DuplicateSignature { .. } => "name error",
+            AnalysisError::BoundsOnImplementation { .. } => "declaration error",
+            AnalysisError::MissingImplementation { .. } => "declaration error",
         }
     }
 
@@ -179,16 +187,20 @@ impl AnalysisError {
             AnalysisError::DuplicateSignature { name, .. } => {
                 format!("duplicate definition of `{name}` with the same parameter signature")
             }
+            AnalysisError::BoundsOnImplementation { name, .. } => {
+                format!("implementation of `{name}` must omit bounds; bounds are declared canonically on the declaration")
+            }
+            AnalysisError::MissingImplementation { name, .. } => {
+                format!("`{name}` is declared but never implemented")
+            }
         }
     }
 
-    /// Returns `(note_text, note_span)` for errors that carry a secondary location.
-    pub fn note_info(&self) -> Option<(String, Option<Span>)> {
+    /// Returns all `(note_text, note_span)` pairs for this error, in display order.
+    pub fn note_info(&self) -> Vec<(String, Option<Span>)> {
         match self {
-            AnalysisError::BoundViolation {
-                note, note_span, ..
-            } if !note.is_empty() => Some((note.clone(), *note_span)),
-            _ => None,
+            AnalysisError::BoundViolation { notes, .. } => notes.clone(),
+            _ => vec![],
         }
     }
 
@@ -210,6 +222,8 @@ impl AnalysisError {
             AnalysisError::UnknownAnnotation { span, .. } => *span,
             AnalysisError::BareFieldAccess { span, .. } => *span,
             AnalysisError::DuplicateSignature { span, .. } => *span,
+            AnalysisError::BoundsOnImplementation { span, .. } => *span,
+            AnalysisError::MissingImplementation { span, .. } => *span,
         }
     }
 }

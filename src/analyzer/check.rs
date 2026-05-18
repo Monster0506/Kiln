@@ -403,6 +403,7 @@ pub fn check_fn_def(
                             param: g.name.clone(),
                             iface: b.clone(),
                             is_explicit: true,
+                            decl_span: Some(g.span),
                             source_span: None,
                             source_desc: String::new(),
                         })

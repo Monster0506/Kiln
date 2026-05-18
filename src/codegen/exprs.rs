@@ -57,12 +57,14 @@ fn inline_subst(expr: TypedExpr, subst: &HashMap<String, TypedExpr>) -> TypedExp
         TypedExprKind::Call {
             callee,
             args,
+            fn_name,
             generic_bounds,
             generic_params,
             param_tys,
         } => TypedExprKind::Call {
             callee: Box::new(inline_subst(*callee, subst)),
             args: args.into_iter().map(|a| inline_subst(a, subst)).collect(),
+            fn_name,
             generic_bounds,
             generic_params,
             param_tys,

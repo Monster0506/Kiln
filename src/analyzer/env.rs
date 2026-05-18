@@ -10,6 +10,9 @@ pub struct GenericBound {
     /// `true` when the bound was written explicitly in the function signature (`[T: Addable]`).
     /// `false` when inferred from body usage.
     pub is_explicit: bool,
+    /// Span of the generic parameter in the function signature where this bound was declared.
+    /// Set for explicit bounds; `None` for inferred bounds.
+    pub decl_span: Option<crate::diagnostics::Span>,
     /// Byte span of the expression in the function body that requires this bound.
     /// For explicit bounds this is populated after merging with inferred data.
     pub source_span: Option<crate::diagnostics::Span>,

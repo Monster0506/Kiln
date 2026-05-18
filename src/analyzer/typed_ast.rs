@@ -225,6 +225,8 @@ pub enum TypedExprKind {
     Call {
         callee: Box<TypedExpr>,
         args: Vec<TypedExpr>,
+        /// Original user-visible function name (never mangled), used in diagnostics.
+        fn_name: String,
         /// Generic bounds on the called function, carried for constraint checking.
         generic_bounds: Vec<crate::analyzer::env::GenericBound>,
         generic_params: Vec<String>,

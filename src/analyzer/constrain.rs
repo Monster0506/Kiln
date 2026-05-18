@@ -25,6 +25,8 @@ pub enum ConstraintReason {
         fn_name: String,
         /// `true` when written explicitly in the function signature.
         is_explicit: bool,
+        /// Span of the generic param in the declaration where this bound was written.
+        decl_span: Option<Span>,
         /// Where in the function body this bound is used (may be set even for explicit bounds).
         source_span: Option<Span>,
         /// Human-readable description of the usage site, e.g. "call to `T.zero()`".
@@ -229,19 +231,20 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
         }
 
         TypedExprKind::Call {
-            callee,
+            fn_name,
             args,
             generic_bounds,
             generic_params,
             param_tys,
+            ..
         } => {
-            if let TypedExprKind::Ident(name) = &callee.kind {
+            {
                 // Generic bounds declared on the called function (includes inferred bounds).
                 if !generic_bounds.is_empty() {
                     let arg_tys: Vec<(Ty, Span)> =
                         args.iter().map(|a| (a.ty.clone(), a.span)).collect();
                     emit_call_bound_constraints(
-                        name,
+                        fn_name,
                         generic_bounds,
                         generic_params,
                         param_tys,
@@ -250,7 +253,6 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
                     );
                 }
             }
-            collect_expr(callee, out);
             for a in args {
                 collect_expr(a, out);
             }
@@ -386,6 +388,7 @@ pub fn emit_call_bound_constraints(
                     bound: bound.iface.clone(),
                     fn_name: fn_name.to_string(),
                     is_explicit: bound.is_explicit,
+                    decl_span: bound.decl_span,
                     source_span: bound.source_span,
                     source_desc: bound.source_desc.clone(),
                 },

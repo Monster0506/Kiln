@@ -796,14 +796,19 @@ def check(x: Option[int]) -> int {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn body_less_def_is_valid_declaration() {
+fn body_less_def_without_implementation_is_error() {
     let errs = run(r#"
 def add(a: int, b: int) -> int
 def main() -> void {}
 "#);
     assert!(
-        errs.is_empty(),
-        "body-less def should be a valid declaration: {errs:?}"
+        !errs.is_empty(),
+        "body-less def with no implementation must error (E018): {errs:?}"
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E018") || e.contains("implement")),
+        "expected E018 MissingImplementation: {errs:?}"
     );
 }
 
@@ -821,15 +826,15 @@ def main() -> void {}
 }
 
 #[test]
-fn generic_declaration_with_bounded_impl_passes() {
+fn generic_declaration_with_impl_omitting_bounds_passes() {
     let errs = run(r#"
 def sum[T: Display](a: T, b: T) -> str
-def sum[T: Display](a: T, b: T) -> str { return "{a}" }
+def sum[T](a: T, b: T) -> str { return "{a}" }
 def main() -> void {}
 "#);
     assert!(
         errs.is_empty(),
-        "declaration + implementation with explicit bounds: {errs:?}"
+        "declaration + implementation omitting bounds must pass: {errs:?}"
     );
 }
 
@@ -879,6 +884,140 @@ def main() -> void {}
         errs.iter()
             .any(|e| e.contains("duplicate") || e.contains("E016")),
         "expected E016 DuplicateSignature: {errs:?}"
+    );
+}
+
+#[test]
+fn declaration_bounds_enforced_at_call_site() {
+    // T: BoundsTest is on the declaration but NOT on the implementation.
+    // Calling with int (which does not implement BoundsTest) must error.
+    let errs = run(r#"
+interface BoundsTest { def probe(self) -> int {} }
+def check[T: BoundsTest](x: T) -> int
+def check[T](x: T) -> int { return x.probe() }
+def main() -> void {
+    _result: int = check(42)
+}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "calling check with int (no BoundsTest impl) must error: got no errors"
+    );
+    assert!(
+        errs.iter().any(|e| {
+            e.contains("BoundsTest")
+                || e.contains("bound")
+                || e.contains("E006")
+                || e.contains("overload")
+        }),
+        "expected a bound violation or no-overload error: {errs:?}"
+    );
+}
+
+#[test]
+fn declaration_bounds_inherited_when_type_qualifies() {
+    // When the concrete type DOES satisfy the declared bound, no error.
+    // int implements Display, so this call must succeed.
+    let errs = run(r#"
+def describe[T: Display](x: T) -> str
+def describe[T](x: T) -> str { return "{x}" }
+def main() -> void {
+    _result: str = describe(42)
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "calling describe with int (implements Display) must pass: {errs:?}"
+    );
+}
+
+#[test]
+fn implementation_with_bounds_when_declaration_exists_is_error() {
+    // Bounds belong canonically on the declaration; the implementation must omit them.
+    let errs = run(r#"
+def describe[T: Display](x: T) -> str
+def describe[T: Display](x: T) -> str { return "{x}" }
+def main() -> void {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "implementation repeating bounds from declaration must be an error"
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E017") || e.contains("bound") || e.contains("omit")),
+        "expected E017 BoundsOnImplementation: {errs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Orphan declaration (declared but never implemented)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn declaration_without_implementation_is_error() {
+    let errs = run(r#"
+def sum[T: Display](items: Vec[T]) -> str
+def main() -> void {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "declaration with no implementation must error"
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("sum") || e.contains("E018") || e.contains("implement")),
+        "expected E018 MissingImplementation for `sum`: {errs:?}"
+    );
+}
+
+#[test]
+fn declaration_with_implementation_is_not_orphan() {
+    let errs = run(r#"
+def sum[T: Display](x: T) -> str
+def sum[T](x: T) -> str { return "{x}" }
+def main() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "paired declaration+implementation must not error: {errs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Struct literal field validation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn struct_literal_unknown_field_is_error() {
+    let errs = run(r#"
+struct Point { x: int, y: int }
+def main() -> void {
+    p: Point = Point { x: 1, z: 2 }
+}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "struct literal with unknown field `z` must error"
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("z") || e.contains("E013") || e.contains("field")),
+        "expected E013 NoField for `z`: {errs:?}"
+    );
+}
+
+#[test]
+fn struct_literal_all_valid_fields_passes() {
+    let errs = run(r#"
+struct Point { x: int, y: int }
+def main() -> void {
+    p: Point = Point { x: 1, y: 2 }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "struct literal with valid fields must pass: {errs:?}"
     );
 }
 

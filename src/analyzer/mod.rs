@@ -263,6 +263,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             param: g.name.clone(),
                             iface: b.clone(),
                             is_explicit: true,
+                            decl_span: Some(g.span),
                             source_span: None,
                             source_desc: String::new(),
                         })
@@ -275,6 +276,13 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 // are replaced with Unknown so the type unifier can infer them from
                 // context (e.g. `x: Option[int] = None` infers None: Option[int]).
                 let is_builtin = f.annotations.iter().any(|a| a.name == "builtin");
+                // A lone non-builtin declaration with no implementation is an error.
+                if f.is_declaration && !is_builtin {
+                    errors.push(error::AnalysisError::MissingImplementation {
+                        name: name.clone(),
+                        span: f.span,
+                    });
+                }
                 if is_builtin && params.is_empty() {
                     let value_ty = subst_generic_params_unknown(&ret, &generic_param_names);
                     env.define(
@@ -341,6 +349,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                                 param: g.name.clone(),
                                 iface: b.clone(),
                                 is_explicit: true,
+                                decl_span: Some(g.span),
                                 source_span: None,
                                 source_desc: String::new(),
                             })
@@ -402,6 +411,23 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     }
                 }
 
+                // Check for orphan declarations: non-builtin declarations with no
+                // matching implementation (same arity) are an error (E018).
+                for &di in &decl_indices {
+                    if resolved[di].is_builtin {
+                        continue;
+                    }
+                    let has_impl = impl_indices
+                        .iter()
+                        .any(|&ii| resolved[ii].params.len() == resolved[di].params.len());
+                    if !has_impl {
+                        errors.push(error::AnalysisError::MissingImplementation {
+                            name: name.clone(),
+                            span: resolved[di].f.span,
+                        });
+                    }
+                }
+
                 // Build overload entries for implementations only.
                 // For each implementation, check if there is a matching declaration
                 // (same arity) and inherit its bounds.
@@ -416,6 +442,15 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         !resolved[di].is_builtin
                             && resolved[di].params.len() == resolved[ii].params.len()
                     });
+
+                    // If a matching declaration exists, the implementation must not carry
+                    // its own bounds -- they belong canonically on the declaration.
+                    if matching_decl.is_some() && !resolved[ii].generic_bounds.is_empty() {
+                        errors.push(error::AnalysisError::BoundsOnImplementation {
+                            name: name.clone(),
+                            span: resolved[ii].f.span,
+                        });
+                    }
 
                     let generic_bounds = if let Some(&di) = matching_decl {
                         // Inherit bounds from the declaration.

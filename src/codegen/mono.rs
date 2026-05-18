@@ -858,6 +858,7 @@ fn subst_expr(
         TypedExprKind::Call {
             callee,
             args,
+            fn_name,
             generic_params,
             generic_bounds,
             param_tys,
@@ -881,6 +882,7 @@ fn subst_expr(
                             kind: TypedExprKind::Call {
                                 callee: Box::new(new_callee),
                                 args: new_args,
+                                fn_name: fn_name.clone(),
                                 generic_bounds: vec![],
                                 generic_params: vec![],
                                 param_tys: vec![],
@@ -895,6 +897,7 @@ fn subst_expr(
             TypedExprKind::Call {
                 callee: Box::new(new_callee),
                 args: new_args,
+                fn_name: fn_name.clone(),
                 generic_bounds: generic_bounds.clone(),
                 generic_params: generic_params.clone(),
                 param_tys: param_tys.iter().map(|t| subst_ty(t, subst)).collect(),

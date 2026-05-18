@@ -155,11 +155,13 @@ fn emit_analysis_errors(
     for e in errs {
         let snippet = map.render_diagnostic(src, e.span(), path);
         emit_error(e.kind(), e.code(), &e.message(), &snippet);
-        if let Some((note, Some(note_span))) = e.note_info() {
-            let note_block = map.render_note(src, note_span, path, &note);
-            eprintln!("{note_block}");
-        } else if let Some((note, None)) = e.note_info() {
-            eprintln!("note: {note}");
+        for (note, note_span) in e.note_info() {
+            if let Some(ns) = note_span {
+                let note_block = map.render_note(src, ns, path, &note);
+                eprintln!("{note_block}");
+            } else {
+                eprintln!("note: {note}");
+            }
         }
     }
 }

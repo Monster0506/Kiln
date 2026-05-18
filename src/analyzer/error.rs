@@ -77,6 +77,9 @@ pub enum AnalysisError {
 
     #[error("{span}: `{field}` is a struct field; write `self.{field}` to access it")]
     BareFieldAccess { field: String, span: Span },
+
+    #[error("{span}: duplicate definition of `{name}` with the same parameter signature")]
+    DuplicateSignature { name: String, span: Span },
 }
 
 impl AnalysisError {
@@ -97,6 +100,7 @@ impl AnalysisError {
             AnalysisError::NoField { .. } => "E013",
             AnalysisError::UnknownAnnotation { .. } => "E014",
             AnalysisError::BareFieldAccess { .. } => "E015",
+            AnalysisError::DuplicateSignature { .. } => "E016",
         }
     }
 
@@ -117,6 +121,7 @@ impl AnalysisError {
             AnalysisError::NoField { .. } => "type error",
             AnalysisError::UnknownAnnotation { .. } => "annotation error",
             AnalysisError::BareFieldAccess { .. } => "name error",
+            AnalysisError::DuplicateSignature { .. } => "name error",
         }
     }
 
@@ -171,6 +176,9 @@ impl AnalysisError {
             AnalysisError::BareFieldAccess { field, .. } => {
                 format!("`{field}` is a struct field; write `self.{field}` to access it")
             }
+            AnalysisError::DuplicateSignature { name, .. } => {
+                format!("duplicate definition of `{name}` with the same parameter signature")
+            }
         }
     }
 
@@ -201,6 +209,7 @@ impl AnalysisError {
             AnalysisError::NoField { span, .. } => *span,
             AnalysisError::UnknownAnnotation { span, .. } => *span,
             AnalysisError::BareFieldAccess { span, .. } => *span,
+            AnalysisError::DuplicateSignature { span, .. } => *span,
         }
     }
 }

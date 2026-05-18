@@ -44,6 +44,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         };
         let result = process_deprecated(AnnotationTarget::Function(&f), &[]);

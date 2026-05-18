@@ -686,22 +686,38 @@ fn lower_for_iterable(
     let opt_val = call_fn_by_name(&next_fn, &[iter_now], builder, ctx);
     builder.def_var(opt_var, opt_val);
 
-    // None has discriminant 1 (second variant, unit). Some has discriminant 0 (heap pointer).
-    // When next() returns None, opt_val IS the integer 1.
-    let none_disc = builder.ins().iconst(types::I64, 1);
+    // Derive None discriminant and Some.value offset from the registered layout so
+    // that codegen stays correct if Option's variant order or payload offset changes.
+    let (none_discriminant, some_value_offset) = ctx
+        .layouts
+        .get_enum("Option")
+        .and_then(|info| {
+            let none_disc = info.variants.get("None")?.discriminant;
+            let some_val_off = info
+                .variants
+                .get("Some")?
+                .fields
+                .iter()
+                .find(|(n, _)| n == "value")?
+                .1;
+            Some((none_disc as i64, some_val_off as i32))
+        })
+        .unwrap_or((1, 8));
+
+    let none_disc = builder.ins().iconst(types::I64, none_discriminant);
     let is_none = builder.ins().icmp(IntCC::Equal, opt_val, none_disc);
     builder.ins().brif(is_none, exit_bb, &[], body_bb, &[]);
 
     builder.switch_to_block(body_bb);
     builder.seal_block(body_bb);
 
-    // Extract value from Some { value: x } at payload_offset=8.
+    // Extract value from Some { value: x } at the queried payload offset.
     let opt_ptr = builder.use_var(opt_var);
     let raw = builder.ins().load(
         types::I64,
         cranelift_codegen::ir::MemFlags::new(),
         opt_ptr,
-        8,
+        some_value_offset,
     );
     let elem = coerce_to(raw, bind_clif_ty, builder);
     builder.def_var(bind_var, elem);

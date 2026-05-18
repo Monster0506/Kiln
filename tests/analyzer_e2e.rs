@@ -753,3 +753,144 @@ impl Scalable for Wrapper {
         "method param named same as field should resolve to param without error: {errs:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// None/Some global accessibility (regression guard for prelude declarations)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn namespaced_variant_access_always_works() {
+    let errs = run(r#"
+enum Status {
+    Ok
+    Err
+}
+def main() -> void {
+    s: Status = Status:Ok
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "namespaced variant access should always work: {errs:?}"
+    );
+}
+
+#[test]
+fn prelude_none_accessible_without_namespace() {
+    let errs = run(r#"
+def check(x: Option[int]) -> int {
+    return match x {
+        Some { value: v } => v,
+        None => 0
+    }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "None without namespace must work (declared in prelude): {errs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Prototype / forward declaration
+// ---------------------------------------------------------------------------
+
+#[test]
+fn body_less_def_is_valid_declaration() {
+    let errs = run(r#"
+def add(a: int, b: int) -> int
+def main() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "body-less def should be a valid declaration: {errs:?}"
+    );
+}
+
+#[test]
+fn declaration_with_implementation_passes() {
+    let errs = run(r#"
+def add(a: int, b: int) -> int
+def add(a: int, b: int) -> int { return a + b }
+def main() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "declaration followed by implementation must be ok: {errs:?}"
+    );
+}
+
+#[test]
+fn generic_declaration_with_bounded_impl_passes() {
+    let errs = run(r#"
+def sum[T: Display](a: T, b: T) -> str
+def sum[T: Display](a: T, b: T) -> str { return "{a}" }
+def main() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "declaration + implementation with explicit bounds: {errs:?}"
+    );
+}
+
+#[test]
+fn implementation_can_omit_bounds_declared_in_declaration() {
+    let errs = run(r#"
+def sum[T: Display](a: T, b: T) -> str
+def sum[T](a: T, b: T) -> str { return "{a}" }
+def main() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "implementation may omit bounds that are canonical in the declaration: {errs:?}"
+    );
+}
+
+#[test]
+fn duplicate_same_name_same_params_is_error() {
+    let errs = run(r#"
+def foo(x: int) -> int { return x }
+def foo(x: int) -> int { return x + 1 }
+def main() -> void {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "two defs with same name and params must error"
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("duplicate") || e.contains("E016")),
+        "expected E016 DuplicateSignature: {errs:?}"
+    );
+}
+
+#[test]
+fn duplicate_declarations_are_error() {
+    let errs = run(r#"
+def foo(x: int) -> int
+def foo(x: int) -> int
+def main() -> void {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "two declarations with same signature must error"
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("duplicate") || e.contains("E016")),
+        "expected E016 DuplicateSignature: {errs:?}"
+    );
+}
+
+#[test]
+fn overloads_with_different_arity_are_ok() {
+    let errs = run(r#"
+def foo(x: int) -> int { return x }
+def foo(x: int, y: int) -> int { return x + y }
+def main() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "different arity is a valid overload: {errs:?}"
+    );
+}

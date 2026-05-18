@@ -303,6 +303,10 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
     for item in &typed_file.items {
         match item {
             TypedItem::Function(f) => {
+                // Skip non-builtin forward declarations -- no body to compile.
+                if f.is_declaration && !f.is_builtin {
+                    continue;
+                }
                 // If already pre-seeded as a runtime import, skip re-declaration.
                 let id = if let Some(&existing) = func_ids.get(&f.name) {
                     existing

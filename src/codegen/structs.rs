@@ -434,4 +434,63 @@ mod tests {
         layouts.register_struct(&st);
         assert_eq!(layouts.get_type_id("MyStruct"), Some(1));
     }
+
+    #[test]
+    fn option_layout_none_discriminant_and_some_value_offset() {
+        use crate::analyzer::ty::Ty;
+        use crate::analyzer::typed_ast::{TypedEnumDef, TypedEnumVariant, TypedField};
+
+        let span = s();
+        let opt = TypedEnumDef {
+            name: "Option".into(),
+            variants: vec![
+                TypedEnumVariant {
+                    name: "Some".into(),
+                    fields: vec![TypedField {
+                        name: "value".into(),
+                        ty: Ty::Unknown,
+                        is_indirect: false,
+                        is_priv: false,
+                        span,
+                    }],
+                    discriminant: None,
+                    span,
+                },
+                TypedEnumVariant {
+                    name: "None".into(),
+                    fields: vec![],
+                    discriminant: None,
+                    span,
+                },
+            ],
+            span,
+        };
+        let mut layouts = StructLayouts::new();
+        layouts.register_typed_enum(&opt);
+        let info = layouts.get_enum("Option").unwrap();
+
+        let none_layout = info.variants.get("None").unwrap();
+        let some_layout = info.variants.get("Some").unwrap();
+        let value_offset = some_layout
+            .fields
+            .iter()
+            .find(|(n, _)| n == "value")
+            .unwrap()
+            .1;
+
+        // lower_for_iterable queries these from the layout system.
+        // If they change, both this test and the hardcoded constants must be updated together.
+        assert_eq!(
+            none_layout.discriminant, 1,
+            "None is the second variant (index 1); lower_for_iterable relies on this"
+        );
+        assert_eq!(
+            value_offset, info.payload_offset,
+            "Some.value is at payload_offset (first field of first-payload variant)"
+        );
+        assert_eq!(
+            info.payload_offset, 8,
+            "payload_offset must be 8 (discriminant_size=4, aligned to 8)"
+        );
+    }
 }

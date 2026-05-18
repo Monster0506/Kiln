@@ -43,6 +43,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         };
         let result = process_static(AnnotationTarget::Function(&fn_def), &[]);

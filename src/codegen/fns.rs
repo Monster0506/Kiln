@@ -75,6 +75,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         };
         register_prototype(&fn_def, &mut cgx.module);
@@ -95,6 +96,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         };
         register_prototype(&fn_def, &mut cgx.module);
@@ -115,6 +117,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         };
         let id1 = register_prototype(&fn_def, &mut cgx.module);

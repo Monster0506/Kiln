@@ -65,6 +65,15 @@ enum Option[T] {
     None
 }
 
+# Promote Option variants to global scope as named declarations.
+# None is a 0-arg value declaration; Some is a 1-arg constructor.
+# Both are @builtin so the compiler resolves their semantics internally.
+@builtin
+def None[T]() -> Option[T]
+
+@builtin
+def Some[T](value: T) -> Option[T]
+
 # ---- Ordering enum ----------------------------------------------------------
 
 enum Ordering {

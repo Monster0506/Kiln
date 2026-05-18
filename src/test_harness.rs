@@ -142,6 +142,7 @@ pub fn inject_harness(source: &mut SourceFile) {
         variadic: None,
         return_type: named("void"),
         body: Block { stmts, span: s },
+        is_declaration: false,
         span: s,
     };
 
@@ -182,6 +183,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         }
     }
@@ -202,6 +204,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         }
     }
@@ -218,6 +221,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         }
     }

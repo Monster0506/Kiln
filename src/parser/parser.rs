@@ -557,7 +557,7 @@ impl Parser {
 
     fn parse_fn_def(&mut self, annotations: Vec<AnnotationUse>) -> Result<FnDef, ParseError> {
         let start = self.peek_span().start;
-        let is_builtin = annotations.iter().any(|a| a.name == "builtin");
+        let _is_builtin = annotations.iter().any(|a| a.name == "builtin");
         self.expect(TokenKind::Def)?;
         let name = self.expect_ident()?;
         let generic_params = self.parse_generic_params()?;
@@ -610,13 +610,16 @@ impl Parser {
         self.expect(TokenKind::Arrow)?;
         let return_type = self.parse_type()?;
         let body_span = self.peek_span();
-        let body = if is_builtin && self.peek() != &TokenKind::LBrace {
-            Block {
-                stmts: vec![],
-                span: body_span,
-            }
+        let (body, is_declaration) = if self.peek() != &TokenKind::LBrace {
+            (
+                Block {
+                    stmts: vec![],
+                    span: body_span,
+                },
+                true,
+            )
         } else {
-            self.parse_block()?
+            (self.parse_block()?, false)
         };
         let end = self.peek_span().start;
         Ok(FnDef {
@@ -627,6 +630,7 @@ impl Parser {
             variadic,
             return_type,
             body,
+            is_declaration,
             span: Span::new(start, end),
         })
     }

@@ -1133,6 +1133,7 @@ fn lower_stmt_shallow(
                 body,
                 is_builtin: false,
                 is_inline: f.annotations.iter().any(|a| a.name == "inline"),
+                is_declaration: false,
                 span: f.span,
             })
         }

@@ -440,6 +440,7 @@ pub fn check_fn_def(
         body,
         is_builtin: false,
         is_inline: f.annotations.iter().any(|a| a.name == "inline"),
+        is_declaration: false,
         span: f.span,
     }
 }

@@ -29,43 +29,63 @@ use crate::diagnostics::Span;
 use crate::parser::ast::{HookName, ImplKind, Item, SourceFile, TypeExpr};
 
 fn register_builtins(_env: &mut Env, _registry: &mut ty::TypeRegistry) {
-    // None and Some are registered after pass 1 (register_option_symbols),
-    // once Option has been declared in the prelude and its TypeId is known.
-    // Everything else -- conformances, Exception, len/panic/assert/clock_ms --
-    // is declared in prelude.kn.
+    // All builtin names are declared in prelude.kn.
+    // None and Some are registered via @builtin def declarations in the prelude;
+    // their symbols are resolved in pass 1b alongside all other function signatures.
 }
 
-/// Register `None` and `Some` after the prelude has been processed so we
-/// can look up Option's TypeId from the registry.
-fn register_option_symbols(env: &mut Env, registry: &ty::TypeRegistry) {
-    let s = Span::new(0, 0);
-    let opt_id = registry
-        .lookup_by_name("Option")
-        .map(|e| e.id.clone())
-        .unwrap_or(ty::TypeId(0));
+/// Alpha-normalized type equality for signature comparison.
+/// All GenericParam variants are treated as equal to each other when compared positionally.
+fn ty_sig_eq(a: &Ty, b: &Ty) -> bool {
+    match (a, b) {
+        (Ty::GenericParam(_), Ty::GenericParam(_)) => true,
+        (Ty::Named(_, na, aa), Ty::Named(_, nb, ab)) => {
+            na == nb && aa.len() == ab.len() && aa.iter().zip(ab).all(|(x, y)| ty_sig_eq(x, y))
+        }
+        (Ty::Callable(pa, ra), Ty::Callable(pb, rb)) => {
+            pa.len() == pb.len()
+                && pa.iter().zip(pb).all(|(x, y)| ty_sig_eq(x, y))
+                && ty_sig_eq(ra, rb)
+        }
+        _ => a == b,
+    }
+}
 
-    // None is the unit variant of Option[T]; use Unknown as the type arg so
-    // comparisons like `v != None` type-check without knowing T.
-    env.define(
-        "None",
-        Symbol::Var {
-            ty: Ty::Named(opt_id.clone(), "Option".into(), vec![Ty::Unknown]),
-            mutable: false,
-            span: s,
-        },
-    );
-    // Some wraps a value into Option[T].
-    env.define(
-        "Some",
-        Symbol::Fn {
-            generic_params: vec!["T".into()],
-            generic_bounds: vec![],
-            inferred_bounds: vec![],
-            params: vec![("value".into(), Ty::GenericParam("T".into()))],
-            ret: Ty::Named(opt_id, "Option".into(), vec![Ty::GenericParam("T".into())]),
-            span: s,
-        },
-    );
+/// Returns true if two parameter lists have the same arity and pairwise-equal types
+/// under alpha-normalization of generic params.
+fn params_are_duplicate(a: &[(String, Ty)], b: &[(String, Ty)]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b.iter())
+        .all(|((_, ta), (_, tb))| ty_sig_eq(ta, tb))
+}
+
+/// Replace every `Ty::GenericParam` whose name appears in `params` with `Ty::Unknown`.
+/// Used to produce an instantiated-but-unconstrained type for 0-arg value declarations.
+fn subst_generic_params_unknown(ty: &Ty, params: &[String]) -> Ty {
+    match ty {
+        Ty::GenericParam(p) if params.contains(p) => Ty::Unknown,
+        Ty::Named(id, name, args) => {
+            let new_args = args
+                .iter()
+                .map(|a| subst_generic_params_unknown(a, params))
+                .collect();
+            Ty::Named(id.clone(), name.clone(), new_args)
+        }
+        Ty::Callable(param_tys, ret) => {
+            let new_params = param_tys
+                .iter()
+                .map(|p| subst_generic_params_unknown(p, params))
+                .collect();
+            Ty::Callable(
+                new_params,
+                Box::new(subst_generic_params_unknown(ret, params)),
+            )
+        }
+        other => other.clone(),
+    }
 }
 
 /// Analyze `source`, producing a `TypedFile` or a list of errors.
@@ -95,9 +115,6 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 
     // Pass 1: collect top-level names.
     errors.extend(collect::collect_top_level(source, &mut env, &mut registry));
-
-    // Register None/Some now that Option has been processed from the prelude.
-    register_option_symbols(&mut env, &registry);
 
     // Deprecation warnings: scan all non-deprecated function bodies for calls
     // to @deprecated functions and emit warnings to stderr.
@@ -236,7 +253,9 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 if has_generics {
                     env.pop_scope();
                 }
-                let generic_bounds = f
+                let generic_param_names: Vec<String> =
+                    f.generic_params.iter().map(|g| g.name.clone()).collect();
+                let generic_bounds: Vec<GenericBound> = f
                     .generic_params
                     .iter()
                     .flat_map(|g| {
@@ -249,22 +268,49 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         })
                     })
                     .collect();
-                env.define(
-                    name,
-                    Symbol::Fn {
-                        generic_params: f.generic_params.iter().map(|g| g.name.clone()).collect(),
-                        generic_bounds,
-                        inferred_bounds: vec![],
-                        params,
-                        ret,
-                        span: f.span,
-                    },
-                );
+
+                // @builtin def with no params is a value-level declaration (a nullary
+                // constructor). Register it as Symbol::Var so that bare references
+                // resolve to the value type rather than a Callable type. Generic params
+                // are replaced with Unknown so the type unifier can infer them from
+                // context (e.g. `x: Option[int] = None` infers None: Option[int]).
+                let is_builtin = f.annotations.iter().any(|a| a.name == "builtin");
+                if is_builtin && params.is_empty() {
+                    let value_ty = subst_generic_params_unknown(&ret, &generic_param_names);
+                    env.define(
+                        name,
+                        Symbol::Var {
+                            ty: value_ty,
+                            mutable: false,
+                            span: f.span,
+                        },
+                    );
+                } else {
+                    env.define(
+                        name,
+                        Symbol::Fn {
+                            generic_params: generic_param_names,
+                            generic_bounds,
+                            inferred_bounds: vec![],
+                            params,
+                            ret,
+                            span: f.span,
+                        },
+                    );
+                }
             } else {
-                let mut overloads: Vec<FnOverload> = Vec::new();
-                for (local_idx, &global_idx) in indices.iter().enumerate() {
+                // Resolve all functions in this name group.
+                struct ResolvedFn<'a> {
+                    f: &'a crate::parser::ast::FnDef,
+                    params: Vec<(String, Ty)>,
+                    ret: Ty,
+                    generic_bounds: Vec<GenericBound>,
+                    generic_param_names: Vec<String>,
+                    is_builtin: bool,
+                }
+                let mut resolved: Vec<ResolvedFn> = Vec::new();
+                for &global_idx in indices.iter() {
                     let f = fns[global_idx];
-                    let mangled_name = format!("{}__{}", name, local_idx);
                     let has_generics = !f.generic_params.is_empty();
                     if has_generics {
                         env.push_scope();
@@ -287,7 +333,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     if has_generics {
                         env.pop_scope();
                     }
-                    let generic_bounds = f
+                    let generic_bounds: Vec<GenericBound> = f
                         .generic_params
                         .iter()
                         .flat_map(|g| {
@@ -300,16 +346,116 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             })
                         })
                         .collect();
-                    overloads.push(FnOverload {
-                        generic_params: f.generic_params.iter().map(|g| g.name.clone()).collect(),
-                        generic_bounds,
-                        inferred_bounds: vec![],
+                    let generic_param_names: Vec<String> =
+                        f.generic_params.iter().map(|g| g.name.clone()).collect();
+                    let is_builtin = f.annotations.iter().any(|a| a.name == "builtin");
+                    resolved.push(ResolvedFn {
+                        f,
                         params,
                         ret,
-                        mangled_name,
-                        span: f.span,
+                        generic_bounds,
+                        generic_param_names,
+                        is_builtin,
                     });
                 }
+
+                // Separate declarations from implementations.
+                // Builtins are always kept as declarations; their "impl" is in codegen.
+                let decl_indices: Vec<usize> = resolved
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| r.f.is_declaration)
+                    .map(|(i, _)| i)
+                    .collect();
+                let impl_indices: Vec<usize> = resolved
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| !r.f.is_declaration)
+                    .map(|(i, _)| i)
+                    .collect();
+
+                // Check for duplicate signatures within declarations (E016).
+                for i in 0..decl_indices.len() {
+                    for j in (i + 1)..decl_indices.len() {
+                        let di = decl_indices[i];
+                        let dj = decl_indices[j];
+                        if params_are_duplicate(&resolved[di].params, &resolved[dj].params) {
+                            errors.push(error::AnalysisError::DuplicateSignature {
+                                name: name.clone(),
+                                span: resolved[dj].f.span,
+                            });
+                        }
+                    }
+                }
+
+                // Check for duplicate signatures within implementations (E016).
+                for i in 0..impl_indices.len() {
+                    for j in (i + 1)..impl_indices.len() {
+                        let ii = impl_indices[i];
+                        let ij = impl_indices[j];
+                        if params_are_duplicate(&resolved[ii].params, &resolved[ij].params) {
+                            errors.push(error::AnalysisError::DuplicateSignature {
+                                name: name.clone(),
+                                span: resolved[ij].f.span,
+                            });
+                        }
+                    }
+                }
+
+                // Build overload entries for implementations only.
+                // For each implementation, check if there is a matching declaration
+                // (same arity) and inherit its bounds.
+                let mut overloads: Vec<FnOverload> = Vec::new();
+                let mut overload_local_idx = 0usize;
+                for &ii in &impl_indices {
+                    let mangled_name = format!("{}__{}", name, overload_local_idx);
+                    overload_local_idx += 1;
+
+                    // Find a matching declaration (non-builtin) with same arity.
+                    let matching_decl = decl_indices.iter().find(|&&di| {
+                        !resolved[di].is_builtin
+                            && resolved[di].params.len() == resolved[ii].params.len()
+                    });
+
+                    let generic_bounds = if let Some(&di) = matching_decl {
+                        // Inherit bounds from the declaration.
+                        resolved[di].generic_bounds.clone()
+                    } else {
+                        resolved[ii].generic_bounds.clone()
+                    };
+
+                    overloads.push(FnOverload {
+                        generic_params: resolved[ii].generic_param_names.clone(),
+                        generic_bounds,
+                        inferred_bounds: vec![],
+                        params: resolved[ii].params.clone(),
+                        ret: resolved[ii].ret.clone(),
+                        mangled_name,
+                        span: resolved[ii].f.span,
+                    });
+                }
+
+                // If there are builtin declarations (like @builtin def None), also add them
+                // to the overload set so they resolve correctly as Symbol::Var or callable.
+                let builtin_decl_indices: Vec<usize> = decl_indices
+                    .iter()
+                    .filter(|&&di| resolved[di].is_builtin)
+                    .copied()
+                    .collect();
+                for &di in &builtin_decl_indices {
+                    let mangled_name = format!("{}__{}", name, overload_local_idx);
+                    overload_local_idx += 1;
+                    overloads.push(FnOverload {
+                        generic_params: resolved[di].generic_param_names.clone(),
+                        generic_bounds: resolved[di].generic_bounds.clone(),
+                        inferred_bounds: vec![],
+                        params: resolved[di].params.clone(),
+                        ret: resolved[di].ret.clone(),
+                        mangled_name,
+                        span: resolved[di].f.span,
+                    });
+                }
+
                 env.define(name, Symbol::FnOverloadSet { overloads });
             }
         }
@@ -659,6 +805,13 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
     for item in &source.items {
         match item {
             Item::Function(f) => {
+                // Skip non-builtin body-less declarations -- no body to type-check.
+                // @builtin declarations are emitted as TypedFnDef for codegen.
+                let is_builtin = f.annotations.iter().any(|a| a.name == "builtin");
+                if f.is_declaration && !is_builtin {
+                    continue;
+                }
+
                 // Determine the mangled name: bare name for single-def functions,
                 // "name__N" for overloads.
                 let mangled_name = match env.lookup(&f.name) {
@@ -743,6 +896,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     body,
                     is_builtin: f.annotations.iter().any(|a| a.name == "builtin"),
                     is_inline: f.annotations.iter().any(|a| a.name == "inline"),
+                    is_declaration: f.is_declaration,
                     span: f.span,
                 }));
             }
@@ -1008,6 +1162,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         body,
                         is_builtin: false,
                         is_inline: method.annotations.iter().any(|a| a.name == "inline"),
+                        is_declaration: false,
                         span: method.span,
                     });
                 }

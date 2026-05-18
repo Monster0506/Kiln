@@ -140,6 +140,7 @@ pub struct FnDef {
     pub variadic: Option<VariadicParam>,
     pub return_type: TypeExpr,
     pub body: Block,
+    pub is_declaration: bool,
     pub span: Span,
 }
 

@@ -278,6 +278,7 @@ fn specialize_hook_as_fn(
         body,
         is_builtin: false,
         is_inline: false,
+        is_declaration: false,
         span: hook.span,
     }
 }
@@ -634,6 +635,7 @@ fn specialize_fn(
         body,
         is_builtin: false,
         is_inline: f.is_inline,
+        is_declaration: false,
         span: f.span,
     }
 }
@@ -826,6 +828,7 @@ fn subst_stmt(
             body: sb!(&f.body),
             is_builtin: f.is_builtin,
             is_inline: f.is_inline,
+            is_declaration: f.is_declaration,
             span: f.span,
         }),
         TypedStmt::Break(s) => TypedStmt::Break(*s),

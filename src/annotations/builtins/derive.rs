@@ -730,6 +730,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         };
         let args = derive_args(&["Eq"]);

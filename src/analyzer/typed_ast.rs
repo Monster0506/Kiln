@@ -38,6 +38,7 @@ pub struct TypedFnDef {
     pub body: TypedBlock,
     pub is_builtin: bool,
     pub is_inline: bool,
+    pub is_declaration: bool,
     pub span: Span,
 }
 

@@ -45,6 +45,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         };
         let result = process_inline(AnnotationTarget::Function(&f), &[]);

@@ -48,6 +48,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         };
         let items = process_test(AnnotationTarget::Function(&f), &[]);
@@ -68,6 +69,7 @@ mod tests {
                 stmts: vec![],
                 span: s(),
             },
+            is_declaration: false,
             span: s(),
         };
         let items = process_test(AnnotationTarget::Function(&f), &[]);

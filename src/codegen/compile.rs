@@ -148,6 +148,7 @@ struct FnJob {
     return_type: Ty,
     body: TypedBlock,
     self_type: Option<String>,
+    is_entry: bool,
 }
 
 /// Compile a typed Kiln source file into `cgx.module`.
@@ -297,6 +298,7 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
             return_type: Ty::Str,
             body,
             self_type: Some(enum_name.clone()),
+            is_entry: false,
         });
     }
 
@@ -307,13 +309,22 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                 if f.is_declaration && !f.is_builtin {
                     continue;
                 }
+                // @entry functions must be emitted as "main" for the linker.
+                let link_name = if f.is_entry && f.name != "main" {
+                    "main"
+                } else {
+                    &f.name
+                };
                 // If already pre-seeded as a runtime import, skip re-declaration.
-                let id = if let Some(&existing) = func_ids.get(&f.name) {
+                let id = if let Some(&existing) = func_ids.get(link_name) {
                     existing
                 } else {
                     let id =
-                        register_fn(&f.name, false, &f.params, &f.return_type, &mut cgx.module);
+                        register_fn(link_name, false, &f.params, &f.return_type, &mut cgx.module);
                     func_ids.insert(f.name.clone(), id);
+                    if f.is_entry {
+                        func_ids.insert("main".into(), id);
+                    }
                     id
                 };
                 let params = f
@@ -322,12 +333,13 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                     .map(|p| (p.name.clone(), p.ty.clone()))
                     .collect();
                 fn_jobs.push(FnJob {
-                    name: f.name.clone(),
+                    name: link_name.to_string(),
                     func_id: id,
                     params,
                     return_type: f.return_type.clone(),
                     body: f.body.clone(),
                     self_type: None,
+                    is_entry: f.is_entry,
                 });
             }
 
@@ -359,6 +371,7 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                         return_type: method.return_type.clone(),
                         body: method.body.clone(),
                         self_type: Some(type_name.clone()),
+                        is_entry: false,
                     });
                 }
 
@@ -390,6 +403,7 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                         } else {
                             Some(type_name.clone())
                         },
+                        is_entry: false,
                     });
                 }
             }
@@ -431,6 +445,7 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
                 span: s,
             },
             self_type: None,
+            is_entry: false,
         });
     }
 
@@ -477,7 +492,7 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
             }
         }
 
-        let is_main = job.name == "main";
+        let is_main = job.name == "main" || job.is_entry;
         let (has_return_val, return_clif_type) = if is_main {
             ctx.func.signature.returns.push(AbiParam::new(types::I64));
             (true, Some(types::I64))

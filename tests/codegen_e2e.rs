@@ -399,6 +399,19 @@ def main() -> void {
 }
 
 #[test]
+fn entry_annotation_compiles_and_runs() {
+    let out = kiln_run(
+        r#"
+@entry
+def run() -> void {
+    println(42)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "42", "got: {out}");
+}
+
+#[test]
 fn vec_for_loop_break_exits_early() {
     let out = kiln_run(
         r#"

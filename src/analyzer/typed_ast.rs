@@ -39,6 +39,7 @@ pub struct TypedFnDef {
     pub is_builtin: bool,
     pub is_inline: bool,
     pub is_declaration: bool,
+    pub is_entry: bool,
     pub span: Span,
 }
 

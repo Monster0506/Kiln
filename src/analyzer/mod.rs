@@ -171,6 +171,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             "indirect",
             "derive",
             "test",
+            "entry",
         ];
         let declared: std::collections::HashSet<String> = source
             .items
@@ -932,6 +933,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     is_builtin: f.annotations.iter().any(|a| a.name == "builtin"),
                     is_inline: f.annotations.iter().any(|a| a.name == "inline"),
                     is_declaration: f.is_declaration,
+                    is_entry: f.annotations.iter().any(|a| a.name == "entry"),
                     span: f.span,
                 }));
             }
@@ -1198,6 +1200,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         is_builtin: false,
                         is_inline: method.annotations.iter().any(|a| a.name == "inline"),
                         is_declaration: false,
+                        is_entry: false,
                         span: method.span,
                     });
                 }

@@ -1021,6 +1021,36 @@ def main() -> void {
     );
 }
 
+// ---------------------------------------------------------------------------
+// @entry annotation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn entry_annotation_is_recognized_not_unknown() {
+    let errs = run(r#"
+@entry
+def program_start() -> void {}
+"#);
+    assert!(
+        !errs
+            .iter()
+            .any(|e| e.contains("E014") || e.contains("unknown annotation")),
+        "@entry must not produce E014 UnknownAnnotation: {errs:?}"
+    );
+}
+
+#[test]
+fn entry_annotation_does_not_require_main_name() {
+    let errs = run(r#"
+@entry
+def run() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "@entry on any void function must pass analysis: {errs:?}"
+    );
+}
+
 #[test]
 fn overloads_with_different_arity_are_ok() {
     let errs = run(r#"

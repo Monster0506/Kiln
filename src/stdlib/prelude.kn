@@ -57,6 +57,15 @@ def clock_ms() -> int
 @builtin
 struct Exception {}
 
+# ---- Try interface ----------------------------------------------------------
+
+# Any type implementing Try can be unwrapped with the ? operator.
+# The associated Output type is the value extracted by ?.
+# Option[T] implements Try with Output = T (first type argument).
+interface Try {
+    type Output
+}
+
 # ---- Option[T] --------------------------------------------------------------
 
 @builtin
@@ -534,6 +543,7 @@ impl Indexable for Vec[T] {}
 
 # ---- Conformance: Option[T] -------------------------------------------------
 
+impl[T] Try for Option[T] {}
 impl[T: Clone] Clone for Option[T] { hook clone() -> Option[T] {} }
 impl[T: Eq] Eq for Option[T] {}
 impl[T: PartialEq] PartialEq for Option[T] { hook ==(other: Option[T]) -> bool {} }

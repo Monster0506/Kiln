@@ -1063,3 +1063,49 @@ def main() -> void {}
         "different arity is a valid overload: {errs:?}"
     );
 }
+
+#[test]
+fn unwrap_op_on_option_is_valid() {
+    let errs = run(r#"
+def use_opt(x: Option[int]) -> int {
+    return x?
+}
+def main() -> void {}
+"#);
+    assert!(errs.is_empty(), "? on Option[int] must be valid: {errs:?}");
+}
+
+#[test]
+fn unwrap_op_on_try_implementor_is_valid() {
+    // ? must work on any type declaring `impl Try`, not just Option.
+    // Try is defined in the prelude; user types can implement it.
+    let errs = run(r#"
+enum MyOpt[T] {
+    MyVal { value: T }
+    MyNone
+}
+impl[T] Try for MyOpt[T] {}
+def use_it(x: MyOpt[int]) -> int {
+    return x?
+}
+def main() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "? on a user-defined Try implementor must be valid: {errs:?}"
+    );
+}
+
+#[test]
+fn unwrap_op_on_non_try_type_is_error() {
+    let errs = run(r#"
+def use_it(x: int) -> int {
+    return x?
+}
+def main() -> void {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "? on int (no Try impl) must produce an error"
+    );
+}

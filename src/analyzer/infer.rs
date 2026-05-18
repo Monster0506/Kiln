@@ -230,13 +230,13 @@ pub fn infer_typed_expr(
         Expr::Unwrap(inner, s) => {
             let ti = infer_typed_expr(inner, env, registry, errors);
             let ty = match &ti.ty {
-                Ty::Named(_, name, args) if name == "Option" => {
+                Ty::Named(_, name, args) if !registry.get_conformances(name, "Try").is_empty() => {
                     args.first().cloned().unwrap_or(Ty::Unknown)
                 }
                 Ty::Unknown => Ty::Unknown,
                 other => {
                     errors.push(AnalysisError::TypeMismatch {
-                        expected: "Option[T]".into(),
+                        expected: "a type implementing Try".into(),
                         found: other.to_string(),
                         span: *s,
                     });

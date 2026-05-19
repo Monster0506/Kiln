@@ -1,0 +1,185 @@
+# meta.kn -- showcase of Kiln's compile-time metaprogramming system
+#
+# Kiln processors are not token-stream macros (like Rust proc macros).
+# They operate directly on the SEMANTIC AST -- fully parsed, structurally
+# typed blocks -- and can:
+#
+#   1. Read function metadata at compile time (name, param count, return type)
+#   2. Produce new Block values via quasi-quoted `gen { }` with typed splices
+#   3. Branch on annotation arguments using the full Kiln expression language
+#   4. Loop over parameter lists with `for p <- target.params`
+#   5. Emit additional declarations alongside the original (Vec[Decl] slot)
+#   6. Stack: each processor in a stack sees the previous processor's output
+#
+# This is closer to Lisp macros or staged metaprogramming than to C macros or
+# Rust proc macros, because spliced code is structurally validated at each step.
+#
+# Usage: kiln run examples/annotations/meta.kn
+
+# ============================================================================
+# 1. @Instrument { label }
+#    Wraps the body in a try-catch that silences errors and logs the function
+#    name on entry.  The label is spliced from the annotation argument.
+# ============================================================================
+
+annotation Instrument {
+    label: str = "fn"
+}
+
+processor Instrument(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    entry_tag: str = "[{target.annot.label}] {target.name}"
+    new_body: Block = gen {
+        _tag: str = <<entry_tag>>
+        println(_tag)
+        try {
+            <<target.body>>
+        } except Exception as e {
+            println("exception caught in {<<entry_tag>>}")
+        }
+    }
+    return (Some { value: target.with_body(new_body) }, Vec.new())
+}
+
+# ============================================================================
+# 2. @WithFallback { default_value }
+#    Wraps the body in a try-catch; on any exception, returns the default.
+#    Designed for functions returning int.
+# ============================================================================
+
+annotation WithFallback {
+    default_value: int = 0
+}
+
+processor WithFallback(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    new_body: Block = gen {
+        try {
+            <<target.body>>
+        } except Exception as e {
+            return <<target.annot.default_value>>
+        }
+    }
+    return (Some { value: target.with_body(new_body) }, Vec.new())
+}
+
+# ============================================================================
+# 3. @PublishAs { name }
+#    Keeps the original function and emits a second copy under a public name.
+#    The original can stay private (with an implementation-detail name).
+# ============================================================================
+
+annotation PublishAs {
+    name: str = "published"
+}
+
+processor PublishAs(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    public_copy: Decl = target.with_name(target.annot.name)
+    return (None, [public_copy])
+}
+
+# ============================================================================
+# 4. @Bounded { min_params, max_params }
+#    Compile-time assertion: if the annotated function has a param count
+#    outside [min_params, max_params], the processor injects a sentinel
+#    that signals the mismatch at runtime.  (A future version will emit a
+#    compile error instead once diagnostics are wired into the processor API.)
+# ============================================================================
+
+annotation Bounded {
+    min_params: int = 0
+    max_params: int = 16
+}
+
+processor Bounded(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    pc: int = target.params.len()
+    lo: int = target.annot.min_params
+    hi: int = target.annot.max_params
+    if pc < lo {
+        # Param count too low: inject a runtime assertion sentinel.
+        new_body: Block = gen {
+            _bounded_violation: int = -1
+            <<target.body>>
+        }
+        return (Some { value: target.with_body(new_body) }, Vec.new())
+    }
+    if pc > hi {
+        # Param count too high: same.
+        new_body: Block = gen {
+            _bounded_violation: int = 1
+            <<target.body>>
+        }
+        return (Some { value: target.with_body(new_body) }, Vec.new())
+    }
+    # Param count in range: leave body unchanged.
+    return (None, Vec.new())
+}
+
+# ============================================================================
+# 5. @Counted -- for-loop in processor body accumulates a compile-time value
+#    Counts how many params exist and writes the count into the generated body.
+# ============================================================================
+
+annotation Counted { }
+
+processor Counted(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    n: int = 0
+    for p <- target.params {
+        n = n + 1
+    }
+    new_body: Block = gen {
+        _param_count: int = <<n>>
+        <<target.body>>
+    }
+    return (Some { value: target.with_body(new_body) }, Vec.new())
+}
+
+# ============================================================================
+# 6. Stacked: @WithFallback applied first, then @Instrument sees the result
+# ============================================================================
+
+@Instrument { label: "api" }
+def fetch(url: str) -> void {
+    println("fetching {url}")
+}
+
+@WithFallback { default_value: -1 }
+def parse_int(s: str) -> int {
+    return 42
+}
+
+@PublishAs { name: "send" }
+def internal_send(payload: str) -> void {
+    println("sending {payload}")
+}
+
+@Bounded { min_params: 1, max_params: 3 }
+def process(a: int, b: int) -> void {
+    println("processing")
+}
+
+@Counted
+def multi(a: int, b: int, c: int, d: int) -> void {
+    println("multi")
+}
+
+# Stacked: WithFallback wraps body first, then Instrument wraps that result.
+@WithFallback { default_value: 0 }
+@Instrument { label: "compute" }
+def risky_compute(x: int) -> int {
+    return x * 2
+}
+
+def main() -> void {
+    fetch("example.com")
+
+    parsed: int = parse_int("abc")
+    println("parsed: {parsed}")
+
+    send("hello")
+    internal_send("hello")
+
+    process(1, 2)
+    multi(1, 2, 3, 4)
+
+    computed: int = risky_compute(21)
+    println("computed: {computed}")
+}

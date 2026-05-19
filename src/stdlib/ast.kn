@@ -15,14 +15,30 @@ struct StructField {
     mutable: bool
 }
 
+# Stand-in for annotation argument values (Map[str, scalar] once Map lands).
 @builtin
-struct Stmt {
-    kind: str
+struct AnnotArgs {
 }
 
 @builtin
-struct Expr {
-    kind: str
+enum Stmt {
+    VarDecl { name: str ty: str }
+    Assign { target: str }
+    Return
+    Expr
+    If
+    While
+    Other
+}
+
+@builtin
+enum Expr {
+    Int { value: int }
+    Str { value: str }
+    Bool { value: bool }
+    Ident { name: str }
+    Call { callee: str }
+    Other
 }
 
 @builtin
@@ -33,8 +49,10 @@ struct Block {
 @builtin
 struct FnDecl {
     name: str
+    params: Vec[Param]
     return_type: str
     body: Block
+    annot: AnnotArgs
 }
 
 @builtin
@@ -46,6 +64,7 @@ struct StructDecl {
 @builtin
 struct EnumDecl {
     name: str
+    variants: Vec[str]
 }
 
 @builtin
@@ -55,4 +74,4 @@ enum Decl {
     Enum { decl: EnumDecl }
 }
 
-export { Param, StructField, Stmt, Expr, Block, FnDecl, StructDecl, EnumDecl, Decl }
+export { Param, StructField, AnnotArgs, Stmt, Expr, Block, FnDecl, StructDecl, EnumDecl, Decl }

@@ -1,5 +1,7 @@
 use crate::diagnostics::Span;
-use crate::parser::ast::{Block, Expr, FnDef, Item, ProcessorDef, Stmt, StringSegment, TypeExpr};
+use crate::parser::ast::{
+    BinOp, Block, Expr, FnDef, Item, ProcessorDef, Stmt, StringSegment, TypeExpr, UnOp,
+};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -36,6 +38,7 @@ pub struct Interpreter {
 
 enum StmtOutcome {
     Return(Value),
+    Break,
     Value(Value),
     Void,
 }
@@ -85,6 +88,20 @@ impl Interpreter {
                 fields: args_map,
             },
         );
+        let params_list: Vec<Value> = fn_def
+            .params
+            .iter()
+            .map(|p| {
+                let mut pf = HashMap::new();
+                pf.insert("name".into(), Value::Str(p.name.clone()));
+                pf.insert("ty".into(), Value::Str(type_expr_to_str(&p.ty)));
+                Value::Struct {
+                    ty: "Param".into(),
+                    fields: pf,
+                }
+            })
+            .collect();
+        fn_fields.insert("params".into(), Value::List(params_list));
         // Keep a copy of the original FnDef for with_body/with_name mutations.
         fn_fields.insert(
             "__fn_def__".into(),
@@ -102,11 +119,21 @@ impl Interpreter {
     }
 
     fn eval_block(&mut self, block: &Block) -> Result<Value, ()> {
-        let mut last = Value::Void;
+        match self.eval_block_inner(block)? {
+            StmtOutcome::Return(v) | StmtOutcome::Value(v) => Ok(v),
+            StmtOutcome::Break | StmtOutcome::Void => Ok(Value::Void),
+        }
+    }
+
+    // Like eval_block but propagates Return and Break so nested blocks can
+    // short-circuit the enclosing function or loop.
+    fn eval_block_inner(&mut self, block: &Block) -> Result<StmtOutcome, ()> {
+        let mut last = StmtOutcome::Void;
         for stmt in &block.stmts {
-            match self.eval_stmt(stmt)? {
-                StmtOutcome::Return(v) => return Ok(v),
-                StmtOutcome::Value(v) => last = v,
+            let outcome = self.eval_stmt(stmt)?;
+            match outcome {
+                StmtOutcome::Return(_) | StmtOutcome::Break => return Ok(outcome),
+                StmtOutcome::Value(_) => last = outcome,
                 StmtOutcome::Void => {}
             }
         }
@@ -117,6 +144,8 @@ impl Interpreter {
         match stmt {
             Stmt::Return { value: Some(e), .. } => Ok(StmtOutcome::Return(self.eval_expr(e)?)),
             Stmt::Return { value: None, .. } => Ok(StmtOutcome::Return(Value::Void)),
+            Stmt::Break(_) => Ok(StmtOutcome::Break),
+            Stmt::Continue(_) => Ok(StmtOutcome::Void),
             Stmt::VarDecl { name, value, .. } => {
                 let v = self.eval_expr(value)?;
                 self.env.insert(name.clone(), v);
@@ -129,6 +158,68 @@ impl Interpreter {
             } => {
                 let v = self.eval_expr(value)?;
                 self.env.insert(name.clone(), v);
+                Ok(StmtOutcome::Void)
+            }
+            Stmt::CompoundAssign {
+                target: Expr::Ident(name, _),
+                op,
+                rhs,
+                ..
+            } => {
+                let current = self.lookup(name)?;
+                let rhs_val = self.eval_expr(rhs)?;
+                let new_val = eval_binop(op, current, rhs_val)?;
+                self.env.insert(name.clone(), new_val);
+                Ok(StmtOutcome::Void)
+            }
+            Stmt::If {
+                branches,
+                else_branch,
+                ..
+            } => {
+                for (cond, body) in branches {
+                    let cv = self.eval_expr(cond)?;
+                    if is_truthy(&cv) {
+                        return self.eval_block_inner(body);
+                    }
+                }
+                if let Some(else_b) = else_branch {
+                    return self.eval_block_inner(else_b);
+                }
+                Ok(StmtOutcome::Void)
+            }
+            Stmt::While { cond, body, .. } => {
+                loop {
+                    let cv = self.eval_expr(cond)?;
+                    if !is_truthy(&cv) {
+                        break;
+                    }
+                    match self.eval_block_inner(body)? {
+                        StmtOutcome::Return(v) => return Ok(StmtOutcome::Return(v)),
+                        StmtOutcome::Break => break,
+                        _ => {}
+                    }
+                }
+                Ok(StmtOutcome::Void)
+            }
+            Stmt::For {
+                binding,
+                iterable,
+                body,
+                ..
+            } => {
+                let items = match self.eval_expr(iterable)? {
+                    Value::List(v) => v,
+                    _ => return Err(()),
+                };
+                for item in items {
+                    self.env.insert(binding.clone(), item);
+                    match self.eval_block_inner(body)? {
+                        StmtOutcome::Return(v) => return Ok(StmtOutcome::Return(v)),
+                        StmtOutcome::Break => break,
+                        _ => {}
+                    }
+                }
                 Ok(StmtOutcome::Void)
             }
             Stmt::Expr(e) => {
@@ -145,18 +236,20 @@ impl Interpreter {
             Expr::Float(f, _) => Ok(Value::Float(*f)),
             Expr::Bool(b, _) => Ok(Value::Bool(*b)),
             Expr::Str(segs, _) => {
-                let s: String = segs
-                    .iter()
-                    .filter_map(|seg| {
-                        if let StringSegment::Text(t) = seg {
-                            Some(t.as_str())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("");
-                Ok(Value::Str(s))
+                let mut parts: Vec<String> = Vec::new();
+                for seg in segs {
+                    match seg {
+                        StringSegment::Text(t) => parts.push(t.clone()),
+                        StringSegment::Interp(e) => match self.eval_expr(e)? {
+                            Value::Str(s) => parts.push(s),
+                            Value::Int(n) => parts.push(n.to_string()),
+                            Value::Float(f) => parts.push(f.to_string()),
+                            Value::Bool(b) => parts.push(b.to_string()),
+                            _ => return Err(()),
+                        },
+                    }
+                }
+                Ok(Value::Str(parts.join("")))
             }
             Expr::Ident(name, _) => self.lookup(name),
             Expr::Tuple(elems, _) => {
@@ -177,6 +270,17 @@ impl Interpreter {
             }
             Expr::Call { callee, args, .. } => self.eval_call(callee, args),
             Expr::Gen { body, .. } => self.eval_gen_block(body),
+            Expr::BinOp {
+                op, left, right, ..
+            } => {
+                let lv = self.eval_expr(left)?;
+                let rv = self.eval_expr(right)?;
+                eval_binop(op, lv, rv)
+            }
+            Expr::UnOp { op, operand, .. } => {
+                let v = self.eval_expr(operand)?;
+                eval_unop(op, v)
+            }
             _ => Err(()),
         }
     }
@@ -251,6 +355,17 @@ impl Interpreter {
                 value: self.subst_expr(value)?,
                 span: *span,
             }),
+            Stmt::CompoundAssign {
+                target,
+                op,
+                rhs,
+                span,
+            } => Ok(Stmt::CompoundAssign {
+                target: self.subst_expr(target)?,
+                op: op.clone(),
+                rhs: self.subst_expr(rhs)?,
+                span: *span,
+            }),
             Stmt::Return {
                 value: Some(e),
                 span,
@@ -258,9 +373,34 @@ impl Interpreter {
                 value: Some(self.subst_expr(e)?),
                 span: *span,
             }),
+            Stmt::Raise {
+                value: Some(e),
+                span,
+            } => Ok(Stmt::Raise {
+                value: Some(self.subst_expr(e)?),
+                span: *span,
+            }),
             Stmt::Expr(e) => Ok(Stmt::Expr(self.subst_expr(e)?)),
             Stmt::While { cond, body, span } => Ok(Stmt::While {
                 cond: self.subst_expr(cond)?,
+                body: self.subst_block(body)?,
+                span: *span,
+            }),
+            Stmt::DoWhile { body, cond, span } => Ok(Stmt::DoWhile {
+                body: self.subst_block(body)?,
+                cond: self.subst_expr(cond)?,
+                span: *span,
+            }),
+            Stmt::For {
+                binding,
+                binding_ty,
+                iterable,
+                body,
+                span,
+            } => Ok(Stmt::For {
+                binding: binding.clone(),
+                binding_ty: binding_ty.clone(),
+                iterable: self.subst_expr(iterable)?,
                 body: self.subst_block(body)?,
                 span: *span,
             }),
@@ -289,10 +429,21 @@ impl Interpreter {
                 finally,
                 span,
             } => {
+                let new_handlers: Result<Vec<_>, _> = handlers
+                    .iter()
+                    .map(|h| {
+                        Ok(crate::parser::ast::CatchHandler {
+                            ty: h.ty.clone(),
+                            binding: h.binding.clone(),
+                            body: self.subst_block(&h.body)?,
+                            span: h.span,
+                        })
+                    })
+                    .collect();
                 let new_finally = finally.as_ref().map(|b| self.subst_block(b)).transpose()?;
                 Ok(Stmt::TryCatch {
                     body: self.subst_block(body)?,
-                    handlers: handlers.clone(),
+                    handlers: new_handlers?,
                     finally: new_finally,
                     span: *span,
                 })
@@ -302,9 +453,21 @@ impl Interpreter {
     }
 
     fn subst_block(&mut self, block: &Block) -> Result<Block, ()> {
-        let stmts: Result<Vec<_>, _> = block.stmts.iter().map(|s| self.subst_stmt(s)).collect();
+        let mut stmts: Vec<Stmt> = Vec::new();
+        for stmt in &block.stmts {
+            if let Stmt::Expr(Expr::GenSplice(inner, _)) = stmt {
+                let val = self.eval_expr(inner)?;
+                let span = inner.span();
+                match val {
+                    Value::Block(b) => stmts.extend(b.stmts),
+                    other => stmts.push(Stmt::Expr(value_to_expr(other, span)?)),
+                }
+                continue;
+            }
+            stmts.push(self.subst_stmt(stmt)?);
+        }
         Ok(Block {
-            stmts: stmts?,
+            stmts,
             span: block.span,
         })
     }
@@ -314,6 +477,16 @@ impl Interpreter {
             Expr::GenSplice(inner, span) => {
                 let val = self.eval_expr(inner)?;
                 value_to_expr(val, *span)
+            }
+            Expr::Str(segs, span) => {
+                let new_segs: Result<Vec<_>, _> = segs
+                    .iter()
+                    .map(|seg| match seg {
+                        StringSegment::Text(_) => Ok(seg.clone()),
+                        StringSegment::Interp(e) => Ok(StringSegment::Interp(self.subst_expr(e)?)),
+                    })
+                    .collect();
+                Ok(Expr::Str(new_segs?, *span))
             }
             Expr::BinOp {
                 op,
@@ -343,15 +516,78 @@ impl Interpreter {
                 field: field.clone(),
                 span: *span,
             }),
+            Expr::Index {
+                object,
+                index,
+                span,
+            } => Ok(Expr::Index {
+                object: Box::new(self.subst_expr(object)?),
+                index: Box::new(self.subst_expr(index)?),
+                span: *span,
+            }),
             Expr::UnOp { op, operand, span } => Ok(Expr::UnOp {
                 op: op.clone(),
                 operand: Box::new(self.subst_expr(operand)?),
                 span: *span,
             }),
+            Expr::Unwrap(e, span) => Ok(Expr::Unwrap(Box::new(self.subst_expr(e)?), *span)),
             Expr::Tuple(elems, span) => {
                 let new_elems: Result<Vec<_>, _> =
                     elems.iter().map(|e| self.subst_expr(e)).collect();
                 Ok(Expr::Tuple(new_elems?, *span))
+            }
+            Expr::Array(elems, span) => {
+                let new_elems: Result<Vec<_>, _> =
+                    elems.iter().map(|e| self.subst_expr(e)).collect();
+                Ok(Expr::Array(new_elems?, *span))
+            }
+            Expr::StructLiteral { ty, fields, span } => {
+                let new_fields: Result<Vec<_>, _> = fields
+                    .iter()
+                    .map(|(n, e)| Ok((n.clone(), self.subst_expr(e)?)))
+                    .collect();
+                Ok(Expr::StructLiteral {
+                    ty: ty.clone(),
+                    fields: new_fields?,
+                    span: *span,
+                })
+            }
+            Expr::As { expr, ty, span } => Ok(Expr::As {
+                expr: Box::new(self.subst_expr(expr)?),
+                ty: ty.clone(),
+                span: *span,
+            }),
+            Expr::Spawn(e, span) => Ok(Expr::Spawn(Box::new(self.subst_expr(e)?), *span)),
+            Expr::Ref {
+                mutable,
+                expr,
+                span,
+            } => Ok(Expr::Ref {
+                mutable: *mutable,
+                expr: Box::new(self.subst_expr(expr)?),
+                span: *span,
+            }),
+            Expr::Match {
+                scrutinee,
+                arms,
+                span,
+            } => {
+                let new_arms: Result<Vec<_>, _> = arms
+                    .iter()
+                    .map(|arm| {
+                        Ok(crate::parser::ast::MatchArm {
+                            pattern: arm.pattern.clone(),
+                            guard: arm.guard.as_ref().map(|g| self.subst_expr(g)).transpose()?,
+                            body: self.subst_expr(&arm.body)?,
+                            span: arm.span,
+                        })
+                    })
+                    .collect();
+                Ok(Expr::Match {
+                    scrutinee: Box::new(self.subst_expr(scrutinee)?),
+                    arms: new_arms?,
+                    span: *span,
+                })
             }
             _ => Ok(expr.clone()),
         }
@@ -361,6 +597,57 @@ impl Interpreter {
 // ---------------------------------------------------------------------------
 // Free helpers (no &mut self access needed)
 // ---------------------------------------------------------------------------
+
+fn is_truthy(v: &Value) -> bool {
+    match v {
+        Value::Bool(b) => *b,
+        Value::Int(n) => *n != 0,
+        _ => false,
+    }
+}
+
+fn eval_binop(op: &BinOp, lv: Value, rv: Value) -> Result<Value, ()> {
+    match (op, lv, rv) {
+        (BinOp::Add, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+        (BinOp::Sub, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+        (BinOp::Mul, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
+        (BinOp::Div, Value::Int(a), Value::Int(b)) if b != 0 => Ok(Value::Int(a / b)),
+        (BinOp::Mod, Value::Int(a), Value::Int(b)) if b != 0 => Ok(Value::Int(a % b)),
+        (BinOp::Add, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
+        (BinOp::Sub, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
+        (BinOp::Mul, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
+        (BinOp::Div, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
+        (BinOp::Add, Value::Str(a), Value::Str(b)) => Ok(Value::Str(a + &b)),
+        (BinOp::Eq, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a == b)),
+        (BinOp::Ne, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a != b)),
+        (BinOp::Lt, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a < b)),
+        (BinOp::Gt, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a > b)),
+        (BinOp::LtEq, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a <= b)),
+        (BinOp::GtEq, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
+        (BinOp::Eq, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a == b)),
+        (BinOp::Ne, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a != b)),
+        (BinOp::Lt, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
+        (BinOp::Gt, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
+        (BinOp::LtEq, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
+        (BinOp::GtEq, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
+        (BinOp::Eq, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a == b)),
+        (BinOp::Ne, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a != b)),
+        (BinOp::And, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a && b)),
+        (BinOp::Or, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a || b)),
+        (BinOp::Eq, Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a == b)),
+        (BinOp::Ne, Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a != b)),
+        _ => Err(()),
+    }
+}
+
+fn eval_unop(op: &UnOp, v: Value) -> Result<Value, ()> {
+    match (op, v) {
+        (UnOp::Neg, Value::Int(n)) => Ok(Value::Int(-n)),
+        (UnOp::Neg, Value::Float(f)) => Ok(Value::Float(-f)),
+        (UnOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
+        _ => Err(()),
+    }
+}
 
 fn eval_field(val: Value, field: &str) -> Result<Value, ()> {
     match val {
@@ -414,6 +701,7 @@ fn eval_method(obj: Value, method: &str, args: Vec<Value>) -> Result<Value, ()> 
             }
         }
         (Value::List(_), "new") if args.is_empty() => Ok(Value::List(vec![])),
+        (Value::List(items), "len") if args.is_empty() => Ok(Value::Int(items.len() as i64)),
         _ => Err(()),
     }
 }

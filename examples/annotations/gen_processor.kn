@@ -11,7 +11,8 @@
 # ---- Retry annotation and processor -----------------------------------------
 #
 # @Retry replaces the function body with a loop that retries on exception up
-# to `count` times.
+# to `count` times.  Applied to void functions so the break-after-body pattern
+# is unambiguous.
 
 annotation Retry {
     count: int = 3
@@ -19,11 +20,11 @@ annotation Retry {
 
 processor Retry(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
     new_body: Block = gen {
-        attempts: int = 0
+        mut attempts: int = 0
         while attempts < <<target.annot.count>> {
             try {
                 <<target.body>>
-                return
+                break
             } except Exception as e {
                 attempts = attempts + 1
                 if attempts == <<target.annot.count>> {
@@ -56,8 +57,8 @@ processor LogEnter(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 # ---- Functions using the annotations ----------------------------------------
 
 @Retry { count: 5 }
-def fetch(url: str) -> str {
-    return "response"
+def fetch(url: str) -> void {
+    println("fetching")
 }
 
 @LogEnter { label: "debug" }
@@ -67,15 +68,14 @@ def process(data: str) -> str {
 
 @Retry { count: 2 }
 @LogEnter
-def upload(payload: str) -> bool {
-    return true
+def upload(payload: str) -> void {
+    println("uploading")
 }
 
 # ---- main -------------------------------------------------------------------
 
 def main() -> void {
-    result: str = fetch("example.com")
-    println(result)
+    fetch("example.com")
     println(process("hello"))
-    println(upload("data"))
+    upload("data")
 }

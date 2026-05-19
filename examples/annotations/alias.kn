@@ -1,0 +1,33 @@
+# alias.kn -- emit a function under a second name without touching the original
+#
+# @Alias { as_name } keeps the annotated function exactly as written and emits
+# an identical copy under `as_name`.  The copy is generated at compile time via
+# the Vec[Decl] second-slot return -- no runtime overhead.
+#
+# Usage: kiln run examples/annotations/alias.kn
+
+annotation Alias {
+    as_name: str = "alias_of"
+}
+
+processor Alias(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    # Build an identical copy with a different name.
+    copy: Decl = target.with_name(target.annot.as_name)
+    # Return (None, [copy]): keep original untouched, emit copy alongside it.
+    return (None, [copy])
+}
+
+# ---- Usage ------------------------------------------------------------------
+
+@Alias { as_name: "add_two" }
+def increment(n: int) -> int {
+    return n + 1
+}
+
+# After processor: both `increment` and `add_two` exist with the same body.
+# The processor runs entirely at compile time -- no runtime indirection.
+
+def main() -> void {
+    println("increment(4) = {increment(4)}")
+    println("add_two(4)   = {add_two(4)}")
+}

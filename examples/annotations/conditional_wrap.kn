@@ -1,0 +1,100 @@
+# conditional_wrap.kn -- processor body uses if/else and arithmetic
+#
+# Demonstrates that the processor interpreter supports:
+#   - BinOp arithmetic (pc + base, n + 10)
+#   - Comparison operators (kind == 1, count > 0)
+#   - If/else branching on annotation argument values
+#   - CompoundAssign inside processor body (n += offset)
+#   - for loops over target.params with early break
+#
+# Usage: kiln run examples/annotations/conditional_wrap.kn
+
+# ---- Versioned -- selects generated body based on an int flag ---------------
+
+annotation Versioned {
+    v: int = 1
+}
+
+processor Versioned(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    if target.annot.v == 1 {
+        new_body: Block = gen {
+            impl_version: int = 1
+            <<target.body>>
+        }
+        return (Some { value: target.with_body(new_body) }, Vec.new())
+    }
+    if target.annot.v == 2 {
+        new_body: Block = gen {
+            impl_version: int = 2
+            experimental: bool = true
+            <<target.body>>
+        }
+        return (Some { value: target.with_body(new_body) }, Vec.new())
+    }
+    # Unknown version: leave unchanged
+    return (None, Vec.new())
+}
+
+# ---- Offset -- arithmetic in processor body ---------------------------------
+#
+# The processor reads target.params.len() at compile time, adds it to the
+# annotation argument `base`, and splices the computed int into the gen block.
+
+annotation Offset {
+    base: int = 0
+}
+
+processor Offset(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    pc: int = target.params.len()
+    total: int = pc + target.annot.base
+    new_body: Block = gen {
+        param_offset: int = <<total>>
+        <<target.body>>
+    }
+    return (Some { value: target.with_body(new_body) }, Vec.new())
+}
+
+# ---- ParamAudit -- for loop counts params at compile time -------------------
+
+annotation ParamAudit { }
+
+processor ParamAudit(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    count: int = 0
+    for p <- target.params {
+        count = count + 1
+    }
+    new_body: Block = gen {
+        compile_time_param_count: int = <<count>>
+        <<target.body>>
+    }
+    return (Some { value: target.with_body(new_body) }, Vec.new())
+}
+
+# ---- Functions --------------------------------------------------------------
+
+@Versioned { v: 1 }
+def stable_algo() -> void {
+    println("running")
+}
+
+@Versioned { v: 2 }
+def experimental_algo() -> void {
+    println("running")
+}
+
+@Offset { base: 100 }
+def compute(x: int, y: int, z: int) -> void {
+    println("computing")
+}
+
+@ParamAudit
+def transform(src: str, dst: str) -> void {
+    println("transforming")
+}
+
+def main() -> void {
+    stable_algo()
+    experimental_algo()
+    compute(1, 2, 3)
+    transform("a", "b")
+}

@@ -103,35 +103,40 @@ pub fn run_user_processors(source: &mut SourceFile, _registry: &ProcessorRegistr
         return;
     }
 
-    let mut replacements: Vec<(usize, Item)> = vec![];
     let mut new_items: Vec<Item> = vec![];
 
-    for (idx, item) in source.items.iter().enumerate() {
-        let (annotations, fn_def) = match item {
-            Item::Function(f) => (&f.annotations, f),
+    // Process each item's annotations in declaration order, chaining outputs:
+    // each processor in a stack sees the output of the previous one.
+    let item_count = source.items.len();
+    for idx in 0..item_count {
+        // Clone the annotation list from the original function once, so the
+        // loop order is stable even as source.items[idx] is mutated.
+        let annotations = match &source.items[idx] {
+            Item::Function(f) => f.annotations.clone(),
             _ => continue,
         };
 
-        for ann in annotations {
+        for ann in &annotations {
             let proc = match procs.iter().find(|p| p.annotation_name == ann.name) {
-                Some(p) => p,
+                Some(p) => p.clone(),
                 None => continue,
             };
 
+            // Re-read the current item so each processor sees the previous output.
+            let fn_def = match &source.items[idx] {
+                Item::Function(f) => f.clone(),
+                _ => continue,
+            };
+
             if let Some((replacement, extras)) =
-                interp::Interpreter::run_processor(fn_def, proc, &ann.args)
+                interp::Interpreter::run_processor(&fn_def, &proc, &ann.args)
             {
                 if let Some(rep) = replacement {
-                    replacements.push((idx, rep));
+                    source.items[idx] = rep;
                 }
                 new_items.extend(extras);
             }
         }
-    }
-
-    // Apply replacements (last-write wins if multiple processors touch the same item).
-    for (idx, item) in replacements {
-        source.items[idx] = item;
     }
 
     // Deduplicate new impl blocks, then extend.

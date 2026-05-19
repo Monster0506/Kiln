@@ -283,7 +283,11 @@ impl Parser {
         self.expect(TokenKind::LBrace)?;
         let mut symbols = Vec::new();
         while self.peek() != &TokenKind::RBrace {
-            symbols.push(self.expect_ident()?);
+            if self.eat(&TokenKind::Star) {
+                symbols.push("*".to_string());
+            } else {
+                symbols.push(self.expect_ident()?);
+            }
             self.eat(&TokenKind::Comma);
         }
         self.expect(TokenKind::RBrace)?;
@@ -300,7 +304,11 @@ impl Parser {
         self.expect(TokenKind::LBrace)?;
         let mut symbols = Vec::new();
         while self.peek() != &TokenKind::RBrace {
-            symbols.push(self.expect_ident()?);
+            if self.eat(&TokenKind::Star) {
+                symbols.push("*".to_string());
+            } else {
+                symbols.push(self.expect_ident()?);
+            }
             self.eat(&TokenKind::Comma);
         }
         self.expect(TokenKind::RBrace)?;
@@ -2173,10 +2181,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_import_wildcard() {
+        let file = parse("import math { * }").unwrap();
+        match &file.items[0] {
+            Item::Import(i) => {
+                assert_eq!(i.path, vec!["math"]);
+                assert_eq!(i.symbols, vec!["*"]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_export() {
         let file = parse("export { foo, Bar }").unwrap();
         match &file.items[0] {
             Item::Export(e) => assert_eq!(e.symbols, vec!["foo", "Bar"]),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_export_wildcard() {
+        let file = parse("export { * }").unwrap();
+        match &file.items[0] {
+            Item::Export(e) => assert_eq!(e.symbols, vec!["*"]),
             other => panic!("{other:?}"),
         }
     }

@@ -2,15 +2,44 @@ use crate::lexer::Lexer;
 use crate::parser::{ast::SourceFile, Parser};
 
 const PRELUDE_SRC: &str = include_str!("prelude.kn");
+const AST_SRC: &str = include_str!("ast.kn");
+const BUILTINS_SRC: &str = include_str!("builtins.kn");
+const INTERFACES_SRC: &str = include_str!("interfaces.kn");
+const IMPLS_SRC: &str = include_str!("impls.kn");
+const FUNCTIONS_SRC: &str = include_str!("functions.kn");
 
-/// Parse the stdlib prelude and return its items.
-pub fn parse_prelude() -> SourceFile {
-    let tokens = Lexer::new(PRELUDE_SRC).tokenize().unwrap_or_else(|e| {
-        eprintln!("internal error: prelude lex failed: {e:?}");
+fn parse_src(src: &str, label: &str) -> SourceFile {
+    let tokens = Lexer::new(src).tokenize().unwrap_or_else(|e| {
+        eprintln!("internal error: {label} lex failed: {e:?}");
         std::process::exit(1);
     });
     Parser::new(tokens).parse_file().unwrap_or_else(|e| {
-        eprintln!("internal error: prelude parse failed: {e:?}");
+        eprintln!("internal error: {label} parse failed: {e:?}");
         std::process::exit(1);
     })
+}
+
+/// Virtual filesystem for embedded stdlib modules, used by the import resolver
+/// so that prelude.kn can import builtins/interfaces/impls/functions naturally.
+pub fn stdlib_virtual_fs() -> std::collections::HashMap<String, String> {
+    [
+        ("builtins", BUILTINS_SRC),
+        ("interfaces", INTERFACES_SRC),
+        ("impls", IMPLS_SRC),
+        ("functions", FUNCTIONS_SRC),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect()
+}
+
+/// Parse prelude.kn (which imports its sections via normal import statements).
+/// The caller is responsible for resolving those imports via stdlib_virtual_fs().
+pub fn parse_prelude() -> SourceFile {
+    parse_src(PRELUDE_SRC, "prelude.kn")
+}
+
+/// Parse the AST type declarations (FnDecl, Block, Decl, etc.) and return their items.
+pub fn parse_ast_stdlib() -> SourceFile {
+    parse_src(AST_SRC, "ast.kn")
 }

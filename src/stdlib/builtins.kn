@@ -1,0 +1,60 @@
+# Kiln stdlib: builtin types and functions.
+# The compiler provides all @builtin implementations.
+
+struct VecIter[T] {
+    vec: Vec[T]
+    index: int
+}
+
+@builtin
+struct Vec[T] {
+    def new() -> Vec[T]
+    def add(item: T) -> void
+    def len() -> int
+    def get(index: int) -> T
+    def set(index: int, item: T) -> void
+    def remove(index: int) -> T
+    def clear() -> void
+}
+
+@builtin
+def __kiln_print(s: str) -> void
+
+@builtin
+def __kiln_println(s: str) -> void
+
+@builtin
+def __kiln_int_to_str(n: int) -> str
+
+@builtin
+def __kiln_float_to_str(f: float) -> str
+
+@builtin
+def __kiln_bool_to_str(b: bool) -> str
+
+@builtin
+def __kiln_str_concat(a: str, b: str) -> str
+
+@builtin
+def len(x: str) -> int
+
+@builtin
+def panic(msg: str) -> void
+
+@builtin
+def assert(cond: bool) -> void
+
+@builtin
+def clock_ms() -> int
+
+@builtin
+struct Exception {}
+
+export {
+    VecIter, Vec,
+    __kiln_print, __kiln_println,
+    __kiln_int_to_str, __kiln_float_to_str, __kiln_bool_to_str,
+    __kiln_str_concat,
+    len, panic, assert, clock_ms,
+    Exception
+}

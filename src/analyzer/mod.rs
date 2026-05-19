@@ -92,17 +92,205 @@ fn subst_generic_params_unknown(ty: &Ty, params: &[String]) -> Ty {
 ///
 /// The stdlib prelude is always prepended before user items.
 pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
-    let prelude = crate::stdlib::parse_prelude();
-    let combined_items: Vec<_> = prelude
-        .items
+    analyze_with_base(source, &std::path::PathBuf::from("."))
+}
+
+/// Like `analyze`, but resolves `import` statements relative to `base_dir`.
+pub fn analyze_with_base(
+    source: &SourceFile,
+    base_dir: &std::path::Path,
+) -> Result<TypedFile, Vec<AnalysisError>> {
+    let prelude_src = crate::stdlib::parse_prelude();
+    let ast_stdlib = crate::stdlib::parse_ast_stdlib();
+    let stdlib_vfs = crate::stdlib::stdlib_virtual_fs();
+
+    let mut import_errors: Vec<AnalysisError> = Vec::new();
+
+    // Resolve prelude imports using the embedded stdlib virtual filesystem.
+    let mut prelude_items: Vec<Item> = Vec::new();
+    resolve_imports_into(
+        &prelude_src,
+        base_dir,
+        &mut prelude_items,
+        &mut import_errors,
+        &stdlib_vfs,
+    );
+
+    // Resolve user imports from disk (vfs is also passed for any stdlib re-imports).
+    let mut user_items: Vec<Item> = Vec::new();
+    resolve_imports_into(
+        source,
+        base_dir,
+        &mut user_items,
+        &mut import_errors,
+        &stdlib_vfs,
+    );
+
+    let combined_items: Vec<_> = prelude_items
         .into_iter()
-        .chain(source.items.iter().cloned())
+        .chain(ast_stdlib.items)
+        .chain(user_items)
         .collect();
     let combined = SourceFile {
         items: combined_items,
         span: source.span,
     };
-    analyze_inner(&combined)
+
+    match analyze_inner(&combined) {
+        Ok(typed) if import_errors.is_empty() => Ok(typed),
+        Ok(_) => Err(import_errors),
+        Err(mut errs) => {
+            import_errors.extend(errs.drain(..));
+            Err(import_errors)
+        }
+    }
+}
+
+/// Walk all items in `source`, inlining imported items and skipping export blocks.
+/// `vfs` is checked before disk for each import path (used for embedded stdlib modules).
+fn resolve_imports_into(
+    source: &SourceFile,
+    base_dir: &std::path::Path,
+    out: &mut Vec<Item>,
+    errors: &mut Vec<AnalysisError>,
+    vfs: &std::collections::HashMap<String, String>,
+) {
+    for item in &source.items {
+        match item {
+            Item::Import(import) => {
+                resolve_one_import(import, base_dir, out, errors, vfs);
+            }
+            Item::Export(_) => {
+                // Export blocks are metadata consumed by importers; skip here.
+            }
+            other => out.push(other.clone()),
+        }
+    }
+}
+
+fn resolve_one_import(
+    import: &crate::parser::ast::Import,
+    base_dir: &std::path::Path,
+    out: &mut Vec<Item>,
+    errors: &mut Vec<AnalysisError>,
+    vfs: &std::collections::HashMap<String, String>,
+) {
+    let module_key = import.path.join(".");
+
+    // Check the virtual filesystem first (embedded stdlib modules).
+    let (src, disk_path): (String, Option<std::path::PathBuf>) =
+        if let Some(embedded) = vfs.get(&module_key) {
+            (embedded.clone(), None)
+        } else {
+            // Fall back to disk.
+            let rel: std::path::PathBuf = import.path.iter().collect();
+            let file_path = base_dir.join(rel).with_extension("kn");
+            match std::fs::read_to_string(&file_path) {
+                Ok(s) => (s, Some(file_path)),
+                Err(_) => {
+                    errors.push(AnalysisError::ModuleNotFound {
+                        path: module_key,
+                        span: import.span,
+                    });
+                    return;
+                }
+            }
+        };
+
+    let module_base: &std::path::Path = disk_path
+        .as_ref()
+        .and_then(|p| p.parent())
+        .unwrap_or(base_dir);
+
+    let tokens = match crate::lexer::Lexer::new(&src).tokenize() {
+        Ok(t) => t,
+        Err(_) => {
+            errors.push(AnalysisError::ModuleNotFound {
+                path: import.path.join("."),
+                span: import.span,
+            });
+            return;
+        }
+    };
+    let parsed = match crate::parser::Parser::new(tokens).parse_file() {
+        Ok(f) => f,
+        Err(_) => {
+            errors.push(AnalysisError::ModuleNotFound {
+                path: import.path.join("."),
+                span: import.span,
+            });
+            return;
+        }
+    };
+
+    // Recursively resolve imports inside the imported module (vfs threads through).
+    let mut module_items: Vec<Item> = Vec::new();
+    resolve_imports_into(&parsed, module_base, &mut module_items, errors, vfs);
+
+    // Collect the set of exported symbol names for this file.
+    let exported: std::collections::HashSet<String> = parsed
+        .items
+        .iter()
+        .filter_map(|i| {
+            if let Item::Export(e) = i {
+                Some(&e.symbols)
+            } else {
+                None
+            }
+        })
+        .flatten()
+        .cloned()
+        .collect();
+
+    let wildcard_export = exported.contains("*");
+    let wildcard_import = import.symbols.iter().any(|s| s == "*");
+
+    // Filter module items to only those the module exports.
+    // Nameless items (impl blocks) are included when the module uses export { * }.
+    let exported_items: Vec<Item> = module_items
+        .into_iter()
+        .filter(|i| match item_top_name(i) {
+            Some(n) => wildcard_export || exported.contains(n),
+            None => wildcard_export,
+        })
+        .collect();
+
+    if wildcard_import {
+        // Bring in all exported items.
+        out.extend(exported_items);
+    } else {
+        // Selective import: bring in only the requested symbols, error on missing.
+        let module_name = import.path.join(".");
+        for sym in &import.symbols {
+            let found = exported_items
+                .iter()
+                .find(|i| item_top_name(i) == Some(sym.as_str()));
+            match found {
+                Some(i) => out.push(i.clone()),
+                None => {
+                    errors.push(AnalysisError::SymbolNotExported {
+                        symbol: sym.clone(),
+                        module: module_name.clone(),
+                        span: import.span,
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Return the top-level name of an item, if it has one (functions, structs, enums, interfaces,
+/// type aliases, globals). Returns None for impl blocks and other nameless items.
+fn item_top_name(item: &Item) -> Option<&str> {
+    match item {
+        Item::Function(f) => Some(&f.name),
+        Item::Struct(s) => Some(&s.name),
+        Item::Enum(e) => Some(&e.name),
+        Item::Interface(i) => Some(&i.name),
+        Item::TypeAlias(t) => Some(&t.name),
+        Item::Global(g) => Some(&g.name),
+        _ => None,
+    }
 }
 
 fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
@@ -1395,6 +1583,14 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     mutable: g.mutable,
                     span: g.span,
                 }));
+            }
+
+            Item::ProcessorDef(proc) => {
+                // Validate param and return types against the registry.
+                resolve_type_expr(&proc.target_param.ty, &env, &mut errors);
+                if let Some(ret) = &proc.return_type {
+                    resolve_type_expr(ret, &env, &mut errors);
+                }
             }
 
             _ => {}

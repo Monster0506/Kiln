@@ -1,0 +1,233 @@
+# Kiln stdlib: conformance impl blocks for built-in and standard types.
+
+# ---- Conformance: Ordering --------------------------------------------------
+
+impl Copy for Ordering {}
+impl Clone for Ordering { hook clone() -> Ordering {} }
+impl PartialEq for Ordering {
+    hook ==(other: Ordering) -> bool {
+        return match self {
+            Less => match other { Less => true, _ => false },
+            Equal => match other { Equal => true, _ => false },
+            Greater => match other { Greater => true, _ => false }
+        }
+    }
+}
+impl Eq for Ordering {}
+impl Hash for Ordering { hook hash() -> int {} }
+impl Ord for Ordering {
+    hook <=>(other: Ordering) -> Ordering {
+        self_d: int = match self { Less => 0, Equal => 1, Greater => 2 }
+        other_d: int = match other { Less => 0, Equal => 1, Greater => 2 }
+        if self_d < other_d { return Ordering:Less }
+        if other_d < self_d { return Ordering:Greater }
+        return Ordering:Equal
+    }
+}
+impl PartialOrd for Ordering {
+    hook <(other: Ordering) -> bool {
+        self_d: int = match self { Less => 0, Equal => 1, Greater => 2 }
+        other_d: int = match other { Less => 0, Equal => 1, Greater => 2 }
+        return self_d < other_d
+    }
+}
+impl Debug for Ordering { hook debug_str() -> str {} }
+
+# ---- Conformance: int -------------------------------------------------------
+
+impl Copy for int {}
+impl Clone for int { hook clone() -> int {} }
+impl Eq for int {}
+impl PartialEq for int { hook ==(other: int) -> bool {} }
+impl Hash for int { hook hash() -> int {} }
+impl Ord for int { hook <=>(other: int) -> Ordering {} }
+impl PartialOrd for int { hook <(other: int) -> bool {} }
+impl Debug for int { hook debug_str() -> str {} }
+impl Default for int { @static hook default() -> int {} }
+impl AddableWith[int] for int { hook +(rhs: int) -> int {} }
+impl SubtractableWith[int] for int { hook -(rhs: int) -> int {} }
+impl MultipliableWith[int] for int { hook *(rhs: int) -> int {} }
+impl DividableWith[int] for int { hook /(rhs: int) -> int {} }
+impl RemainderableWith[int] for int { hook %(rhs: int) -> int {} }
+impl Addable for int { hook +(rhs: int) -> int {} }
+impl Subtractable for int { hook -(rhs: int) -> int {} }
+impl Multiplicable for int { hook *(rhs: int) -> int {} }
+impl Divisible for int { hook /(rhs: int) -> int {} }
+impl Remainder for int { hook %(rhs: int) -> int {} }
+impl Negatable for int { hook -() -> int {} }
+impl Zero for int { @static hook zero() -> int {} }
+impl One for int { @static hook one() -> int {} }
+impl Abs for int { hook abs() -> int {} }
+impl Signum for int { hook signum() -> int {} }
+impl Bitwise for int {
+    hook &(rhs: int) -> int {}
+    hook |(rhs: int) -> int {}
+    hook ^(rhs: int) -> int {}
+}
+impl Comparable for int {}
+impl Numeric for int {}
+impl Integral for int {}
+impl Semigroup for int {}
+impl Monoid for int {}
+
+# ---- Conformance: float -----------------------------------------------------
+
+impl Clone for float { hook clone() -> float {} }
+impl PartialEq for float { hook ==(other: float) -> bool {} }
+impl PartialOrd for float { hook <(other: float) -> bool {} }
+impl Debug for float { hook debug_str() -> str {} }
+impl Default for float { @static hook default() -> float {} }
+impl AddableWith[float] for float { hook +(rhs: float) -> float {} }
+impl SubtractableWith[float] for float { hook -(rhs: float) -> float {} }
+impl MultipliableWith[float] for float { hook *(rhs: float) -> float {} }
+impl DividableWith[float] for float { hook /(rhs: float) -> float {} }
+impl Addable for float { hook +(rhs: float) -> float {} }
+impl Subtractable for float { hook -(rhs: float) -> float {} }
+impl Multiplicable for float { hook *(rhs: float) -> float {} }
+impl Divisible for float { hook /(rhs: float) -> float {} }
+impl Negatable for float { hook -() -> float {} }
+impl Zero for float { @static hook zero() -> float {} }
+impl One for float { @static hook one() -> float {} }
+impl Abs for float { hook abs() -> float {} }
+impl Signum for float { hook signum() -> float {} }
+impl ComparableWith[float] for float { hook <=>(other: float) -> Ordering {} }
+impl Comparable for float {}
+impl Numeric for float {}
+impl Fractional for float {}
+impl Semigroup for float {}
+
+# ---- Conformance: bool ------------------------------------------------------
+
+impl Copy for bool {}
+impl Clone for bool { hook clone() -> bool {} }
+impl Eq for bool {}
+impl PartialEq for bool { hook ==(other: bool) -> bool {} }
+impl Hash for bool { hook hash() -> int {} }
+impl Ord for bool { hook <=>(other: bool) -> Ordering {} }
+impl PartialOrd for bool { hook <(other: bool) -> bool {} }
+impl Debug for bool { hook debug_str() -> str {} }
+impl Default for bool { @static hook default() -> bool {} }
+
+# ---- Conformance: str -------------------------------------------------------
+
+impl Clone for str { hook clone() -> str {} }
+impl Eq for str {}
+impl PartialEq for str { hook ==(other: str) -> bool {} }
+impl Hash for str { hook hash() -> int {} }
+impl Ord for str { hook <=>(other: str) -> Ordering {} }
+impl PartialOrd for str { hook <(other: str) -> bool {} }
+impl Debug for str { hook debug_str() -> str {} }
+impl Default for str { @static hook default() -> str { return '' } }
+impl AddableWith[str] for str { hook +(rhs: str) -> str { return __kiln_str_concat(self, rhs) } }
+impl Addable for str { hook +(rhs: str) -> str { return __kiln_str_concat(self, rhs) } }
+impl Zero for str { @static hook zero() -> str { return '' } }
+impl Semigroup for str {}
+impl Monoid for str {}
+impl IndexableWith[int] for str { hook [](index: int) -> str {} }
+impl Indexable for str {}
+
+# ---- Conformance: Vec[T] ----------------------------------------------------
+
+impl[T: Clone] Clone for Vec[T] { hook clone() -> Vec[T] {} }
+impl[T: Eq] Eq for Vec[T] {}
+impl[T: PartialEq] PartialEq for Vec[T] { hook ==(other: Vec[T]) -> bool {} }
+impl[T: Hash] Hash for Vec[T] { hook hash() -> int {} }
+impl[T: Ord] Ord for Vec[T] { hook <=>(other: Vec[T]) -> Ordering {} }
+impl[T: PartialOrd] PartialOrd for Vec[T] { hook <(other: Vec[T]) -> bool {} }
+impl[T: Debug] Debug for Vec[T] { hook debug_str() -> str {} }
+impl Default for Vec[T] { @static hook default() -> Vec[T] {} }
+impl[T] Addable for Vec[T] { hook +(rhs: Vec[T]) -> Vec[T] {} }
+impl Zero for Vec[T] { @static hook zero() -> Vec[T] {} }
+impl Semigroup for Vec[T] {}
+impl Monoid for Vec[T] {}
+impl[T] Iterable for Vec[T] {
+    hook iter() -> VecIter[T] {
+        return VecIter { vec: self, index: 0 }
+    }
+}
+impl[T] Iterator for VecIter[T] {
+    hook next() -> Option[T] {
+        if self.index >= self.vec.len() {
+            return Option:None
+        }
+        val: T = self.vec.get(self.index)
+        self.index = self.index + 1
+        return Option:Some { value: val }
+    }
+}
+impl Foldable for Vec[T] {}
+impl[T] IndexableWith[int] for Vec[T] { hook [](index: int) -> T {} }
+impl Indexable for Vec[T] {}
+
+# ---- Conformance: Option[T] -------------------------------------------------
+
+impl[T] Try for Option[T] {}
+impl[T: Clone] Clone for Option[T] { hook clone() -> Option[T] {} }
+impl[T: Eq] Eq for Option[T] {}
+impl[T: PartialEq] PartialEq for Option[T] { hook ==(other: Option[T]) -> bool {} }
+impl[T: Hash] Hash for Option[T] { hook hash() -> int {} }
+impl[T: Ord] Ord for Option[T] { hook <=>(other: Option[T]) -> Ordering {} }
+impl[T: PartialOrd] PartialOrd for Option[T] { hook <(other: Option[T]) -> bool {} }
+impl[T: Debug] Debug for Option[T] { hook debug_str() -> str {} }
+impl[T: Display] Display for Option[T] { hook to_str() -> str {} }
+impl Default for Option[T] { @static hook default() -> Option[T] {} }
+impl Iterable for Option[T] {}
+impl Foldable for Option[T] {}
+
+# ---- Conformance: Display ---------------------------------------------------
+
+impl Display for int {
+    hook to_str() -> str {
+        return __kiln_int_to_str(self)
+    }
+}
+
+impl Display for float {
+    hook to_str() -> str {
+        return __kiln_float_to_str(self)
+    }
+}
+
+impl Display for bool {
+    hook to_str() -> str {
+        return __kiln_bool_to_str(self)
+    }
+}
+
+impl Display for str {
+    hook to_str() -> str {
+        return self
+    }
+}
+
+impl[T: Display] Display for Vec[T] {
+    hook to_str() -> str {
+        mut res: str = "["
+        mut i: int = 0
+        n: int = self.len()
+        while i < n {
+            item: T = self.get(i)
+            if i > 0 { res = res + ", " }
+            res = res + item.to_str()
+            i = i + 1
+        }
+        return res + "]"
+    }
+}
+
+# ---- Vec utility methods ----------------------------------------------------
+
+impl VecMethods for Vec[T] {
+    def pop() -> void {
+        self.remove(self.len() - 1)
+    }
+
+    def is_empty() -> bool {
+        return self.len() == 0
+    }
+    def length() -> int {
+        return self.len()
+    }
+}
+
+export { * }

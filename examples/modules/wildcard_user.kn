@@ -1,0 +1,6 @@
+import math { * }
+
+def main() -> void {
+    result: int = add(3, 4)
+    println(result)
+}

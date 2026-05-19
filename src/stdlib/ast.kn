@@ -1,0 +1,58 @@
+# AST types available inside processor bodies.
+# All types are @builtin -- the compiler supplies the runtime representation.
+# Declared here so the analyzer can type-check processor signatures and bodies.
+
+@builtin
+struct Param {
+    name: str
+    ty: str
+}
+
+@builtin
+struct StructField {
+    name: str
+    ty: str
+    mutable: bool
+}
+
+@builtin
+struct Stmt {
+    kind: str
+}
+
+@builtin
+struct Expr {
+    kind: str
+}
+
+@builtin
+struct Block {
+    stmts: Vec[Stmt]
+}
+
+@builtin
+struct FnDecl {
+    name: str
+    return_type: str
+    body: Block
+}
+
+@builtin
+struct StructDecl {
+    name: str
+    fields: Vec[StructField]
+}
+
+@builtin
+struct EnumDecl {
+    name: str
+}
+
+@builtin
+enum Decl {
+    Fn { decl: FnDecl }
+    Struct { decl: StructDecl }
+    Enum { decl: EnumDecl }
+}
+
+export { Param, StructField, Stmt, Expr, Block, FnDecl, StructDecl, EnumDecl, Decl }

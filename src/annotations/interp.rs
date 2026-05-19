@@ -19,11 +19,11 @@ pub enum Value {
     List(Vec<Value>),
     Block(Block),
     Decl(Item),
-    FnDeclVal {
-        fn_def: Box<FnDef>,
-        annot_args: HashMap<String, Value>,
+    /// Generic struct value backing @builtin structs (FnDecl, AnnotArgs, etc.)
+    Struct {
+        ty: String,
+        fields: HashMap<String, Value>,
     },
-    AnnotArgs(HashMap<String, Value>),
 }
 
 // ---------------------------------------------------------------------------
@@ -70,9 +70,30 @@ impl Interpreter {
     ) -> Option<(Option<Item>, Vec<Item>)> {
         let mut interp = Interpreter::new();
         let args_map = Interpreter::eval_annot_args(annot_args);
-        let target = Value::FnDeclVal {
-            fn_def: Box::new(fn_def.clone()),
-            annot_args: args_map,
+
+        let mut fn_fields: HashMap<String, Value> = HashMap::new();
+        fn_fields.insert("name".into(), Value::Str(fn_def.name.clone()));
+        fn_fields.insert(
+            "return_type".into(),
+            Value::Str(type_expr_to_str(&fn_def.return_type)),
+        );
+        fn_fields.insert("body".into(), Value::Block(fn_def.body.clone()));
+        fn_fields.insert(
+            "annot".into(),
+            Value::Struct {
+                ty: "AnnotArgs".into(),
+                fields: args_map,
+            },
+        );
+        // Keep a copy of the original FnDef for with_body/with_name mutations.
+        fn_fields.insert(
+            "__fn_def__".into(),
+            Value::Decl(Item::Function(fn_def.clone())),
+        );
+
+        let target = Value::Struct {
+            ty: "FnDecl".into(),
+            fields: fn_fields,
         };
         interp.bind(&proc.target_param.name, target);
 
@@ -343,20 +364,7 @@ impl Interpreter {
 
 fn eval_field(val: Value, field: &str) -> Result<Value, ()> {
     match val {
-        Value::FnDeclVal {
-            ref fn_def,
-            ref annot_args,
-        } => match field {
-            "body" => Ok(Value::Block(fn_def.body.clone())),
-            "name" => Ok(Value::Str(fn_def.name.clone())),
-            "annot" => Ok(Value::AnnotArgs(annot_args.clone())),
-            "return_type" => {
-                let ty_str = type_expr_to_str(&fn_def.return_type);
-                Ok(Value::Str(ty_str))
-            }
-            _ => Err(()),
-        },
-        Value::AnnotArgs(ref map) => map.get(field).cloned().ok_or(()),
+        Value::Struct { ref fields, .. } => fields.get(field).cloned().ok_or(()),
         _ => Err(()),
     }
 }
@@ -370,23 +378,32 @@ fn eval_static_method(type_name: &str, method: &str, args: &[Value]) -> Result<V
 
 fn eval_method(obj: Value, method: &str, args: Vec<Value>) -> Result<Value, ()> {
     match (&obj, method) {
-        (
-            Value::FnDeclVal {
-                fn_def,
-                annot_args: _,
-            },
-            "with_body",
-        ) => {
+        (Value::Struct { ty, fields }, "with_body") if ty == "FnDecl" => {
             if args.len() != 1 {
                 return Err(());
             }
             if let Value::Block(new_body) = &args[0] {
-                let mut new_fn = (**fn_def).clone();
-                new_fn.body = new_body.clone();
-                Ok(Value::Decl(Item::Function(new_fn)))
-            } else {
-                Err(())
+                // Recover the original FnDef from the hidden __fn_def__ field.
+                if let Some(Value::Decl(Item::Function(ref orig))) = fields.get("__fn_def__") {
+                    let mut new_fn = orig.clone();
+                    new_fn.body = new_body.clone();
+                    return Ok(Value::Decl(Item::Function(new_fn)));
+                }
             }
+            Err(())
+        }
+        (Value::Struct { ty, fields }, "with_name") if ty == "FnDecl" => {
+            if args.len() != 1 {
+                return Err(());
+            }
+            if let Value::Str(new_name) = &args[0] {
+                if let Some(Value::Decl(Item::Function(ref orig))) = fields.get("__fn_def__") {
+                    let mut new_fn = orig.clone();
+                    new_fn.name = new_name.clone();
+                    return Ok(Value::Decl(Item::Function(new_fn)));
+                }
+            }
+            Err(())
         }
         (Value::List(_), "push") if args.len() == 1 => {
             if let Value::List(mut items) = obj {
@@ -540,12 +557,52 @@ mod tests {
     }
 
     #[test]
+    fn struct_field_access_returns_value() {
+        let mut fields = HashMap::new();
+        fields.insert(
+            "body".into(),
+            Value::Block(Block {
+                stmts: vec![],
+                span: zero(),
+            }),
+        );
+        fields.insert("name".into(), Value::Str("foo".into()));
+        let target = Value::Struct {
+            ty: "FnDecl".into(),
+            fields,
+        };
+        let mut interp = Interpreter::new();
+        interp.bind("target", target);
+
+        let expr = Expr::Field {
+            object: Box::new(Expr::Ident("target".into(), zero())),
+            field: "name".into(),
+            span: zero(),
+        };
+        let v = interp.eval_expr(&expr).unwrap();
+        assert!(matches!(v, Value::Str(ref s) if s == "foo"));
+    }
+
+    #[test]
     fn gen_block_splice_of_block_extends_stmts() {
         let fn_def = simple_fn("foo", vec![void_stmt()]);
-        let target = Value::FnDeclVal {
-            fn_def: Box::new(fn_def),
-            annot_args: HashMap::new(),
+        let mut fn_fields: HashMap<String, Value> = HashMap::new();
+        fn_fields.insert("name".into(), Value::Str("foo".into()));
+        fn_fields.insert("return_type".into(), Value::Str("void".into()));
+        fn_fields.insert("body".into(), Value::Block(fn_def.body.clone()));
+        fn_fields.insert(
+            "annot".into(),
+            Value::Struct {
+                ty: "AnnotArgs".into(),
+                fields: HashMap::new(),
+            },
+        );
+        fn_fields.insert("__fn_def__".into(), Value::Decl(Item::Function(fn_def)));
+        let target = Value::Struct {
+            ty: "FnDecl".into(),
+            fields: fn_fields,
         };
+
         let mut interp = Interpreter::new();
         interp.bind("target", target);
 
@@ -570,10 +627,23 @@ mod tests {
     #[test]
     fn gen_block_prepends_stmt_before_splice() {
         let fn_def = simple_fn("foo", vec![void_stmt()]);
-        let target = Value::FnDeclVal {
-            fn_def: Box::new(fn_def),
-            annot_args: HashMap::new(),
+        let mut fn_fields: HashMap<String, Value> = HashMap::new();
+        fn_fields.insert("name".into(), Value::Str("foo".into()));
+        fn_fields.insert("return_type".into(), Value::Str("void".into()));
+        fn_fields.insert("body".into(), Value::Block(fn_def.body.clone()));
+        fn_fields.insert(
+            "annot".into(),
+            Value::Struct {
+                ty: "AnnotArgs".into(),
+                fields: HashMap::new(),
+            },
+        );
+        fn_fields.insert("__fn_def__".into(), Value::Decl(Item::Function(fn_def)));
+        let target = Value::Struct {
+            ty: "FnDecl".into(),
+            fields: fn_fields,
         };
+
         let mut interp = Interpreter::new();
         interp.bind("target", target);
 

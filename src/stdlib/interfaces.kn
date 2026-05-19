@@ -1,0 +1,301 @@
+# Kiln stdlib: interface definitions.
+
+interface Try {
+    type Output
+}
+
+enum Option[T] {
+    Some { value: T }
+    None
+}
+
+@builtin
+def None[T]() -> Option[T]
+
+@builtin
+def Some[T](value: T) -> Option[T]
+
+enum Ordering {
+    Less
+    Equal
+    Greater
+}
+
+interface Copy {}
+
+interface Clone {
+    hook clone() -> Self
+}
+
+interface Eq {}
+
+interface PartialEq {
+    hook ==(other: Self) -> bool
+}
+
+interface Hash {
+    hook hash() -> int
+}
+
+interface Ord {
+    hook <=>(other: Self) -> Ordering
+}
+
+interface PartialOrd {
+    hook <(other: Self) -> bool
+}
+
+interface Debug {
+    hook debug_str() -> str
+}
+
+interface Display {
+    hook to_str() -> str
+}
+
+interface Default {
+    @static
+    hook default() -> Self
+}
+
+interface Constructable {
+    @static
+    hook new() -> Self
+}
+
+interface Empty {
+    @static
+    hook empty() -> Self
+}
+
+interface Invertible {
+    hook !() -> Self
+}
+
+interface Normalizeable {
+    hook +() -> Self
+}
+
+interface AddableWith[Rhs] {
+    type Output
+    hook +(rhs: Rhs) -> Output
+}
+
+interface SubtractableWith[Rhs] {
+    type Output
+    hook -(rhs: Rhs) -> Output
+}
+
+interface MultipliableWith[Rhs] {
+    type Output
+    hook *(rhs: Rhs) -> Output
+}
+
+interface DividableWith[Rhs] {
+    type Output
+    hook /(rhs: Rhs) -> Output
+}
+
+interface RemainderableWith[Rhs] {
+    type Output
+    hook %(rhs: Rhs) -> Output
+}
+
+interface EquatableWith[Rhs] {
+    hook ==(rhs: Rhs) -> bool
+}
+
+interface ComparableWith[Rhs] {
+    hook <=>(rhs: Rhs) -> Ordering
+}
+
+interface AddAssignableWith[Rhs] {
+    hook +=(rhs: Rhs) -> void
+}
+
+interface SubtractAssignableWith[Rhs] {
+    hook -=(rhs: Rhs) -> void
+}
+
+interface MultiplyAssignableWith[Rhs] {
+    hook *=(rhs: Rhs) -> void
+}
+
+interface DivideAssignableWith[Rhs] {
+    hook /=(rhs: Rhs) -> void
+}
+
+interface RemainderAssignableWith[Rhs] {
+    hook %=(rhs: Rhs) -> void
+}
+
+interface IndexableWith[Index] {
+    type Output
+    hook [](index: Index) -> Output
+}
+
+interface MutableIndexableWith[Index] {
+    type Output
+    hook []=(index: Index, value: Output) -> void
+}
+
+interface AddAssignable: AddAssignableWith[Self] {
+    hook +=(rhs: Self) -> void
+}
+
+interface SubtractAssignable: SubtractAssignableWith[Self] {
+    hook -=(rhs: Self) -> void
+}
+
+interface MultiplyAssignable: MultiplyAssignableWith[Self] {
+    hook *=(rhs: Self) -> void
+}
+
+interface DivideAssignable: DivideAssignableWith[Self] {
+    hook /=(rhs: Self) -> void
+}
+
+interface RemainderAssignable: RemainderAssignableWith[Self] {
+    hook %=(rhs: Self) -> void
+}
+
+interface Addable: AddableWith[Self, Output=Self] {
+    hook +(rhs: Self) -> Self
+}
+
+interface Subtractable: SubtractableWith[Self, Output=Self] {
+    hook -(rhs: Self) -> Self
+}
+
+interface Multiplicable: MultipliableWith[Self, Output=Self] {
+    hook *(rhs: Self) -> Self
+}
+
+interface Divisible: DividableWith[Self, Output=Self] {
+    hook /(rhs: Self) -> Self
+}
+
+interface Remainder: RemainderableWith[Self, Output=Self] {
+    hook %(rhs: Self) -> Self
+}
+
+interface Negatable {
+    hook -() -> Self
+}
+
+interface Comparable: ComparableWith[Self] {}
+
+interface Zero {
+    @static
+    hook zero() -> Self
+}
+
+interface One {
+    @static
+    hook one() -> Self
+}
+
+interface Abs {
+    hook abs() -> Self
+}
+
+interface Signum {
+    hook signum() -> Self
+}
+
+interface Bitwise {
+    hook &(rhs: Self) -> Self
+    hook |(rhs: Self) -> Self
+    hook ^(rhs: Self) -> Self
+}
+
+interface Semigroup:
+    Addable {}
+
+interface Monoid:
+    Semigroup,
+    Zero {}
+
+interface Group:
+    Monoid,
+    Negatable {}
+
+interface Ring:
+    Group,
+    Multiplicable,
+    One {}
+
+interface Field:
+    Ring,
+    Divisible {}
+
+interface Numeric:
+    Field,
+    Comparable {}
+
+interface Integral:
+    Numeric,
+    Remainder {}
+
+interface Fractional:
+    Numeric {}
+
+interface Callable[Args, Ret] {
+    hook ()(args: Args) -> Ret
+}
+
+interface Iterator {
+    type Item: Copy
+    hook next() -> Option[Item]
+}
+
+interface Iterable {
+    type Item
+    type Iter: Iterator
+    hook iter() -> Iter {}
+}
+
+interface Foldable {}
+
+interface Collection: Iterable {}
+
+interface Sequence:
+    Collection,
+    Indexable {}
+
+interface Predicate[T]: Callable[(T), bool] {}
+
+interface Mapper[T, U]: Callable[(T), U] {}
+
+interface Into[T] {
+    hook into() -> T
+}
+
+interface From[T] {
+    hook from(value: T) -> Self
+}
+
+interface Indexable: IndexableWith[int] {}
+
+interface VecMethods {
+    def pop() -> void {}
+    def is_empty() -> bool {}
+}
+
+export {
+    Try, Option, None, Some, Ordering,
+    Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd,
+    Debug, Display, Default, Constructable, Empty, Invertible, Normalizeable,
+    AddableWith, SubtractableWith, MultipliableWith, DividableWith, RemainderableWith,
+    EquatableWith, ComparableWith,
+    AddAssignableWith, SubtractAssignableWith, MultiplyAssignableWith,
+    DivideAssignableWith, RemainderAssignableWith,
+    IndexableWith, MutableIndexableWith,
+    AddAssignable, SubtractAssignable, MultiplyAssignable, DivideAssignable, RemainderAssignable,
+    Addable, Subtractable, Multiplicable, Divisible, Remainder,
+    Negatable, Comparable,
+    Zero, One, Abs, Signum, Bitwise,
+    Semigroup, Monoid, Group, Ring, Field, Numeric, Integral, Fractional,
+    Callable, Iterator, Iterable, Foldable, Collection, Sequence,
+    Predicate, Mapper, Into, From, Indexable, VecMethods
+}

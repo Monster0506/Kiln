@@ -84,6 +84,16 @@ pub enum AnalysisError {
 
     #[error("{span}: `{name}` is declared but never implemented")]
     MissingImplementation { name: String, span: Span },
+
+    #[error("{span}: module `{path}` not found")]
+    ModuleNotFound { path: String, span: Span },
+
+    #[error("{span}: symbol `{symbol}` is not exported by module `{module}`")]
+    SymbolNotExported {
+        symbol: String,
+        module: String,
+        span: Span,
+    },
 }
 
 impl AnalysisError {
@@ -107,6 +117,8 @@ impl AnalysisError {
             AnalysisError::DuplicateSignature { .. } => "E016",
             AnalysisError::BoundsOnImplementation { .. } => "E017",
             AnalysisError::MissingImplementation { .. } => "E018",
+            AnalysisError::ModuleNotFound { .. } => "E019",
+            AnalysisError::SymbolNotExported { .. } => "E020",
         }
     }
 
@@ -130,6 +142,8 @@ impl AnalysisError {
             AnalysisError::DuplicateSignature { .. } => "name error",
             AnalysisError::BoundsOnImplementation { .. } => "declaration error",
             AnalysisError::MissingImplementation { .. } => "declaration error",
+            AnalysisError::ModuleNotFound { .. } => "module error",
+            AnalysisError::SymbolNotExported { .. } => "module error",
         }
     }
 
@@ -193,6 +207,12 @@ impl AnalysisError {
             AnalysisError::MissingImplementation { name, .. } => {
                 format!("`{name}` is declared but never implemented")
             }
+            AnalysisError::ModuleNotFound { path, .. } => {
+                format!("module `{path}` not found")
+            }
+            AnalysisError::SymbolNotExported { symbol, module, .. } => {
+                format!("symbol `{symbol}` is not exported by module `{module}`")
+            }
         }
     }
 
@@ -224,6 +244,8 @@ impl AnalysisError {
             AnalysisError::DuplicateSignature { span, .. } => *span,
             AnalysisError::BoundsOnImplementation { span, .. } => *span,
             AnalysisError::MissingImplementation { span, .. } => *span,
+            AnalysisError::ModuleNotFound { span, .. } => *span,
+            AnalysisError::SymbolNotExported { span, .. } => *span,
         }
     }
 }

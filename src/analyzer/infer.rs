@@ -543,7 +543,13 @@ pub fn infer_typed_expr(
                 stmts: typed_stmts,
                 span: body.span,
             };
-            mk(TypedExprKind::Gen { body: tb }, Ty::Unknown, span)
+            let block_ty = match env.lookup("Block") {
+                Some(crate::analyzer::env::Symbol::Type { id, .. }) => {
+                    Ty::Named(id.clone(), "Block".into(), vec![])
+                }
+                _ => Ty::Unknown,
+            };
+            mk(TypedExprKind::Gen { body: tb }, block_ty, span)
         }
 
         Expr::Array(elems, _) => {

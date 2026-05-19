@@ -585,3 +585,13 @@ fn parse_iteration_enum_iter_basic() {
 fn parse_iteration_enum_iter_use() {
     parse_file("examples/iteration/enum_iter_use.kn");
 }
+
+#[test]
+fn parse_annotations_gen_basic() {
+    parse_file("examples/annotations/gen_basic.kn");
+}
+
+#[test]
+fn parse_annotations_gen_processor() {
+    parse_file("examples/annotations/gen_processor.kn");
+}

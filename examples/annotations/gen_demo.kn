@@ -1,0 +1,65 @@
+# gen_demo.kn -- observable proof that gen/<<>> processors execute and transform
+#
+# @Logged uses gen { } and <<target.body>> to wrap every annotated function
+# with an entry log line and an exit log line.
+#
+# Expected output when `kiln run examples/annotations/gen_demo.kn`:
+#
+#   [LOG] entering function
+#   hello, world
+#   [LOG] done
+#   [LOG] entering function    <- count_down(2)
+#   [LOG] entering function    <- count_down(1) via recursion
+#   [LOG] entering function    <- count_down(0) via recursion
+#   [LOG] done                 <- count_down(1) returns normally (0 exits early)
+#   [LOG] done                 <- count_down(2) returns normally
+#   3
+#
+# The "[LOG]" lines are injected entirely by the processor -- they do not
+# exist anywhere in the source below.  If processors did not run, the output
+# would be only:
+#
+#   hello, world
+#   3
+#
+# Usage: kiln run examples/annotations/gen_demo.kn
+
+# ---- @Logged: wraps body with entry and exit log lines ----------------------
+
+annotation Logged { }
+
+processor Logged(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    new_body: Block = gen {
+        println("[LOG] entering function")
+        <<target.body>>
+        println("[LOG] done")
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+# ---- Functions annotated with @Logged ---------------------------------------
+#
+# Neither function has any "[LOG]" output in its body.  Those lines come
+# entirely from the processor transformation at compile time.
+
+@Logged
+def greet(name: str) -> void {
+    println("hello, {name}")
+}
+
+@Logged
+def count_down(n: int) -> void {
+    if n <= 0 {
+        return
+    }
+    count_down(n - 1)
+}
+
+# ---- main -------------------------------------------------------------------
+
+def main() -> void {
+    greet("world")
+    count_down(2)
+    println(3)
+}

@@ -1109,3 +1109,81 @@ def main() -> void {}
         "? on int (no Try impl) must produce an error"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Annotation processors and gen blocks
+// ---------------------------------------------------------------------------
+
+#[test]
+fn annotations_gen_basic_analyzes_clean() {
+    let errs = analyze_file("examples/annotations/gen_basic.kn");
+    assert!(
+        errs.is_empty(),
+        "gen_basic.kn must analyze without errors: {errs:?}"
+    );
+}
+
+#[test]
+fn annotations_gen_processor_analyzes_clean() {
+    let errs = analyze_file("examples/annotations/gen_processor.kn");
+    assert!(
+        errs.is_empty(),
+        "gen_processor.kn must analyze without errors: {errs:?}"
+    );
+}
+
+#[test]
+fn processor_body_with_gen_block_analyzes_clean() {
+    let errs = analyze_file("examples/annot_processors.kn");
+    assert!(
+        errs.is_empty(),
+        "annot_processors.kn must analyze without errors: {errs:?}"
+    );
+}
+
+#[test]
+fn gen_block_example_analyzes_clean() {
+    let errs = analyze_file("examples/annot_gen.kn");
+    assert!(
+        errs.is_empty(),
+        "annot_gen.kn must analyze without errors: {errs:?}"
+    );
+}
+
+#[test]
+fn gen_block_result_type_is_block() {
+    let errs = run(r#"
+annotation Wrap { }
+processor Wrap(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    b: Block = gen { }
+    return (None, Vec.new())
+}
+@Wrap
+def foo() -> void { }
+def main() -> void { }
+"#);
+    assert!(
+        errs.is_empty(),
+        "gen block assigned to Block-typed variable must analyze clean: {errs:?}"
+    );
+}
+
+#[test]
+fn gen_splice_of_target_body_analyzes_clean() {
+    let errs = run(r#"
+annotation Log { }
+processor Log(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    b: Block = gen {
+        <<target.body>>
+    }
+    return (None, Vec.new())
+}
+@Log
+def bar() -> void { }
+def main() -> void { }
+"#);
+    assert!(
+        errs.is_empty(),
+        "<<target.body>> splice must analyze clean: {errs:?}"
+    );
+}

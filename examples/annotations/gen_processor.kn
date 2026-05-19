@@ -1,0 +1,81 @@
+# gen_processor.kn -- processors that transform function bodies with gen blocks
+#
+# Demonstrates:
+#   - gen { } producing a Block from quasi-quoted code
+#   - <<target.body>> splicing the original body into a new context
+#   - <<target.annot.field>> splicing annotation argument values into the body
+#   - Multiple stacked annotations: each processor runs in declaration order
+#
+# Usage: kiln run examples/annotations/gen_processor.kn
+
+# ---- Retry annotation and processor -----------------------------------------
+#
+# @Retry replaces the function body with a loop that retries on exception up
+# to `count` times.
+
+annotation Retry {
+    count: int = 3
+}
+
+processor Retry(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    new_body: Block = gen {
+        attempts: int = 0
+        while attempts < <<target.annot.count>> {
+            try {
+                <<target.body>>
+                return
+            } except Exception as e {
+                attempts = attempts + 1
+                if attempts == <<target.annot.count>> {
+                    raise e
+                }
+            }
+        }
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+# ---- LogEnter annotation and processor --------------------------------------
+#
+# @LogEnter prepends a log statement before the original body.
+
+annotation LogEnter {
+    label: str = "info"
+}
+
+processor LogEnter(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    new_body: Block = gen {
+        entered: int = 1
+        <<target.body>>
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+# ---- Functions using the annotations ----------------------------------------
+
+@Retry { count: 5 }
+def fetch(url: str) -> str {
+    return "response"
+}
+
+@LogEnter { label: "debug" }
+def process(data: str) -> str {
+    return data
+}
+
+@Retry { count: 2 }
+@LogEnter
+def upload(payload: str) -> bool {
+    return true
+}
+
+# ---- main -------------------------------------------------------------------
+
+def main() -> void {
+    result: str = fetch("example.com")
+    println(result)
+    println(process("hello"))
+    println(upload("data"))
+}

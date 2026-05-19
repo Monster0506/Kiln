@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use kiln_compiler::analyzer::analyze;
-use kiln_compiler::annotations::{default_registry, run_processors};
+use kiln_compiler::annotations::{default_registry, run_processors, run_user_processors};
 use kiln_compiler::codegen::{compile::compile, context::CodegenContext, emit};
 use kiln_compiler::diagnostics::SourceMap;
 use kiln_compiler::lexer::Lexer;
@@ -102,6 +102,7 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
 
     let registry = default_registry();
     run_processors(&mut ast, &registry);
+    run_user_processors(&mut ast, &registry);
 
     let typed_file = analyze(&ast).unwrap_or_else(|errs| {
         emit_analysis_errors(&errs, &map, &src, &path);
@@ -220,6 +221,7 @@ fn main() {
 
             let registry = default_registry();
             run_processors(&mut ast, &registry);
+            run_user_processors(&mut ast, &registry);
 
             match kiln_compiler::analyzer::analyze(&ast) {
                 Ok(_) => println!("ok"),
@@ -262,6 +264,7 @@ fn main() {
                 });
                 let registry = default_registry();
                 run_processors(&mut ast, &registry);
+                run_user_processors(&mut ast, &registry);
                 let typed_file = analyze(&ast).unwrap_or_else(|errs| {
                     emit_analysis_errors(&errs, &map, &src, &path);
                     std::process::exit(1);
@@ -328,6 +331,7 @@ fn main() {
             });
             let registry = default_registry();
             run_processors(&mut ast, &registry);
+            run_user_processors(&mut ast, &registry);
             inject_harness(&mut ast);
             let typed_file = analyze(&ast).unwrap_or_else(|errs| {
                 emit_analysis_errors(&errs, &map, &src, &path);

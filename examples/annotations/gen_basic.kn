@@ -1,0 +1,66 @@
+# gen_basic.kn -- gen blocks and <<>> splices
+#
+# gen { } produces a Block value (a sequence of Kiln statements as data).
+# <<expr>> inside a gen block splices a runtime value from the surrounding
+# processor context into the generated block.  The << token is always two
+# characters, unambiguous from the < comparison operator.
+#
+# Usage: kiln run examples/annotations/gen_basic.kn
+
+# ---- Noop processor: keeps the annotated function unchanged ------------------
+
+annotation Noop { }
+
+processor Noop(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    return (None, Vec.new())
+}
+
+@Noop
+def greet(name: str) -> void {
+    println("hello, {name}!")
+}
+
+# ---- Wrap processor: re-wraps the body via gen/splice (identity transform) ---
+
+annotation Wrap { }
+
+processor Wrap(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    new_body: Block = gen {
+        <<target.body>>
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+@Wrap
+def compute(x: int) -> int {
+    return x * 2
+}
+
+# ---- Prepend processor: inserts a statement before the original body ---------
+
+annotation Instrument { }
+mut called: int = 0
+processor Instrument(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    new_body: Block = gen {
+        called += 1
+        <<target.body>>
+    }
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+@Instrument
+def add(a: int, b: int) -> int {
+    return a + b
+}
+
+# ---- main -------------------------------------------------------------------
+
+def main() -> void {
+    greet("world")
+    println(compute(21))
+    println(add(3, 4))
+    println(add(7,add(3,4)))
+    println("Called with instrument: {called}")
+}

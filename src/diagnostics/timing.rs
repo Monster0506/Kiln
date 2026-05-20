@@ -7,6 +7,7 @@ pub struct ProcessorRun {
     pub duration: Duration,
 }
 
+#[derive(Default)]
 pub struct ItemCounts {
     pub functions: usize,
     pub structs: usize,
@@ -14,17 +15,7 @@ pub struct ItemCounts {
     pub processors: usize,
 }
 
-impl Default for ItemCounts {
-    fn default() -> Self {
-        Self {
-            functions: 0,
-            structs: 0,
-            enums: 0,
-            processors: 0,
-        }
-    }
-}
-
+#[derive(Default)]
 pub struct BuildStats {
     pub source_file: String,
     pub source_lines: usize,
@@ -41,29 +32,15 @@ pub struct BuildStats {
     pub error_count: usize,
 }
 
-impl Default for BuildStats {
-    fn default() -> Self {
-        Self {
-            source_file: String::new(),
-            source_lines: 0,
-            token_count: 0,
-            ast_node_count: 0,
-            item_counts: ItemCounts::default(),
-            processor_runs: vec![],
-            fn_codegen_times: vec![],
-            object_bytes: 0,
-            object_path: String::new(),
-            binary_bytes: 0,
-            binary_path: String::new(),
-            warning_count: 0,
-            error_count: 0,
-        }
-    }
-}
-
 pub struct PhaseTimer {
     phases: Vec<(String, Duration)>,
     current: Option<(String, Instant)>,
+}
+
+impl Default for PhaseTimer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PhaseTimer {

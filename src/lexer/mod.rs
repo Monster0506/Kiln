@@ -1,3 +1,4 @@
+#[allow(clippy::module_inception)]
 mod lexer;
 mod mode;
 mod normal;

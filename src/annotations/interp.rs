@@ -9,6 +9,7 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Value {
     Int(i64),
     Float(f64),
@@ -41,6 +42,12 @@ enum StmtOutcome {
     Break,
     Value(Value),
     Void,
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Interpreter {

@@ -511,6 +511,7 @@ fn lower_do_while(
     builder.seal_block(exit_bb);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_for(
     binding: &str,
     binding_ty: &Ty,

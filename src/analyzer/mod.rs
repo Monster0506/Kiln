@@ -140,7 +140,7 @@ pub fn analyze_with_base(
         Ok(typed) if import_errors.is_empty() => Ok(typed),
         Ok(_) => Err(import_errors),
         Err(mut errs) => {
-            import_errors.extend(errs.drain(..));
+            import_errors.append(&mut errs);
             Err(import_errors)
         }
     }

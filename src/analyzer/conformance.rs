@@ -417,6 +417,7 @@ fn collect_all_methods_for_type(type_name: &str, all_impls: &[ImplBlock]) -> Vec
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_against_iface(
     type_name: &str,
     fields: &[Field],

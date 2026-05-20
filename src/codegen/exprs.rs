@@ -30,6 +30,7 @@ pub struct LowerCtx<'a> {
     pub return_clif_type: Option<Type>,
     pub defined_thunks: &'a mut HashSet<String>,
     /// Bodies of @inline functions available for expansion at call sites.
+    #[allow(clippy::type_complexity)]
     pub inline_bodies: &'a HashMap<String, (Vec<(String, Ty)>, TypedBlock)>,
 }
 

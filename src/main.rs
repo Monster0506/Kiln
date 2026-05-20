@@ -34,6 +34,9 @@ enum Command {
     Check {
         /// Path to the .kn file
         file: PathBuf,
+        /// Re-run check on every file change
+        #[arg(long)]
+        watch: bool,
     },
     /// Compile a source file to a native executable (or object with --no-link)
     Build {
@@ -231,6 +234,160 @@ fn emit_error_no_span(kind: &str, code: &str, msg: &str) {
     eprintln!("error[{code}]: {kind}: {msg}");
 }
 
+pub enum CheckOutcome {
+    Ok,
+    Errors(Vec<String>),
+}
+
+fn run_check(file: &PathBuf) -> CheckOutcome {
+    let path = file.to_string_lossy().to_string();
+    let src = match fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(e) => return CheckOutcome::Errors(vec![format!("error reading {path}: {e}")]),
+    };
+    let map = SourceMap::new(&src);
+
+    let tokens = match Lexer::new(&src).tokenize() {
+        Ok(t) => t,
+        Err(errors) => {
+            let msgs = errors
+                .iter()
+                .map(|e| {
+                    let snippet = map.render_diagnostic(&src, e.span(), &path);
+                    format!(
+                        "error[{}]: {}: {}\n{}",
+                        e.code(),
+                        e.kind(),
+                        e.message(),
+                        snippet
+                    )
+                })
+                .collect();
+            return CheckOutcome::Errors(msgs);
+        }
+    };
+
+    let mut ast = match KilnParser::new(tokens).parse_file() {
+        Ok(a) => a,
+        Err(e) => {
+            let msg = e.message();
+            let formatted = if let Some(span) = e.span() {
+                let snippet = map.render_diagnostic(&src, span, &path);
+                format!("error[{}]: {}: {}\n{}", e.code(), e.kind(), msg, snippet)
+            } else {
+                format!("error[{}]: {}: {}", e.code(), e.kind(), msg)
+            };
+            return CheckOutcome::Errors(vec![formatted]);
+        }
+    };
+
+    let registry = default_registry();
+    run_processors(&mut ast, &registry);
+    run_user_processors(&mut ast, &registry);
+
+    let base_dir = file
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    match analyze_with_base(&ast, &base_dir) {
+        Ok(_) => CheckOutcome::Ok,
+        Err(errs) => {
+            let msgs = errs
+                .iter()
+                .map(|e| {
+                    let snippet = map.render_diagnostic(&src, e.span(), &path);
+                    format!(
+                        "error[{}]: {}: {}\n{}",
+                        e.code(),
+                        e.kind(),
+                        e.message(),
+                        snippet
+                    )
+                })
+                .collect();
+            CheckOutcome::Errors(msgs)
+        }
+    }
+}
+
+fn format_watch_result(outcome: &CheckOutcome, time: &str) -> String {
+    match outcome {
+        CheckOutcome::Ok => format!("[ok] {time}"),
+        CheckOutcome::Errors(errs) => {
+            let first = errs
+                .first()
+                .map(|s| s.lines().next().unwrap_or(""))
+                .unwrap_or("error");
+            format!("[error] {time}  {first}")
+        }
+    }
+}
+
+fn current_time_str() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let h = (secs / 3600) % 24;
+    let m = (secs / 60) % 60;
+    let s = secs % 60;
+    format!("{h:02}:{m:02}:{s:02}")
+}
+
+fn run_watch(file: &PathBuf) {
+    use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let path = file.to_string_lossy().to_string();
+    println!("watching {path}");
+
+    let outcome = run_check(file);
+    println!("{}", format_watch_result(&outcome, &current_time_str()));
+    if let CheckOutcome::Errors(ref errs) = outcome {
+        for e in errs {
+            println!("{e}");
+        }
+    }
+
+    let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
+    let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap_or_else(|e| {
+        eprintln!("watcher setup error: {e}");
+        std::process::exit(1);
+    });
+    watcher
+        .watch(file.as_ref(), RecursiveMode::NonRecursive)
+        .unwrap_or_else(|e| {
+            eprintln!("watch error: {e}");
+            std::process::exit(1);
+        });
+
+    while rx.recv().is_ok() {
+        // Debounce: drain remaining events within 50ms.
+        let deadline = std::time::Instant::now() + Duration::from_millis(50);
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match rx.recv_timeout(remaining) {
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+
+        let outcome = run_check(file);
+        println!("{}", format_watch_result(&outcome, &current_time_str()));
+        if let CheckOutcome::Errors(ref errs) = outcome {
+            for e in errs {
+                println!("{e}");
+            }
+        }
+    }
+}
+
 fn emit_analysis_errors(
     errs: &[kiln_compiler::analyzer::AnalysisError],
     map: &SourceMap,
@@ -248,6 +405,49 @@ fn emit_analysis_errors(
                 eprintln!("note: {note}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_check_valid_file_returns_ok() {
+        let result = run_check(&PathBuf::from("examples/check_valid.kn"));
+        assert!(
+            matches!(result, CheckOutcome::Ok),
+            "expected ok for valid file"
+        );
+    }
+
+    #[test]
+    fn run_check_undefined_name_returns_errors() {
+        let result = run_check(&PathBuf::from("examples/check_undefined.kn"));
+        assert!(
+            matches!(result, CheckOutcome::Errors(_)),
+            "expected errors for file with undefined names"
+        );
+    }
+
+    #[test]
+    fn format_watch_result_ok_produces_ok_line() {
+        let s = format_watch_result(&CheckOutcome::Ok, "14:02:01");
+        assert_eq!(s, "[ok] 14:02:01");
+    }
+
+    #[test]
+    fn format_watch_result_error_includes_timestamp_and_first_error() {
+        let errors = vec!["error[E001]: UndefinedName: ghost_value".to_string()];
+        let s = format_watch_result(&CheckOutcome::Errors(errors), "14:02:09");
+        assert!(s.starts_with("[error] 14:02:09"), "prefix wrong: {s}");
+        assert!(s.contains("E001"), "missing error code: {s}");
+    }
+
+    #[test]
+    fn format_watch_result_error_with_no_errors_vec_shows_unknown() {
+        let s = format_watch_result(&CheckOutcome::Errors(vec![]), "00:00:00");
+        assert!(s.starts_with("[error]"), "should still be error: {s}");
     }
 }
 
@@ -276,46 +476,18 @@ fn main() {
             }
         }
 
-        Command::Check { file } => {
-            let path = file.to_string_lossy();
-            let src = fs::read_to_string(&file).unwrap_or_else(|e| {
-                eprintln!("error reading {path}: {e}");
-                std::process::exit(1);
-            });
-            let map = SourceMap::new(&src);
-
-            let tokens = Lexer::new(&src).tokenize().unwrap_or_else(|errors| {
-                for e in &errors {
-                    let snippet = map.render_diagnostic(&src, e.span(), &path);
-                    emit_error(e.kind(), e.code(), &e.message(), &snippet);
-                }
-                std::process::exit(1);
-            });
-
-            let mut ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
-                let msg = e.message();
-                if let Some(span) = e.span() {
-                    let snippet = map.render_diagnostic(&src, span, &path);
-                    emit_error(e.kind(), e.code(), &msg, &snippet);
-                } else {
-                    emit_error_no_span(e.kind(), e.code(), &msg);
-                }
-                std::process::exit(1);
-            });
-
-            let registry = default_registry();
-            run_processors(&mut ast, &registry);
-            run_user_processors(&mut ast, &registry);
-
-            let base_dir = file
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| std::path::PathBuf::from("."));
-            match analyze_with_base(&ast, &base_dir) {
-                Ok(_) => println!("ok"),
-                Err(errs) => {
-                    emit_analysis_errors(&errs, &map, &src, &path);
-                    std::process::exit(1);
+        Command::Check { file, watch } => {
+            if watch {
+                run_watch(&file);
+            } else {
+                match run_check(&file) {
+                    CheckOutcome::Ok => println!("ok"),
+                    CheckOutcome::Errors(errs) => {
+                        for e in &errs {
+                            eprintln!("{e}");
+                        }
+                        std::process::exit(1);
+                    }
                 }
             }
         }

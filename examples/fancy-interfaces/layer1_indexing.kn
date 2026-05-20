@@ -19,23 +19,5 @@ impl MutableIndexableWith[int] for IntArray {
     }
 }
 
-# ---- String-keyed map wrapper ------------------------------------------------
-
-struct StrMap {
-    data: Map[str, str]
-}
-
-impl IndexableWith[str] for StrMap {
-    hook [](index: str) -> str {
-        return self.data.get(index)
-    }
-}
-
-impl MutableIndexableWith[str] for StrMap {
-    hook []=(index: str, value: str) {
-        self.data.set(index, value)
-    }
-}
-
 def main() -> void {
 }

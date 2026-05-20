@@ -152,7 +152,11 @@ struct FnJob {
 }
 
 /// Compile a typed Kiln source file into `cgx.module`.
-pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<(), String> {
+pub fn compile(
+    typed_file_in: &TypedFile,
+    cgx: &mut CodegenContext,
+    verbose: bool,
+) -> Result<Vec<(String, std::time::Duration)>, String> {
     let mono_file = crate::codegen::mono::monomorphize(typed_file_in.clone());
     let typed_file = &mono_file;
     declare_alloc_fns(&mut cgx.module);
@@ -476,11 +480,17 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
     // Pre-seed defined_ids so @builtin wrappers for runtime imports are never compiled.
     let mut defined_ids: HashSet<FuncId> = runtime_ids.values().copied().collect();
     let mut defined_thunks: HashSet<String> = HashSet::new();
+    let mut fn_codegen_times: Vec<(String, std::time::Duration)> = vec![];
 
     for job in fn_jobs {
         if !defined_ids.insert(job.func_id) {
             continue;
         }
+        let fn_start = if verbose {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
         let mut ctx = cgx.module.make_context();
 
         if job.self_type.is_some() {
@@ -581,7 +591,11 @@ pub fn compile(typed_file_in: &TypedFile, cgx: &mut CodegenContext) -> Result<()
         cgx.module
             .define_function(job.func_id, &mut ctx)
             .map_err(|e| format!("codegen error in '{}': {:?}", job.name, e))?;
+
+        if let Some(t) = fn_start {
+            fn_codegen_times.push((job.name.clone(), t.elapsed()));
+        }
     }
 
-    Ok(())
+    Ok(fn_codegen_times)
 }

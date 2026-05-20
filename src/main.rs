@@ -2,8 +2,10 @@ use clap::{Parser, Subcommand};
 use kiln_compiler::analyzer::analyze_with_base;
 use kiln_compiler::annotations::{default_registry, run_processors, run_user_processors};
 use kiln_compiler::codegen::{compile::compile, context::CodegenContext, emit};
+use kiln_compiler::diagnostics::timing::{BuildStats, ItemCounts, PhaseTimer};
 use kiln_compiler::diagnostics::SourceMap;
 use kiln_compiler::lexer::Lexer;
+use kiln_compiler::parser::ast::Item;
 use kiln_compiler::parser::Parser as KilnParser;
 use kiln_compiler::test_harness::inject_harness;
 use std::fs;
@@ -43,7 +45,10 @@ enum Command {
         /// Emit an object file only; do not link
         #[arg(long)]
         no_link: bool,
-        /// Show linker stderr output
+        /// Print phase timing table to stderr
+        #[arg(long)]
+        timing: bool,
+        /// Print full timing detail to stderr (implies --timing)
         #[arg(long)]
         verbose: bool,
     },
@@ -51,7 +56,10 @@ enum Command {
     Run {
         /// Path to the .kn source file
         file: PathBuf,
-        /// Show linker stderr output
+        /// Print phase timing table to stderr
+        #[arg(long)]
+        timing: bool,
+        /// Print full timing detail to stderr (implies --timing)
         #[arg(long)]
         verbose: bool,
     },
@@ -59,13 +67,24 @@ enum Command {
     Test {
         /// Path to the .kn source file
         file: PathBuf,
-        /// Show linker stderr output
+        /// Print phase timing table to stderr
+        #[arg(long)]
+        timing: bool,
+        /// Print full timing detail to stderr (implies --timing)
         #[arg(long)]
         verbose: bool,
     },
 }
 
-fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf {
+struct BuildOptions {
+    timing: bool,
+    verbose: bool,
+}
+
+fn build_exe(file: &PathBuf, output: Option<PathBuf>, opts: &BuildOptions) -> PathBuf {
+    let timing = opts.timing || opts.verbose;
+    let verbose = opts.verbose;
+
     let path = file.to_string_lossy().to_string();
     let src = fs::read_to_string(file).unwrap_or_else(|e| {
         eprintln!("error reading {path}: {e}");
@@ -73,6 +92,14 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
     });
     let map = SourceMap::new(&src);
 
+    let mut timer = PhaseTimer::new();
+    let mut stats = BuildStats {
+        source_file: path.clone(),
+        source_lines: src.lines().count(),
+        ..BuildStats::default()
+    };
+
+    timer.start("lex");
     let tokens = Lexer::new(&src).tokenize().unwrap_or_else(|errors| {
         for e in &errors {
             let snippet = map.render_diagnostic(&src, e.span(), &path);
@@ -80,7 +107,10 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
         }
         std::process::exit(1);
     });
+    timer.stop();
+    stats.token_count = tokens.len();
 
+    timer.start("parse");
     let mut ast = KilnParser::new(tokens).parse_file().unwrap_or_else(|e| {
         let msg = e.message();
         if let Some(span) = e.span() {
@@ -91,6 +121,9 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
         }
         std::process::exit(1);
     });
+    timer.stop();
+    stats.ast_node_count = count_ast_nodes(&ast);
+    stats.item_counts = count_item_kinds(&ast);
 
     // Strip @test-annotated functions from production builds.
     ast.items.retain(|item| {
@@ -101,32 +134,47 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
     });
 
     let registry = default_registry();
+    timer.start("processors");
     run_processors(&mut ast, &registry);
-    run_user_processors(&mut ast, &registry);
+    let proc_runs = run_user_processors(&mut ast, &registry);
+    timer.stop();
+    stats.processor_runs = proc_runs;
 
     let base_dir = file
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    timer.start("analyze");
     let typed_file = analyze_with_base(&ast, &base_dir).unwrap_or_else(|errs| {
         emit_analysis_errors(&errs, &map, &src, &path);
         std::process::exit(1);
     });
+    timer.stop();
 
     let module_name = file
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("module");
     let mut cgx = CodegenContext::new(module_name);
-    compile(&typed_file, &mut cgx).unwrap_or_else(|e| {
+
+    timer.start("codegen");
+    let fn_times = compile(&typed_file, &mut cgx, verbose).unwrap_or_else(|e| {
         eprintln!("codegen error: {e}");
         std::process::exit(1);
     });
+    timer.stop();
+    if verbose {
+        stats.fn_codegen_times = fn_times;
+    }
 
+    timer.start("emit");
     let obj_bytes = emit::emit_object(cgx).unwrap_or_else(|e| {
         eprintln!("emit error: {e}");
         std::process::exit(1);
     });
+    timer.stop();
+    stats.object_bytes = obj_bytes.len();
 
     let exe_ext = if cfg!(windows) { "exe" } else { "" };
     let exe_path = output.unwrap_or_else(|| file.with_extension(exe_ext));
@@ -134,12 +182,44 @@ fn build_exe(file: &PathBuf, output: Option<PathBuf>, verbose: bool) -> PathBuf 
         "kiln_{}.o",
         file.file_stem().and_then(|s| s.to_str()).unwrap_or("out")
     ));
-    emit::link_executable(&obj_bytes, &tmp_obj, &exe_path, verbose).unwrap_or_else(|e| {
+
+    timer.start("link");
+    emit::link_executable(&obj_bytes, &tmp_obj, &exe_path, false).unwrap_or_else(|e| {
         eprintln!("link error: {e}");
         std::process::exit(1);
     });
+    timer.stop();
     let _ = fs::remove_file(&tmp_obj);
+
+    if let Ok(meta) = fs::metadata(&exe_path) {
+        stats.binary_bytes = meta.len() as usize;
+    }
+    stats.object_path = tmp_obj.to_string_lossy().to_string();
+    stats.binary_path = exe_path.to_string_lossy().to_string();
+
+    if timing {
+        timer.report(&stats, verbose, &mut std::io::stderr());
+    }
+
     exe_path
+}
+
+fn count_ast_nodes(ast: &kiln_compiler::parser::ast::SourceFile) -> usize {
+    ast.items.len()
+}
+
+fn count_item_kinds(ast: &kiln_compiler::parser::ast::SourceFile) -> ItemCounts {
+    let mut c = ItemCounts::default();
+    for item in &ast.items {
+        match item {
+            Item::Function(_) => c.functions += 1,
+            Item::Struct(_) => c.structs += 1,
+            Item::Enum(_) => c.enums += 1,
+            Item::ProcessorDef(_) => c.processors += 1,
+            _ => {}
+        }
+    }
+    c
 }
 
 fn emit_error(kind: &str, code: &str, msg: &str, snippet: &str) {
@@ -244,8 +324,10 @@ fn main() {
             file,
             output,
             no_link,
+            timing,
             verbose,
         } => {
+            let opts = BuildOptions { timing, verbose };
             if no_link {
                 let path = file.to_string_lossy().to_string();
                 let src = fs::read_to_string(&file).unwrap_or_else(|e| {
@@ -286,7 +368,7 @@ fn main() {
                     .and_then(|s| s.to_str())
                     .unwrap_or("module");
                 let mut cgx = CodegenContext::new(module_name);
-                compile(&typed_file, &mut cgx).unwrap_or_else(|e| {
+                compile(&typed_file, &mut cgx, opts.verbose).unwrap_or_else(|e| {
                     eprintln!("codegen error: {e}");
                     std::process::exit(1);
                 });
@@ -301,13 +383,18 @@ fn main() {
                 });
                 println!("built {}", obj_path.display());
             } else {
-                let exe_path = build_exe(&file, output, verbose);
+                let exe_path = build_exe(&file, output, &opts);
                 println!("built {}", exe_path.display());
             }
         }
 
-        Command::Run { file, verbose } => {
-            let exe_path = build_exe(&file, None, verbose);
+        Command::Run {
+            file,
+            timing,
+            verbose,
+        } => {
+            let opts = BuildOptions { timing, verbose };
+            let exe_path = build_exe(&file, None, &opts);
             let status = std::process::Command::new(&exe_path)
                 .status()
                 .unwrap_or_else(|e| {
@@ -317,7 +404,12 @@ fn main() {
             std::process::exit(status.code().unwrap_or(0));
         }
 
-        Command::Test { file, verbose } => {
+        Command::Test {
+            file,
+            timing,
+            verbose,
+        } => {
+            let opts = BuildOptions { timing, verbose };
             let path = file.to_string_lossy().to_string();
             let src = fs::read_to_string(&file).unwrap_or_else(|e| {
                 eprintln!("error reading {path}: {e}");
@@ -358,7 +450,7 @@ fn main() {
                 .and_then(|s| s.to_str())
                 .unwrap_or("module");
             let mut cgx = CodegenContext::new(module_name);
-            compile(&typed_file, &mut cgx).unwrap_or_else(|e| {
+            compile(&typed_file, &mut cgx, opts.verbose).unwrap_or_else(|e| {
                 eprintln!("codegen error: {e}");
                 std::process::exit(1);
             });
@@ -374,7 +466,7 @@ fn main() {
                 "kiln_test_{}.o",
                 file.file_stem().and_then(|s| s.to_str()).unwrap_or("out")
             ));
-            emit::link_executable(&obj_bytes, &tmp_obj, &exe_path, verbose).unwrap_or_else(|e| {
+            emit::link_executable(&obj_bytes, &tmp_obj, &exe_path, false).unwrap_or_else(|e| {
                 eprintln!("link error: {e}");
                 std::process::exit(1);
             });

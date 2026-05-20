@@ -3,8 +3,10 @@ pub mod builtins;
 pub mod interp;
 
 use crate::annotations::api::{AnnotationArgs, AnnotationTarget};
+use crate::diagnostics::timing::ProcessorRun;
 use crate::parser::ast::{ImplBlock, Item, ProcessorDef, SourceFile, TypeExpr};
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 type ProcessorFn = Box<dyn Fn(AnnotationTarget, AnnotationArgs) -> Vec<Item> + Send + Sync>;
 
@@ -85,7 +87,11 @@ pub fn run_processors(source: &mut SourceFile, registry: &ProcessorRegistry) {
 /// Run user-defined `processor` bodies (written in Kiln) over each annotated item.
 /// Processors are looked up by annotation name from the `ProcessorDef` items in `source`.
 /// Results (replacements and new items) are applied the same way as `run_processors`.
-pub fn run_user_processors(source: &mut SourceFile, _registry: &ProcessorRegistry) {
+/// Returns per-processor timing records for use with `BuildStats`.
+pub fn run_user_processors(
+    source: &mut SourceFile,
+    _registry: &ProcessorRegistry,
+) -> Vec<ProcessorRun> {
     // Collect processor defs by annotation name.
     let procs: Vec<ProcessorDef> = source
         .items
@@ -100,10 +106,13 @@ pub fn run_user_processors(source: &mut SourceFile, _registry: &ProcessorRegistr
         .collect();
 
     if procs.is_empty() {
-        return;
+        return vec![];
     }
 
     let mut new_items: Vec<Item> = vec![];
+    // Track (item_count, total_duration) per processor name, in insertion order.
+    let mut proc_order: Vec<String> = vec![];
+    let mut proc_stats: HashMap<String, (usize, std::time::Duration)> = HashMap::new();
 
     // Process each item's annotations in declaration order, chaining outputs:
     // each processor in a stack sees the output of the previous one.
@@ -128,14 +137,23 @@ pub fn run_user_processors(source: &mut SourceFile, _registry: &ProcessorRegistr
                 _ => continue,
             };
 
-            if let Some((replacement, extras)) =
-                interp::Interpreter::run_processor(&fn_def, &proc, &ann.args)
-            {
+            let t0 = Instant::now();
+            let result = interp::Interpreter::run_processor(&fn_def, &proc, &ann.args);
+            let elapsed = t0.elapsed();
+
+            if let Some((replacement, extras)) = result {
                 if let Some(rep) = replacement {
                     source.items[idx] = rep;
                 }
                 new_items.extend(extras);
             }
+
+            let entry = proc_stats.entry(ann.name.clone()).or_insert_with(|| {
+                proc_order.push(ann.name.clone());
+                (0, std::time::Duration::ZERO)
+            });
+            entry.0 += 1;
+            entry.1 += elapsed;
         }
     }
 
@@ -162,6 +180,18 @@ pub fn run_user_processors(source: &mut SourceFile, _registry: &ProcessorRegistr
             source.items.push(item);
         }
     }
+
+    proc_order
+        .into_iter()
+        .map(|name| {
+            let (item_count, duration) = proc_stats[&name];
+            ProcessorRun {
+                name,
+                item_count,
+                duration,
+            }
+        })
+        .collect()
 }
 
 /// Build the default registry with all built-in processors registered.

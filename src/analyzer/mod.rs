@@ -146,6 +146,86 @@ pub fn analyze_with_base(
     }
 }
 
+/// Collect the disk paths of all files transitively imported by `source`.
+/// Stdlib/VFS imports are excluded — only real on-disk `.kn` files are returned.
+pub fn collect_imported_disk_paths(
+    source: &SourceFile,
+    base_dir: &std::path::Path,
+) -> Vec<std::path::PathBuf> {
+    let vfs = crate::stdlib::stdlib_virtual_fs();
+    let mut paths = Vec::new();
+    collect_import_paths_into(source, base_dir, &vfs, &mut paths);
+    paths
+}
+
+fn collect_import_paths_into(
+    source: &SourceFile,
+    base_dir: &std::path::Path,
+    vfs: &std::collections::HashMap<String, String>,
+    out: &mut Vec<std::path::PathBuf>,
+) {
+    for item in &source.items {
+        if let Item::Import(import) = item {
+            let module_key = import.path.join(".");
+            if vfs.contains_key(&module_key) {
+                continue;
+            }
+            let rel: std::path::PathBuf = import.path.iter().collect();
+            let file_path = base_dir.join(rel).with_extension("kn");
+            if !out.contains(&file_path) {
+                if let Ok(src) = std::fs::read_to_string(&file_path) {
+                    out.push(file_path.clone());
+                    let module_base = file_path.parent().unwrap_or(base_dir).to_path_buf();
+                    if let Ok(tokens) = crate::lexer::Lexer::new(&src).tokenize() {
+                        if let Ok(parsed) = crate::parser::Parser::new(tokens).parse_file() {
+                            collect_import_paths_into(&parsed, &module_base, vfs, out);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+
+    fn parse(src: &str) -> SourceFile {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_file().unwrap()
+    }
+
+    #[test]
+    fn collect_imported_disk_paths_no_imports_returns_empty() {
+        let src = parse("def main() -> void {}");
+        let paths = collect_imported_disk_paths(&src, std::path::Path::new("."));
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn collect_imported_disk_paths_stdlib_import_excluded() {
+        let src = parse("import prelude { * }");
+        let paths = collect_imported_disk_paths(&src, std::path::Path::new("."));
+        assert!(
+            paths.is_empty(),
+            "stdlib imports should be excluded: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn collect_imported_disk_paths_disk_import_included() {
+        let src = parse("import modules { * }");
+        let paths = collect_imported_disk_paths(&src, std::path::Path::new("examples"));
+        assert!(
+            paths.iter().any(|p| p.ends_with("modules.kn")),
+            "expected modules.kn in paths: {paths:?}"
+        );
+    }
+}
+
 /// Walk all items in `source`, inlining imported items and skipping export blocks.
 /// `vfs` is checked before disk for each import path (used for embedded stdlib modules).
 fn resolve_imports_into(

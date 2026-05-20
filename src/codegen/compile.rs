@@ -137,7 +137,10 @@ fn register_fn(
         .declare_function(name, Linkage::Export, &sig)
         .unwrap_or_else(|_| match module.get_name(name) {
             Some(FuncOrDataId::Func(id)) => id,
-            _ => panic!("failed to declare function '{}'", name),
+            _ => panic!(
+                "internal compiler error: failed to declare function '{}' with incompatible signature",
+                name
+            ),
         })
 }
 
@@ -182,7 +185,12 @@ pub fn compile(
             let data_id = cgx
                 .module
                 .declare_data(&data_name, Linkage::Local, true, false)
-                .expect("global data decl");
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "internal compiler error: failed to declare global '{}': {e}",
+                        g.name
+                    )
+                });
             let mut desc = DataDescription::new();
             desc.define_zeroinit(8);
             cgx.module.define_data(data_id, &desc).ok();
@@ -292,7 +300,12 @@ pub fn compile(
         let id = cgx
             .module
             .declare_function(&fn_name, Linkage::Export, &sig)
-            .expect("declare enum to_str");
+            .unwrap_or_else(|e| {
+                panic!(
+                    "internal compiler error: failed to declare enum to_str helper '{}': {e}",
+                    fn_name
+                )
+            });
         func_ids.insert(fn_name.clone(), id);
 
         fn_jobs.push(FnJob {
@@ -421,7 +434,7 @@ pub fn compile(
         let sig = cgx.module.make_signature(); // no params, no return
         cgx.module
             .declare_function("__kiln_init_globals", Linkage::Local, &sig)
-            .expect("declare __kiln_init_globals")
+            .expect("internal compiler error: failed to declare __kiln_init_globals")
     };
     func_ids.insert("__kiln_init_globals".into(), init_globals_id);
     {

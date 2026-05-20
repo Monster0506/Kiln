@@ -25,7 +25,10 @@ pub fn register_prototype(fn_def: &FnDef, module: &mut ObjectModule) -> FuncId {
             // Duplicate or incompatible declaration: reuse the existing ID if available.
             match module.get_name(&fn_def.name) {
                 Some(FuncOrDataId::Func(id)) => id,
-                _ => panic!("failed to declare function '{}'", fn_def.name),
+                _ => panic!(
+                    "internal compiler error: failed to declare function '{}' with incompatible signature",
+                    fn_def.name
+                ),
             }
         })
 }

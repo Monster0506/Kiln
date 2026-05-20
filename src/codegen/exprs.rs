@@ -226,7 +226,10 @@ fn lower_typed_expr_inner(
                             .declare_function(&thunk_name, Linkage::Local, &thunk_sig)
                             .unwrap_or_else(|_| match ctx.module.get_name(&thunk_name) {
                                 Some(FuncOrDataId::Func(id)) => id,
-                                _ => panic!("thunk declaration failed for {}", thunk_name),
+                                _ => panic!(
+                                    "internal compiler error: thunk declaration failed for '{}'",
+                                    thunk_name
+                                ),
                             });
 
                         use cranelift_frontend::FunctionBuilderContext;
@@ -581,7 +584,10 @@ fn lower_typed_expr_inner(
                     if let Some(FuncOrDataId::Func(id)) = ctx.module.get_name(&name) {
                         id
                     } else {
-                        panic!("closure declaration failed for {}", name)
+                        panic!(
+                            "internal compiler error: closure declaration failed for '{}'",
+                            name
+                        )
                     }
                 });
 
@@ -899,7 +905,7 @@ fn call_dispatch(
             if let Some(FuncOrDataId::Func(id)) = module.get_name(name) {
                 id
             } else {
-                panic!("{name} not found")
+                panic!("internal compiler error: runtime function '{name}' was not declared before use")
             }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);
@@ -924,7 +930,7 @@ fn call_str_concat(
             if let Some(FuncOrDataId::Func(id)) = module.get_name("__kiln_str_concat") {
                 id
             } else {
-                panic!("__kiln_str_concat not found")
+                panic!("internal compiler error: __kiln_str_concat was not declared before use")
             }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);
@@ -948,7 +954,7 @@ fn call_spawn(
             if let Some(FuncOrDataId::Func(id)) = module.get_name("__kiln_spawn") {
                 id
             } else {
-                panic!("__kiln_spawn not found")
+                panic!("internal compiler error: __kiln_spawn was not declared before use")
             }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);
@@ -972,7 +978,7 @@ fn emit_fmod(
             if let Some(FuncOrDataId::Func(id)) = module.get_name("fmod") {
                 id
             } else {
-                panic!("fmod not found")
+                panic!("internal compiler error: fmod (C math library) was not declared before use")
             }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);

@@ -75,7 +75,9 @@ pub fn link_executable(
         }]
     };
 
-    let mut last_err = String::from("no linker found");
+    let mut last_err = String::new();
+    let mut tried_names: Vec<&str> = Vec::new();
+    let mut any_found = false;
 
     for spec in linker_specs {
         let mut cmd = Command::new(spec.name);
@@ -101,23 +103,71 @@ pub fn link_executable(
             }
         }
 
-        let stderr = if verbose {
-            Stdio::inherit()
-        } else {
-            Stdio::null()
-        };
-        let result = cmd.stderr(stderr).status();
-        match result {
-            Ok(status) if status.success() => return Ok(()),
-            Ok(status) => {
-                last_err = format!("{} exited with {}", spec.name, status);
-                continue;
+        tried_names.push(spec.name);
+
+        let (status, captured) = if verbose {
+            match cmd.stderr(Stdio::inherit()).status() {
+                Ok(s) => (Ok(s), String::new()),
+                Err(e) => (Err(e), String::new()),
             }
-            Err(_) => continue,
+        } else {
+            match cmd.stderr(Stdio::piped()).output() {
+                Ok(out) => (
+                    Ok(out.status),
+                    String::from_utf8_lossy(&out.stderr).into_owned(),
+                ),
+                Err(e) => (Err(e), String::new()),
+            }
+        };
+
+        match status {
+            Ok(s) if s.success() => return Ok(()),
+            Ok(s) => {
+                any_found = true;
+                let mut msg = format!("'{}' exited with {}", spec.name, s);
+                let trimmed = captured.trim();
+                if !trimmed.is_empty() {
+                    msg.push_str("\n  linker output:\n");
+                    for line in trimmed.lines() {
+                        msg.push_str(&format!("    {line}\n"));
+                    }
+                    // trim trailing newline we just added
+                    if msg.ends_with('\n') {
+                        msg.pop();
+                    }
+                } else if !verbose {
+                    msg.push_str(" (re-run with --verbose for linker output)");
+                }
+                last_err = msg;
+            }
+            Err(_) => {
+                // binary not found in PATH -- try the next candidate
+                tried_names.pop();
+            }
         }
     }
 
-    Err(last_err)
+    if !any_found {
+        let tried = if tried_names.is_empty() {
+            linker_specs
+                .iter()
+                .map(|s| s.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            tried_names.join(", ")
+        };
+        let hint = if cfg!(windows) {
+            "install Visual Studio Build Tools (provides link.exe) or MSYS2/MinGW (provides gcc)"
+        } else {
+            "install a C toolchain: apt install gcc  or  brew install gcc"
+        };
+        Err(format!(
+            "no linker found in PATH (tried: {tried})\nhint: {hint}"
+        ))
+    } else {
+        Err(format!("link failed: {last_err}"))
+    }
 }
 
 #[cfg(test)]

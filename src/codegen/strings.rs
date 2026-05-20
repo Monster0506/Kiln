@@ -67,7 +67,7 @@ fn import_fn(
         .declare_function(name, Linkage::Import, &sig)
         .unwrap_or_else(|_| match module.get_name(name) {
             Some(FuncOrDataId::Func(id)) => id,
-            _ => panic!("failed to declare runtime fn '{}'", name),
+            _ => panic!("internal compiler error: failed to declare runtime function '{}' with incompatible signature", name),
         })
 }
 
@@ -101,7 +101,7 @@ pub fn emit_str_literal(
                         None
                     }
                 })
-                .expect("bytes data id")
+                .expect("internal compiler error: string bytes data already declared as non-data")
         });
 
     {
@@ -127,7 +127,9 @@ pub fn emit_str_literal(
                         None
                     }
                 })
-                .expect("fat data id")
+                .expect(
+                    "internal compiler error: string fat-pointer data already declared as non-data",
+                )
         });
 
     {

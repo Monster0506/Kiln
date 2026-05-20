@@ -299,7 +299,7 @@ fn lower_typed_stmt(
                         {
                             id
                         } else {
-                            panic!("__kiln_exc_push not found")
+                            panic!("internal compiler error: __kiln_exc_push was not declared before use")
                         }
                     });
                 let push_ref = ctx.module.declare_func_in_func(push_id, builder.func);
@@ -322,7 +322,7 @@ fn lower_typed_stmt(
                         {
                             id
                         } else {
-                            panic!("__kiln_setjmp not found")
+                            panic!("internal compiler error: __kiln_setjmp was not declared before use")
                         }
                     });
                 let setjmp_ref = ctx.module.declare_func_in_func(setjmp_id, builder.func);
@@ -340,7 +340,7 @@ fn lower_typed_stmt(
                         {
                             id
                         } else {
-                            panic!("__kiln_exc_pop not found")
+                            panic!("internal compiler error: __kiln_exc_pop was not declared before use")
                         }
                     });
                 let pop_ref = ctx.module.declare_func_in_func(pop_id, builder.func);
@@ -758,7 +758,7 @@ fn call_get_current_exc(
             {
                 id
             } else {
-                panic!("__kiln_current_exc not found")
+                panic!("internal compiler error: __kiln_current_exc was not declared before use")
             }
         });
     let func_ref = module.declare_func_in_func(id, builder.func);

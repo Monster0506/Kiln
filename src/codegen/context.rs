@@ -16,13 +16,25 @@ impl CodegenContext {
         let flags = cranelift_codegen::settings::Flags::new(flag_builder);
 
         let isa = cranelift_native::builder()
-            .expect("unsupported host platform")
+            .unwrap_or_else(|e| {
+                panic!(
+                    "unsupported host platform ({} {}): {e}",
+                    std::env::consts::OS,
+                    std::env::consts::ARCH
+                )
+            })
             .finish(flags)
-            .expect("failed to build ISA");
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to build Cranelift ISA for {} {}: {e}",
+                    std::env::consts::OS,
+                    std::env::consts::ARCH
+                )
+            });
 
         let obj_builder =
             ObjectBuilder::new(isa, module_name, cranelift_module::default_libcall_names())
-                .expect("failed to create ObjectBuilder");
+                .expect("internal compiler error: failed to create Cranelift ObjectBuilder");
 
         let module = ObjectModule::new(obj_builder);
         let ctx = module.make_context();

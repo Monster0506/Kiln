@@ -196,21 +196,29 @@ pub fn compile(
         }
     }
 
-    // Final fold to clean up any residual expressions after propagation.
-    crate::analyzer::opt_notes::reset_changes();
-    let refolded = crate::analyzer::fold::fold_file(current);
-    if verbose {
-        for n in crate::analyzer::opt_notes::drain_notes() {
-            eprintln!("[opt] {}", n);
+    let optimized = if opt_level > 0 {
+        // Final fold to clean up any residual expressions after propagation.
+        crate::analyzer::opt_notes::reset_changes();
+        let refolded = crate::analyzer::fold::fold_file(current);
+        if verbose {
+            for n in crate::analyzer::opt_notes::drain_notes() {
+                eprintln!("[opt] {}", n);
+            }
+        } else {
+            let _ = crate::analyzer::opt_notes::drain_notes();
         }
-    } else {
-        let _ = crate::analyzer::opt_notes::drain_notes();
-    }
 
-    // Dead code / assignment elimination, using impurity info for smarter decisions.
-    let impure = crate::analyzer::purity::build_impure_set(&refolded);
-    let tagged = crate::analyzer::purity::tag_impure_functions(refolded, &impure);
-    let optimized = crate::analyzer::dce::dce_file_with_purity(tagged, &impure);
+        // Dead code / assignment elimination, using impurity info for smarter decisions.
+        let impure = crate::analyzer::purity::build_impure_set(&refolded);
+        let tagged = crate::analyzer::purity::tag_impure_functions(refolded, &impure);
+        let inlined = crate::analyzer::dce::inline_pure_const_calls_file(tagged, &impure);
+        let after_inline = crate::analyzer::fold::fold_file(inlined);
+        let unrolled = crate::analyzer::unroll::unroll_file(after_inline);
+        let after_unroll = crate::analyzer::fold::fold_file(unrolled);
+        crate::analyzer::dce::dce_file_with_purity(after_unroll, &impure)
+    } else {
+        current
+    };
 
     let typed_file = &optimized;
     declare_alloc_fns(&mut cgx.module);
@@ -593,10 +601,12 @@ pub fn compile(
     // Build the inline_bodies map: @inline functions with single-return bodies
     // can be expanded at call sites instead of emitting a function call.
     // Also include auto-inline candidates from the call graph.
-    let auto_inline_names = {
+    let auto_inline_names = if opt_level > 0 {
         use crate::codegen::call_graph::{build_call_graph, find_auto_inline_candidates};
         let graph = build_call_graph(typed_file);
         find_auto_inline_candidates(typed_file, &graph)
+    } else {
+        std::collections::HashSet::new()
     };
     let inline_bodies: HashMap<
         String,

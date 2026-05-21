@@ -108,12 +108,11 @@ fn propagate_stmt(
         } => {
             let value = propagate_expr(value, constants);
             let value = fold_expr(value);
-            // Register as constant if it's a propagatable literal and either:
-            // (a) explicitly immutable, or
-            // (b) mutable but never reassigned anywhere in this block tree
-            let effectively_immutable = !mutable || !ever_assigned.contains(&name);
-            if effectively_immutable && is_propagatable_literal(&value.kind) {
-                if mutable {
+            // Always seed constants with the initial literal value, even for mutable
+            // vars. Assignment tracking will update or evict the entry on each write.
+            // Loops do constants.clear() before entering, so loop-modified vars are safe.
+            if is_propagatable_literal(&value.kind) {
+                if mutable && !ever_assigned.contains(&name) {
                     crate::analyzer::opt_notes::note(format!(
                         "promote `mut {name}`: never reassigned, propagating as constant"
                     ));
@@ -133,16 +132,29 @@ fn propagate_stmt(
             value,
             span,
         } => {
-            // Invalidate the target name if it's a simple ident
+            // Substitute old value into RHS first, then update the map.
+            let value = fold_expr(propagate_expr(value, constants));
             if let TypedExprKind::Ident(ref name) = target.kind {
-                constants.remove(name);
-            }
-            let value = propagate_expr(value, constants);
-            let value = fold_expr(value);
-            TypedStmt::Assign {
-                target: propagate_expr(target, constants),
-                value,
-                span,
+                // Track the new value if it's a known literal; evict otherwise.
+                if is_propagatable_literal(&value.kind) {
+                    constants.insert(name.clone(), value.kind.clone());
+                } else {
+                    constants.remove(name);
+                }
+                // Don't call propagate_expr on a simple Ident target: it would
+                // substitute the variable with its own new value (e.g., sum -> 10 = 10).
+                TypedStmt::Assign {
+                    target,
+                    value,
+                    span,
+                }
+            } else {
+                // Complex target (e.g., arr[i]): substitute sub-expressions normally.
+                TypedStmt::Assign {
+                    target: propagate_expr(target, constants),
+                    value,
+                    span,
+                }
             }
         }
         TypedStmt::CompoundAssign {
@@ -151,14 +163,15 @@ fn propagate_stmt(
             rhs,
             span,
         } => {
-            // Invalidate
+            let rhs = fold_expr(propagate_expr(rhs, constants));
+            // Invalidate after substituting RHS.
             if let TypedExprKind::Ident(ref name) = target.kind {
                 constants.remove(name);
             }
             TypedStmt::CompoundAssign {
                 target: propagate_expr(target, constants),
                 op,
-                rhs: fold_expr(propagate_expr(rhs, constants)),
+                rhs,
                 span,
             }
         }

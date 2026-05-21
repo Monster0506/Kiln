@@ -52,7 +52,16 @@ pub fn dce_block(block: TypedBlock) -> TypedBlock {
         collect_reads_stmt(stmt, &mut live);
     }
 
-    // Second pass: rebuild, dropping dead immutable VarDecl with pure RHS.
+    // Collect which names are assigned (written) anywhere in the block.
+    let mut ever_assigned: HashSet<String> = HashSet::new();
+    for stmt in &block.stmts {
+        collect_assigned_stmts(std::slice::from_ref(stmt), &mut ever_assigned);
+    }
+
+    // Second pass: rebuild, dropping dead VarDecl with pure RHS.
+    // Immutable: always safe to drop if unreferenced.
+    // Mutable: also drop if unreferenced AND never assigned elsewhere in the block
+    // (no orphan Assign statements would remain pointing at it).
     let mut new_stmts = Vec::with_capacity(block.stmts.len());
     for stmt in block.stmts {
         match &stmt {
@@ -62,10 +71,9 @@ pub fn dce_block(block: TypedBlock) -> TypedBlock {
                 mutable,
                 ..
             } => {
-                // Mutable bindings might have their value read via later assignment;
-                // we only eliminate immutable let bindings.
-                if !mutable && !live.contains(name) && !expr_has_side_effects(value) {
-                    // Drop this dead binding entirely.
+                let dead = !live.contains(name) && !expr_has_side_effects(value);
+                let safe_to_remove = !mutable || !ever_assigned.contains(name);
+                if dead && safe_to_remove {
                     continue;
                 }
             }
@@ -516,35 +524,88 @@ fn waw_block(block: TypedBlock) -> TypedBlock {
         changed = false;
         let mut i = 0;
         while i + 1 < stmts.len() {
-            // Pattern: VarDecl { name, mutable:true, value: e1 } followed by Assign { target: Ident(name), value: e2 }
-            // where e2 does not read `name`. Replace with VarDecl { name, value: e2 }.
-            let is_waw = if let (
-                TypedStmt::VarDecl {
-                    name: n1,
-                    mutable: true,
-                    ..
-                },
-                TypedStmt::Assign {
-                    target, value: e2, ..
-                },
-            ) = (&stmts[i], &stmts[i + 1])
-            {
-                if let TypedExprKind::Ident(n2) = &target.kind {
-                    n1 == n2 && !expr_reads_name(e2, n2)
+            // Pattern A: VarDecl { name, mutable:true, value: e1 } followed (possibly
+            // non-adjacently) by the first Assign { target: Ident(name), value: e2 }
+            // where e2 does not read `name` and no statement in between reads `name`
+            // or has side effects. Replace with VarDecl { name, value: e2 }, remove
+            // the Assign.
+            let is_waw_decl = matches!(&stmts[i], TypedStmt::VarDecl { mutable: true, .. });
+            let waw_decl_target: Option<usize> = if is_waw_decl {
+                if let TypedStmt::VarDecl { name: n1, .. } = &stmts[i] {
+                    let mut found = None;
+                    'outer: for (j, stmt_j) in stmts.iter().enumerate().skip(i + 1) {
+                        match stmt_j {
+                            TypedStmt::Assign {
+                                target, value: e2, ..
+                            } => {
+                                if let TypedExprKind::Ident(n2) = &target.kind {
+                                    if n2 == n1 && !expr_reads_name(e2, n1) {
+                                        found = Some(j);
+                                    }
+                                }
+                                break 'outer;
+                            }
+                            // A non-side-effecting VarDecl that doesn't read n1 can be skipped.
+                            TypedStmt::VarDecl { value, .. } => {
+                                if expr_reads_name(value, n1) || expr_has_side_effects(value) {
+                                    break 'outer;
+                                }
+                            }
+                            // Anything else: stop scanning.
+                            _ => break 'outer,
+                        }
+                    }
+                    found
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let is_waw_decl = waw_decl_target.is_some();
+
+            // Pattern B: Assign { target: Ident(n), value: e1 } followed by
+            // Assign { target: Ident(n), value: e2 } where e1 has no side effects
+            // and e2 does not read `n`. The first write is dead.
+            let is_waw_assign = if !is_waw_decl {
+                if let (
+                    TypedStmt::Assign {
+                        target: t1,
+                        value: e1,
+                        ..
+                    },
+                    TypedStmt::Assign {
+                        target: t2,
+                        value: e2,
+                        ..
+                    },
+                ) = (&stmts[i], &stmts[i + 1])
+                {
+                    match (&t1.kind, &t2.kind) {
+                        (TypedExprKind::Ident(n1), TypedExprKind::Ident(n2)) => {
+                            n1 == n2 && !expr_has_side_effects(e1) && !expr_reads_name(e2, n2)
+                        }
+                        _ => false,
+                    }
                 } else {
                     false
                 }
             } else {
                 false
             };
-            if is_waw {
-                let assign = stmts.remove(i + 1);
+
+            if is_waw_decl {
+                let j = waw_decl_target.unwrap();
+                let assign = stmts.remove(j);
                 if let TypedStmt::Assign { value: e2, .. } = assign {
                     if let TypedStmt::VarDecl { value, .. } = &mut stmts[i] {
                         *value = e2;
                         changed = true;
                     }
                 }
+            } else if is_waw_assign {
+                stmts.remove(i);
+                changed = true;
             } else {
                 i += 1;
             }
@@ -1155,7 +1216,11 @@ fn count_reads_in_expr(expr: &TypedExpr, name: &str) -> usize {
     }
 }
 
-fn substitute_name_in_stmt(stmt: TypedStmt, name: &str, replacement: &TypedExpr) -> TypedStmt {
+pub(crate) fn substitute_name_in_stmt(
+    stmt: TypedStmt,
+    name: &str,
+    replacement: &TypedExpr,
+) -> TypedStmt {
     match stmt {
         TypedStmt::VarDecl {
             name: n,
@@ -1714,6 +1779,330 @@ fn single_use_inline_stmt_ctx(stmt: TypedStmt, impure: &HashSet<String>) -> Type
         },
         other => other,
     }
+}
+
+/// Inline pure top-level functions at call sites where all arguments are literals.
+/// After this pass, run `fold_file` to simplify the substituted expressions.
+/// `eliminate_dead_fns` will then remove any functions that have no remaining callers.
+pub fn inline_pure_const_calls_file(file: TypedFile, impure: &HashSet<String>) -> TypedFile {
+    let mut inline_map: HashMap<String, (Vec<String>, TypedExpr)> = HashMap::new();
+    for item in &file.items {
+        if let TypedItem::Function(f) = item {
+            if impure.contains(&f.name) || f.variadic.is_some() {
+                continue;
+            }
+            if let Some(body_expr) = ipc_single_return_expr(&f.body) {
+                let params = f.params.iter().map(|p| p.name.clone()).collect();
+                inline_map.insert(f.name.clone(), (params, body_expr));
+            }
+        }
+    }
+    if inline_map.is_empty() {
+        return file;
+    }
+    let items = file
+        .items
+        .into_iter()
+        .map(|item| match item {
+            TypedItem::Function(mut f) => {
+                f.body = ipc_block(f.body, &inline_map);
+                TypedItem::Function(f)
+            }
+            TypedItem::ImplBlock(mut ib) => {
+                ib.methods = ib
+                    .methods
+                    .into_iter()
+                    .map(|mut m| {
+                        m.body = ipc_block(m.body, &inline_map);
+                        m
+                    })
+                    .collect();
+                ib.hooks = ib
+                    .hooks
+                    .into_iter()
+                    .map(|mut h| {
+                        h.body = ipc_block(h.body, &inline_map);
+                        h
+                    })
+                    .collect();
+                TypedItem::ImplBlock(ib)
+            }
+            other => other,
+        })
+        .collect();
+    TypedFile {
+        items,
+        span: file.span,
+    }
+}
+
+fn ipc_single_return_expr(body: &TypedBlock) -> Option<TypedExpr> {
+    if body.stmts.len() == 1 {
+        if let TypedStmt::Return { value: Some(e), .. } = &body.stmts[0] {
+            return Some(e.clone());
+        }
+    }
+    None
+}
+
+fn ipc_is_literal(expr: &TypedExpr) -> bool {
+    matches!(
+        &expr.kind,
+        TypedExprKind::Int(_)
+            | TypedExprKind::Float(_)
+            | TypedExprKind::Bool(_)
+            | TypedExprKind::Str(_)
+    )
+}
+
+fn ipc_block(block: TypedBlock, map: &HashMap<String, (Vec<String>, TypedExpr)>) -> TypedBlock {
+    let stmts = block.stmts.into_iter().map(|s| ipc_stmt(s, map)).collect();
+    TypedBlock {
+        stmts,
+        span: block.span,
+    }
+}
+
+fn ipc_stmt(stmt: TypedStmt, map: &HashMap<String, (Vec<String>, TypedExpr)>) -> TypedStmt {
+    match stmt {
+        TypedStmt::VarDecl {
+            name,
+            ty,
+            value,
+            mutable,
+            span,
+        } => TypedStmt::VarDecl {
+            value: ipc_expr(value, map),
+            name,
+            ty,
+            mutable,
+            span,
+        },
+        TypedStmt::Assign {
+            target,
+            value,
+            span,
+        } => TypedStmt::Assign {
+            value: ipc_expr(value, map),
+            target: ipc_expr(target, map),
+            span,
+        },
+        TypedStmt::CompoundAssign {
+            target,
+            op,
+            rhs,
+            span,
+        } => TypedStmt::CompoundAssign {
+            rhs: ipc_expr(rhs, map),
+            target: ipc_expr(target, map),
+            op,
+            span,
+        },
+        TypedStmt::Return { value, span } => TypedStmt::Return {
+            value: value.map(|e| ipc_expr(e, map)),
+            span,
+        },
+        TypedStmt::Raise { value, span } => TypedStmt::Raise {
+            value: value.map(|e| ipc_expr(e, map)),
+            span,
+        },
+        TypedStmt::Expr(e) => TypedStmt::Expr(ipc_expr(e, map)),
+        TypedStmt::If {
+            branches,
+            else_branch,
+            span,
+        } => TypedStmt::If {
+            branches: branches
+                .into_iter()
+                .map(|(c, b)| (ipc_expr(c, map), ipc_block(b, map)))
+                .collect(),
+            else_branch: else_branch.map(|b| ipc_block(b, map)),
+            span,
+        },
+        TypedStmt::While { cond, body, span } => TypedStmt::While {
+            cond: ipc_expr(cond, map),
+            body: ipc_block(body, map),
+            span,
+        },
+        TypedStmt::DoWhile { body, cond, span } => TypedStmt::DoWhile {
+            body: ipc_block(body, map),
+            cond: ipc_expr(cond, map),
+            span,
+        },
+        TypedStmt::For {
+            binding,
+            binding_ty,
+            iterable,
+            body,
+            iter_ty,
+            span,
+        } => TypedStmt::For {
+            iterable: ipc_expr(iterable, map),
+            body: ipc_block(body, map),
+            binding,
+            binding_ty,
+            iter_ty,
+            span,
+        },
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            span,
+        } => TypedStmt::TryCatch {
+            body: ipc_block(body, map),
+            handlers: handlers
+                .into_iter()
+                .map(|mut h| {
+                    h.body = ipc_block(h.body, map);
+                    h
+                })
+                .collect(),
+            finally: finally.map(|b| ipc_block(b, map)),
+            span,
+        },
+        TypedStmt::FnDef(mut f) => {
+            f.body = ipc_block(f.body, map);
+            TypedStmt::FnDef(f)
+        }
+        other => other,
+    }
+}
+
+fn ipc_expr(expr: TypedExpr, map: &HashMap<String, (Vec<String>, TypedExpr)>) -> TypedExpr {
+    let ty = expr.ty.clone();
+    let span = expr.span;
+    let kind = match expr.kind {
+        TypedExprKind::Call {
+            fn_name,
+            callee,
+            args,
+            generic_bounds,
+            generic_params,
+            param_tys,
+        } => {
+            let callee = Box::new(ipc_expr(*callee, map));
+            let args: Vec<TypedExpr> = args.into_iter().map(|a| ipc_expr(a, map)).collect();
+            if let Some((params, body_expr)) = map.get(&fn_name) {
+                if params.len() == args.len() && args.iter().all(ipc_is_literal) {
+                    let mut result = body_expr.clone();
+                    for (param, arg) in params.iter().zip(args.iter()) {
+                        result = substitute_name_in_expr(result, param, arg);
+                    }
+                    return TypedExpr { ty, ..result };
+                }
+            }
+            TypedExprKind::Call {
+                fn_name,
+                callee,
+                args,
+                generic_bounds,
+                generic_params,
+                param_tys,
+            }
+        }
+        TypedExprKind::BinOp { op, left, right } => TypedExprKind::BinOp {
+            op,
+            left: Box::new(ipc_expr(*left, map)),
+            right: Box::new(ipc_expr(*right, map)),
+        },
+        TypedExprKind::UnOp { op, operand } => TypedExprKind::UnOp {
+            op,
+            operand: Box::new(ipc_expr(*operand, map)),
+        },
+        TypedExprKind::MethodCall {
+            object,
+            method_fn,
+            args,
+        } => TypedExprKind::MethodCall {
+            object: Box::new(ipc_expr(*object, map)),
+            args: args.into_iter().map(|a| ipc_expr(a, map)).collect(),
+            method_fn,
+        },
+        TypedExprKind::StaticCall { method_fn, args } => TypedExprKind::StaticCall {
+            args: args.into_iter().map(|a| ipc_expr(a, map)).collect(),
+            method_fn,
+        },
+        TypedExprKind::IndirectCall { fat_ptr, args } => TypedExprKind::IndirectCall {
+            fat_ptr: Box::new(ipc_expr(*fat_ptr, map)),
+            args: args.into_iter().map(|a| ipc_expr(a, map)).collect(),
+        },
+        TypedExprKind::Field { object, field } => TypedExprKind::Field {
+            object: Box::new(ipc_expr(*object, map)),
+            field,
+        },
+        TypedExprKind::Index { object, index } => TypedExprKind::Index {
+            object: Box::new(ipc_expr(*object, map)),
+            index: Box::new(ipc_expr(*index, map)),
+        },
+        TypedExprKind::Tuple(exprs) => {
+            TypedExprKind::Tuple(exprs.into_iter().map(|e| ipc_expr(e, map)).collect())
+        }
+        TypedExprKind::Array(exprs) => {
+            TypedExprKind::Array(exprs.into_iter().map(|e| ipc_expr(e, map)).collect())
+        }
+        TypedExprKind::StructLiteral { ty_name, fields } => TypedExprKind::StructLiteral {
+            ty_name,
+            fields: fields
+                .into_iter()
+                .map(|(k, v)| (k, ipc_expr(v, map)))
+                .collect(),
+        },
+        TypedExprKind::Unwrap(e) => TypedExprKind::Unwrap(Box::new(ipc_expr(*e, map))),
+        TypedExprKind::Spawn(e) => TypedExprKind::Spawn(Box::new(ipc_expr(*e, map))),
+        TypedExprKind::GenSplice(e) => TypedExprKind::GenSplice(Box::new(ipc_expr(*e, map))),
+        TypedExprKind::As { expr: e, ty: aty } => TypedExprKind::As {
+            expr: Box::new(ipc_expr(*e, map)),
+            ty: aty,
+        },
+        TypedExprKind::Ref { mutable, expr: e } => TypedExprKind::Ref {
+            mutable,
+            expr: Box::new(ipc_expr(*e, map)),
+        },
+        TypedExprKind::Match { scrutinee, arms } => TypedExprKind::Match {
+            scrutinee: Box::new(ipc_expr(*scrutinee, map)),
+            arms: arms
+                .into_iter()
+                .map(|mut arm| {
+                    arm.body = ipc_expr(arm.body, map);
+                    if let Some(g) = arm.guard {
+                        arm.guard = Some(ipc_expr(g, map));
+                    }
+                    arm
+                })
+                .collect(),
+        },
+        TypedExprKind::Str(segs) => {
+            use crate::analyzer::typed_ast::TypedStringSegment;
+            TypedExprKind::Str(
+                segs.into_iter()
+                    .map(|s| match s {
+                        TypedStringSegment::Interp(e) => {
+                            TypedStringSegment::Interp(ipc_expr(e, map))
+                        }
+                        other => other,
+                    })
+                    .collect(),
+            )
+        }
+        TypedExprKind::Closure { params, body } => {
+            use crate::analyzer::typed_ast::TypedClosureBody;
+            TypedExprKind::Closure {
+                params,
+                body: match body {
+                    TypedClosureBody::Expr(e) => {
+                        TypedClosureBody::Expr(Box::new(ipc_expr(*e, map)))
+                    }
+                    TypedClosureBody::Block(b) => TypedClosureBody::Block(ipc_block(b, map)),
+                },
+            }
+        }
+        TypedExprKind::Gen { body } => TypedExprKind::Gen {
+            body: ipc_block(body, map),
+        },
+        other => other,
+    };
+    TypedExpr { kind, ty, span }
 }
 
 /// Remove user-defined functions not reachable from `main` (emit path only).

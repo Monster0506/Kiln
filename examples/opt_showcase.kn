@@ -91,6 +91,12 @@ def main() -> void {
     mut rx: int = 5
     rx = rx    # removed
     mut inlined: int = add_two(3, 4)   # -> 7 (body inlined)
+    mut mv_a: int = 0
+    mv_a = mv_a + 10          # prop subs 0 -> 0+10 -> fold 10
+    mut mv_b: int = 3
+    mv_b = mv_b + 4           # -> 7
+    mv_b = mv_b + 5           # -> 12
+    mut mv_c: int = mv_b + mv_a   # -> 12+10 -> 22 (after prop of mv_b and mv_a)
     mut sum: int = 0
     mut i: int = 0
     while i < 5 {
@@ -102,6 +108,9 @@ def main() -> void {
     println(g_base)   # 101
     println(g_init)   # 42
     println(inlined)  # 7
+    println(mv_a)     # 10
+    println(mv_b)     # 12
+    println(mv_c)     # 22
     println(sum)      # 10  (0+1+2+3+4)
     println(rx)       # 5
 }

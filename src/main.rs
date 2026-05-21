@@ -277,7 +277,7 @@ fn run_build(
     if opts.emit {
         let user_names = user_item_names(&ast);
         let mut opt = typed_file.clone();
-        for _ in 0..opts.opt_level.max(1) {
+        for _ in 0..opts.opt_level {
             kiln_compiler::analyzer::opt_notes::reset_changes();
             opt = kiln_compiler::analyzer::fold::fold_file(opt);
             let _ = kiln_compiler::analyzer::opt_notes::drain_notes();
@@ -286,8 +286,8 @@ fn run_build(
                 break;
             }
         }
-        {
-            use kiln_compiler::analyzer::{dce, fold, opt_notes, prop, purity};
+        if opts.opt_level > 0 {
+            use kiln_compiler::analyzer::{dce, fold, opt_notes, prop, purity, unroll};
             // Final fold pass.
             opt_notes::reset_changes();
             opt = fold::fold_file(opt);
@@ -305,6 +305,15 @@ fn run_build(
             // Build impure set and tag transitively impure functions in the AST.
             let impure = purity::build_impure_set(&opt);
             opt = purity::tag_impure_functions(opt, &impure);
+            // Inline pure function calls with all-literal args, then fold the result.
+            opt = dce::inline_pure_const_calls_file(opt, &impure);
+            opt = fold::fold_file(opt);
+            // Unroll small constant-bound while loops, then fold and prop the result.
+            opt = unroll::unroll_file(opt);
+            opt = prop::propagate_file(opt);
+            opt = fold::fold_file(opt);
+            opt = dce::waw_file(opt);
+            opt = dce::dce_file(opt);
             // Inline single-use immutable bindings (purity-aware: can inline pure calls).
             opt = dce::single_use_inline_file_with_purity(opt, &impure);
             // DCE using purity info (can drop dead bindings whose RHS calls pure functions).

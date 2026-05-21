@@ -1,0 +1,16 @@
+# optimizer output
+
+@impure
+def main() -> void {
+    println(1)
+    println(7)
+    println(101)
+    println(42)
+    println(7)
+    println(10)
+    println(12)
+    println(22)
+    println(10)
+    println(5)
+}
+

@@ -23,6 +23,7 @@ pub mod returns;
 pub mod solve;
 pub mod ty;
 pub mod typed_ast;
+pub mod unroll;
 
 pub use error::AnalysisError;
 pub use ty::{Ty, TypeId, TypeRegistry};

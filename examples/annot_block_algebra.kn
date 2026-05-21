@@ -1,0 +1,129 @@
+# annot_block_algebra.kn -- Block.empty()/concat/prepend in processor loops
+#
+# The key property: generated code is proportional to function shape.
+# A function with 4 params gets 4 guard calls; one with 1 param gets 1.
+# Different param types produce different calls -- the dispatch is per-param.
+
+# ---- Annotations -------------------------------------------------------------
+
+annotation Typecheck {
+    strict: bool = false
+}
+
+annotation Summary { }
+
+# ---- @Typecheck processor ----------------------------------------------------
+#
+# For each parameter, emits a type-appropriate guard call:
+#   str   -> guard_str(name_label, strict)
+#   int   -> guard_int(name_label, strict)
+#   float -> guard_float(name_label, strict)
+#   bool  -> guard_bool(name_label, strict)
+#
+# Params whose type is not one of the four primitives produce no guard.
+# The guards are prepended to the original body as a block.
+#
+# Note: <<p.name>> splices the param name as a string literal (item 12 pending).
+# The guard helpers receive the label for diagnostics, not the value itself.
+# Runtime guards retrieve the value from the call frame by name.
+
+processor Typecheck(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    mut guards: Block = Block.empty()
+
+    for p <- target.params {
+        if p.ty == "str" {
+            g: Block = gen {
+                guard_str(<<p.name>>, <<target.annot.strict>>)
+            }
+            guards = guards.concat(g)
+        }
+        if p.ty == "int" {
+            g: Block = gen {
+                guard_int(<<p.name>>, <<target.annot.strict>>)
+            }
+            guards = guards.concat(g)
+        }
+        if p.ty == "float" {
+            g: Block = gen {
+                guard_float(<<p.name>>, <<target.annot.strict>>)
+            }
+            guards = guards.concat(g)
+        }
+        if p.ty == "bool" {
+            g: Block = gen {
+                guard_bool(<<p.name>>, <<target.annot.strict>>)
+            }
+            guards = guards.concat(g)
+        }
+    }
+
+    new_body: Block = guards.concat(gen { <<target.body>> })
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+# ---- @Summary processor ------------------------------------------------------
+#
+# Prepends one describe_param(name, type) call per parameter before the body.
+# Uses Block.prepend so the accumulation reads naturally: build the summary
+# block, then put it in front.
+#
+# For a function with 3 params the generated preamble is exactly 3 calls.
+
+processor Summary(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    mut manifest: Block = Block.empty()
+
+    for p <- target.params {
+        entry: Block = gen {
+            describe_param(<<p.name>>, <<p.ty>>)
+        }
+        manifest = manifest.concat(entry)
+    }
+
+    body_block: Block = gen { <<target.body>> }
+    new_body: Block = body_block.prepend(manifest)
+    replacement: Decl = target.with_body(new_body)
+    return (Some { value: replacement }, Vec.new())
+}
+
+# ---- Annotated functions -----------------------------------------------------
+
+# 4 params, 4 guards: guard_str, guard_int, guard_float, guard_bool (in order)
+@Typecheck { strict: true }
+def process(name: str, count: int, weight: float, enabled: bool) -> str {
+    return name
+}
+
+# 2 params, both str: two guard_str calls generated
+@Typecheck
+def connect(host: str, user: str) -> bool {
+    return open_conn(host, user)
+}
+
+# 1 param, int: one guard_int call
+@Typecheck
+def repeat(times: int) -> void {
+    do_work(times)
+}
+
+# Summary: 3 describe_param calls prepended, then body
+@Summary
+def compute(x: float, y: float, label: str) -> float {
+    return x + y
+}
+
+# Stacked: Summary manifest first, then Typecheck guards, then body.
+# Processors run in annotation order: Summary wraps first, Typecheck wraps that.
+@Summary
+@Typecheck { strict: false }
+def transfer(src: str, dst: str, amount: int) -> bool {
+    return move_funds(src, dst, amount)
+}
+
+def main() -> void {
+    process("hello", 3, 1.5, true)
+    connect("localhost", "admin")
+    repeat(5)
+    compute(1.0, 2.0, "sum")
+    transfer("alice", "bob", 100)
+}

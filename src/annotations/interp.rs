@@ -666,6 +666,10 @@ fn eval_field(val: Value, field: &str) -> Result<Value, ()> {
 fn eval_static_method(type_name: &str, method: &str, args: &[Value]) -> Result<Value, ()> {
     match (type_name, method) {
         ("Vec", "new") if args.is_empty() => Ok(Value::List(vec![])),
+        ("Block", "empty") if args.is_empty() => Ok(Value::Block(Block {
+            stmts: vec![],
+            span: Span::new(0, 0),
+        })),
         _ => Err(()),
     }
 }
@@ -709,6 +713,26 @@ fn eval_method(obj: Value, method: &str, args: Vec<Value>) -> Result<Value, ()> 
         }
         (Value::List(_), "new") if args.is_empty() => Ok(Value::List(vec![])),
         (Value::List(items), "len") if args.is_empty() => Ok(Value::Int(items.len() as i64)),
+        (Value::Block(_), "concat") if args.len() == 1 => {
+            if let (Value::Block(mut self_block), Value::Block(other_block)) =
+                (obj, args.into_iter().next().unwrap())
+            {
+                self_block.stmts.extend(other_block.stmts);
+                Ok(Value::Block(self_block))
+            } else {
+                unreachable!()
+            }
+        }
+        (Value::Block(_), "prepend") if args.len() == 1 => {
+            if let (Value::Block(self_block), Value::Block(mut other_block)) =
+                (obj, args.into_iter().next().unwrap())
+            {
+                other_block.stmts.extend(self_block.stmts);
+                Ok(Value::Block(other_block))
+            } else {
+                unreachable!()
+            }
+        }
         _ => Err(()),
     }
 }
@@ -971,6 +995,238 @@ mod tests {
             assert_eq!(b.stmts.len(), 2, "prepend + 1 original stmt = 2 stmts");
         } else {
             panic!("expected Block");
+        }
+    }
+
+    #[test]
+    fn block_empty_has_no_stmts() {
+        let v = eval_static_method("Block", "empty", &[]).unwrap();
+        assert!(matches!(v, Value::Block(ref b) if b.stmts.is_empty()));
+    }
+
+    #[test]
+    fn block_concat_empty_with_nonempty_yields_nonempty() {
+        let empty = eval_static_method("Block", "empty", &[]).unwrap();
+        let nonempty = Value::Block(Block {
+            stmts: vec![void_stmt()],
+            span: zero(),
+        });
+        let result = eval_method(empty, "concat", vec![nonempty]).unwrap();
+        assert!(matches!(result, Value::Block(ref b) if b.stmts.len() == 1));
+    }
+
+    #[test]
+    fn block_concat_two_nonempty_yields_sum_of_stmts() {
+        let a = Value::Block(Block {
+            stmts: vec![void_stmt(), void_stmt()],
+            span: zero(),
+        });
+        let b = Value::Block(Block {
+            stmts: vec![void_stmt(), void_stmt(), void_stmt()],
+            span: zero(),
+        });
+        let result = eval_method(a, "concat", vec![b]).unwrap();
+        assert!(matches!(result, Value::Block(ref bl) if bl.stmts.len() == 5));
+    }
+
+    #[test]
+    fn block_prepend_is_reverse_concat() {
+        let a = Value::Block(Block {
+            stmts: vec![Stmt::Expr(Expr::Int(1, zero()))],
+            span: zero(),
+        });
+        let b = Value::Block(Block {
+            stmts: vec![Stmt::Expr(Expr::Int(2, zero()))],
+            span: zero(),
+        });
+        // a.prepend(b) == b.concat(a): result should be [2, 1]
+        let prepend_result = eval_method(a.clone(), "prepend", vec![b.clone()]).unwrap();
+        let concat_result = eval_method(b, "concat", vec![a]).unwrap();
+        if let (Value::Block(pr), Value::Block(cr)) = (prepend_result, concat_result) {
+            assert_eq!(pr.stmts.len(), cr.stmts.len());
+            // Both should be [2, 1]: first stmt is Int(2), second is Int(1).
+            assert!(matches!(&pr.stmts[0], Stmt::Expr(Expr::Int(2, _))));
+            assert!(matches!(&pr.stmts[1], Stmt::Expr(Expr::Int(1, _))));
+            assert!(matches!(&cr.stmts[0], Stmt::Expr(Expr::Int(2, _))));
+            assert!(matches!(&cr.stmts[1], Stmt::Expr(Expr::Int(1, _))));
+        } else {
+            panic!("expected Block values");
+        }
+    }
+
+    #[test]
+    fn processor_generates_one_stmt_per_param_via_concat() {
+        // Build a FnDef with 3 params and run a processor that loops over
+        // target.params and concat-s one gen block per param.
+        let int_ty = || TypeExpr::Named {
+            name: "int".into(),
+            generics: vec![],
+            bindings: vec![],
+            span: zero(),
+        };
+        let fn_def = FnDef {
+            annotations: vec![],
+            name: "multi".into(),
+            generic_params: vec![],
+            params: vec![
+                crate::parser::ast::Param {
+                    name: "a".into(),
+                    ty: int_ty(),
+                    span: zero(),
+                },
+                crate::parser::ast::Param {
+                    name: "b".into(),
+                    ty: int_ty(),
+                    span: zero(),
+                },
+                crate::parser::ast::Param {
+                    name: "c".into(),
+                    ty: int_ty(),
+                    span: zero(),
+                },
+            ],
+            variadic: None,
+            return_type: TypeExpr::Named {
+                name: "void".into(),
+                generics: vec![],
+                bindings: vec![],
+                span: zero(),
+            },
+            body: Block {
+                stmts: vec![],
+                span: zero(),
+            },
+            is_declaration: false,
+            span: zero(),
+        };
+
+        // Processor body (as AST):
+        //   checks: Block = Block.empty()
+        //   for p <- target.params {
+        //       checks = checks.concat(gen { 0 })
+        //   }
+        //   return (Some { value: target.with_body(checks) }, Vec.new())
+        let proc_body = Block {
+            stmts: vec![
+                // checks: Block = Block.empty()
+                Stmt::VarDecl {
+                    name: "checks".into(),
+                    ty: TypeExpr::Named {
+                        name: "Block".into(),
+                        generics: vec![],
+                        bindings: vec![],
+                        span: zero(),
+                    },
+                    value: Expr::Call {
+                        callee: Box::new(Expr::Field {
+                            object: Box::new(Expr::Ident("Block".into(), zero())),
+                            field: "empty".into(),
+                            span: zero(),
+                        }),
+                        args: vec![],
+                        span: zero(),
+                    },
+                    mutable: true,
+                    span: zero(),
+                },
+                // for p <- target.params { checks = checks.concat(gen { 0 }) }
+                Stmt::For {
+                    binding: "p".into(),
+                    binding_ty: None,
+                    iterable: Expr::Field {
+                        object: Box::new(Expr::Ident("target".into(), zero())),
+                        field: "params".into(),
+                        span: zero(),
+                    },
+                    body: Block {
+                        stmts: vec![
+                            // checks = checks.concat(gen { 0 })
+                            Stmt::Assign {
+                                target: Expr::Ident("checks".into(), zero()),
+                                value: Expr::Call {
+                                    callee: Box::new(Expr::Field {
+                                        object: Box::new(Expr::Ident("checks".into(), zero())),
+                                        field: "concat".into(),
+                                        span: zero(),
+                                    }),
+                                    args: vec![Expr::Gen {
+                                        body: Block {
+                                            stmts: vec![Stmt::Expr(Expr::Int(0, zero()))],
+                                            span: zero(),
+                                        },
+                                        span: zero(),
+                                    }],
+                                    span: zero(),
+                                },
+                                span: zero(),
+                            },
+                        ],
+                        span: zero(),
+                    },
+                    span: zero(),
+                },
+                // return (Some { value: target.with_body(checks) }, Vec.new())
+                Stmt::Return {
+                    value: Some(Expr::Tuple(
+                        vec![
+                            Expr::StructLiteral {
+                                ty: "Some".into(),
+                                fields: vec![(
+                                    "value".into(),
+                                    Expr::Call {
+                                        callee: Box::new(Expr::Field {
+                                            object: Box::new(Expr::Ident("target".into(), zero())),
+                                            field: "with_body".into(),
+                                            span: zero(),
+                                        }),
+                                        args: vec![Expr::Ident("checks".into(), zero())],
+                                        span: zero(),
+                                    },
+                                )],
+                                span: zero(),
+                            },
+                            Expr::Call {
+                                callee: Box::new(Expr::Field {
+                                    object: Box::new(Expr::Ident("Vec".into(), zero())),
+                                    field: "new".into(),
+                                    span: zero(),
+                                }),
+                                args: vec![],
+                                span: zero(),
+                            },
+                        ],
+                        zero(),
+                    )),
+                    span: zero(),
+                },
+            ],
+            span: zero(),
+        };
+
+        let proc = crate::parser::ast::ProcessorDef {
+            annotation_name: "TestProc".into(),
+            target_param: crate::parser::ast::Param {
+                name: "target".into(),
+                ty: TypeExpr::Named {
+                    name: "FnDecl".into(),
+                    generics: vec![],
+                    bindings: vec![],
+                    span: zero(),
+                },
+                span: zero(),
+            },
+            return_type: None,
+            body: proc_body,
+            span: zero(),
+        };
+
+        let result = Interpreter::run_processor(&fn_def, &proc, &[]).unwrap();
+        let (replacement, extras) = result;
+        assert!(extras.is_empty());
+        if let Some(Item::Function(new_fn)) = replacement {
+            assert_eq!(new_fn.body.stmts.len(), 3, "one stmt per param");
+        } else {
+            panic!("expected Some(Function)");
         }
     }
 }

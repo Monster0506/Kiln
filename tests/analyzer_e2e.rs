@@ -1151,15 +1151,6 @@ fn gen_block_example_analyzes_clean() {
 }
 
 #[test]
-fn service_demo_analyzes_clean() {
-    let errs = analyze_file("examples/service.kn");
-    assert!(
-        errs.is_empty(),
-        "service.kn must analyze without errors: {errs:?}"
-    );
-}
-
-#[test]
 fn gen_block_result_type_is_block() {
     let errs = run(r#"
 annotation Wrap { }

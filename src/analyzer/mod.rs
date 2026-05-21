@@ -15,6 +15,7 @@ pub mod infer_bounds;
 pub mod liveness;
 pub mod op_hierarchy;
 pub mod opt_notes;
+pub mod pretty;
 pub mod prop;
 pub mod resolve;
 pub mod returns;

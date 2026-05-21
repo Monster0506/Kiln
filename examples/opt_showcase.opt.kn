@@ -1,0 +1,43 @@
+# optimizer output
+
+BASE: int = 100
+
+SCALE: float = 2.0
+
+INIT_ONLY: int = 42
+
+def add_two(a: int, b: int) -> int {
+    return a + b
+}
+
+def dead_helper(n: int) -> int {
+    return n + n
+}
+
+def main() -> void {
+    cp_sum: int = 7
+    g_base: int = BASE + 1
+    g_init: int = INIT_ONLY
+    mut chosen: int = 0
+    chosen = 1
+    mut rx: int = 5
+    inlined: int = add_two(3, 4)
+    mut sum: int = 0
+    mut i: int = 0
+    while i < 5 {
+        sum = sum + i
+        i = i + 1
+    }
+    println(chosen)
+    println(cp_sum)
+    println(g_base)
+    println(g_init)
+    println(inlined)
+    println(sum)
+    println(rx)
+}
+
+def dead_early_return(n: int) -> int {
+    return n + 1
+}
+

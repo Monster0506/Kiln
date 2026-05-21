@@ -60,6 +60,9 @@ enum Command {
         /// Number of optimization loop iterations (0 = none, default 3)
         #[arg(short = 'O', long = "opt-level", default_value_t = 3u8)]
         opt_level: u8,
+        /// Write the optimizer-transformed source to <file>.opt.kn
+        #[arg(long)]
+        emit: bool,
     },
     /// Compile and run a source file
     Run {
@@ -74,6 +77,9 @@ enum Command {
         /// Number of optimization loop iterations (0 = none, default 3)
         #[arg(short = 'O', long = "opt-level", default_value_t = 3u8)]
         opt_level: u8,
+        /// Write the optimizer-transformed source to <file>.opt.kn
+        #[arg(long)]
+        emit: bool,
     },
     /// Run @test-annotated functions in a source file
     Test {
@@ -95,6 +101,7 @@ struct BuildOptions {
     timing: bool,
     verbose: bool,
     opt_level: u8,
+    emit: bool,
 }
 
 fn build_exe(file: &PathBuf, output: Option<PathBuf>, opts: &BuildOptions) -> PathBuf {
@@ -139,6 +146,27 @@ fn emit_error_no_span(kind: &str, code: &str, msg: &str) {
 pub enum BuildOutcome {
     Ok(PathBuf),
     Errors(Vec<String>),
+}
+
+fn user_item_names(
+    ast: &kiln_compiler::parser::ast::SourceFile,
+) -> std::collections::HashSet<String> {
+    ast.items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Function(f) => Some(f.name.clone()),
+            Item::Struct(s) => Some(s.name.clone()),
+            Item::Enum(e) => Some(e.name.clone()),
+            Item::Global(g) => Some(g.name.clone()),
+            Item::Const(c) => Some(c.name.clone()),
+            Item::Interface(i) => Some(i.name.clone()),
+            Item::ImplBlock(b) => match &b.for_type {
+                kiln_compiler::parser::ast::TypeExpr::Named { name, .. } => Some(name.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
 }
 
 fn run_build(
@@ -245,6 +273,31 @@ fn run_build(
         }
     };
     timer.stop();
+
+    if opts.emit {
+        let user_names = user_item_names(&ast);
+        let mut opt = typed_file.clone();
+        for _ in 0..opts.opt_level.max(1) {
+            kiln_compiler::analyzer::opt_notes::reset_changes();
+            opt = kiln_compiler::analyzer::fold::fold_file(opt);
+            let _ = kiln_compiler::analyzer::opt_notes::drain_notes();
+            opt = kiln_compiler::analyzer::prop::propagate_file(opt);
+            if kiln_compiler::analyzer::opt_notes::change_count() == 0 {
+                break;
+            }
+        }
+        kiln_compiler::analyzer::opt_notes::reset_changes();
+        opt = kiln_compiler::analyzer::fold::fold_file(opt);
+        let _ = kiln_compiler::analyzer::opt_notes::drain_notes();
+        opt = kiln_compiler::analyzer::dce::dce_file(opt);
+        let opt_src = kiln_compiler::analyzer::pretty::emit_optimized(&opt, &user_names);
+        let opt_path = file.with_extension("opt.kn");
+        if let Err(e) = fs::write(&opt_path, &opt_src) {
+            eprintln!("emit warning: could not write {}: {e}", opt_path.display());
+        } else {
+            eprintln!("emitted {}", opt_path.display());
+        }
+    }
 
     let module_name = file
         .file_stem()
@@ -598,6 +651,7 @@ mod tests {
             timing: false,
             verbose: false,
             opt_level: 3,
+            emit: false,
         };
         let result = run_build(&file, None, true, &opts);
         assert!(
@@ -615,6 +669,7 @@ mod tests {
             timing: false,
             verbose: false,
             opt_level: 3,
+            emit: false,
         };
         let result = run_build(&file, None, true, &opts);
         assert!(
@@ -729,11 +784,13 @@ fn main() {
             timing,
             verbose,
             opt_level,
+            emit,
         } => {
             let opts = BuildOptions {
                 timing,
                 verbose,
                 opt_level,
+                emit,
             };
             if watch {
                 run_build_watch(&file, output, no_link, &opts);
@@ -755,11 +812,13 @@ fn main() {
             timing,
             verbose,
             opt_level,
+            emit,
         } => {
             let opts = BuildOptions {
                 timing,
                 verbose,
                 opt_level,
+                emit,
             };
             let exe_path = build_exe(&file, None, &opts);
             let status = std::process::Command::new(&exe_path)
@@ -781,6 +840,7 @@ fn main() {
                 timing,
                 verbose,
                 opt_level,
+                emit: false,
             };
             let path = file.to_string_lossy().to_string();
             let src = fs::read_to_string(&file).unwrap_or_else(|e| {

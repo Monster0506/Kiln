@@ -49,6 +49,7 @@ pub struct TypedFnDef {
     pub is_inline: bool,
     pub is_declaration: bool,
     pub is_entry: bool,
+    pub is_impure: bool,
     pub span: Span,
 }
 
@@ -122,6 +123,7 @@ pub struct TypedInterfaceMethod {
 #[derive(Debug, Clone)]
 pub struct TypedHookDef {
     pub is_static: bool,
+    pub is_impure: bool,
     pub name: HookName,
     pub params: Vec<TypedParam>,
     pub return_type: Ty,

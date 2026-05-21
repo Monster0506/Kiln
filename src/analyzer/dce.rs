@@ -354,6 +354,78 @@ fn collect_reads_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
     }
 }
 
+/// Returns true if the expression has observable side effects using a known-impure set.
+/// A Call/MethodCall/StaticCall is considered impure only if its name is in `impure`.
+/// IndirectCall and Spawn are always impure.
+/// Pass an empty set to get conservative behavior (but all calls will be considered pure
+/// unless explicitly named); use `expr_has_side_effects` for fully conservative analysis.
+pub fn expr_has_side_effects_ctx(expr: &TypedExpr, impure: &HashSet<String>) -> bool {
+    match &expr.kind {
+        TypedExprKind::Call {
+            fn_name,
+            callee,
+            args,
+            ..
+        } => {
+            impure.contains(fn_name)
+                || expr_has_side_effects_ctx(callee, impure)
+                || args.iter().any(|a| expr_has_side_effects_ctx(a, impure))
+        }
+        TypedExprKind::MethodCall {
+            object,
+            method_fn,
+            args,
+        } => {
+            impure.contains(method_fn)
+                || expr_has_side_effects_ctx(object, impure)
+                || args.iter().any(|a| expr_has_side_effects_ctx(a, impure))
+        }
+        TypedExprKind::StaticCall { method_fn, args } => {
+            impure.contains(method_fn) || args.iter().any(|a| expr_has_side_effects_ctx(a, impure))
+        }
+        TypedExprKind::IndirectCall { .. } | TypedExprKind::Spawn(_) => true,
+        TypedExprKind::BinOp { left, right, .. } => {
+            expr_has_side_effects_ctx(left, impure) || expr_has_side_effects_ctx(right, impure)
+        }
+        TypedExprKind::UnOp { operand, .. } => expr_has_side_effects_ctx(operand, impure),
+        TypedExprKind::Field { object, .. } => expr_has_side_effects_ctx(object, impure),
+        TypedExprKind::Index { object, index } => {
+            expr_has_side_effects_ctx(object, impure) || expr_has_side_effects_ctx(index, impure)
+        }
+        TypedExprKind::Tuple(exprs) => exprs.iter().any(|e| expr_has_side_effects_ctx(e, impure)),
+        TypedExprKind::StructLiteral { fields, .. } => fields
+            .iter()
+            .any(|(_, e)| expr_has_side_effects_ctx(e, impure)),
+        TypedExprKind::Unwrap(e) => expr_has_side_effects_ctx(e, impure),
+        TypedExprKind::As { expr, .. } => expr_has_side_effects_ctx(expr, impure),
+        TypedExprKind::Match { scrutinee, arms } => {
+            expr_has_side_effects_ctx(scrutinee, impure)
+                || arms.iter().any(|a| {
+                    a.guard
+                        .as_ref()
+                        .is_some_and(|g| expr_has_side_effects_ctx(g, impure))
+                        || expr_has_side_effects_ctx(&a.body, impure)
+                })
+        }
+        TypedExprKind::Closure { .. } => false,
+        TypedExprKind::Ref { expr, .. } => expr_has_side_effects_ctx(expr, impure),
+        TypedExprKind::Array(exprs) => exprs.iter().any(|e| expr_has_side_effects_ctx(e, impure)),
+        TypedExprKind::Gen { .. } | TypedExprKind::GenSplice(_) => false,
+        TypedExprKind::Str(segs) => {
+            use crate::analyzer::typed_ast::TypedStringSegment;
+            segs.iter().any(|s| match s {
+                TypedStringSegment::Interp(e) => expr_has_side_effects_ctx(e, impure),
+                TypedStringSegment::Text(_) => false,
+            })
+        }
+        TypedExprKind::Int(_)
+        | TypedExprKind::Float(_)
+        | TypedExprKind::Bool(_)
+        | TypedExprKind::Ident(_)
+        | TypedExprKind::EnumVariant { .. } => false,
+    }
+}
+
 /// Returns true if the expression has observable side effects (calls, raises, spawns).
 pub fn expr_has_side_effects(expr: &TypedExpr) -> bool {
     match &expr.kind {
@@ -1350,6 +1422,298 @@ fn substitute_name_in_expr(expr: TypedExpr, name: &str, replacement: &TypedExpr)
         other => other,
     };
     TypedExpr { kind, ty, span }
+}
+
+/// DCE pass using a known-impure set (emit path only).
+/// Unlike `dce_file`, this can drop dead VarDecls whose RHS calls pure functions.
+pub fn dce_file_with_purity(file: TypedFile, impure: &HashSet<String>) -> TypedFile {
+    let items = file
+        .items
+        .into_iter()
+        .map(|item| match item {
+            TypedItem::Function(mut f) => {
+                f.body = dce_block_ctx(f.body, impure);
+                TypedItem::Function(f)
+            }
+            TypedItem::ImplBlock(mut ib) => {
+                ib.methods = ib
+                    .methods
+                    .into_iter()
+                    .map(|mut f| {
+                        f.body = dce_block_ctx(f.body, impure);
+                        f
+                    })
+                    .collect();
+                ib.hooks = ib
+                    .hooks
+                    .into_iter()
+                    .map(|mut h| {
+                        h.body = dce_block_ctx(h.body, impure);
+                        h
+                    })
+                    .collect();
+                TypedItem::ImplBlock(ib)
+            }
+            other => other,
+        })
+        .collect();
+    TypedFile {
+        items,
+        span: file.span,
+    }
+}
+
+fn dce_block_ctx(block: TypedBlock, impure: &HashSet<String>) -> TypedBlock {
+    let mut live: HashSet<String> = HashSet::new();
+    for stmt in &block.stmts {
+        collect_reads_stmt(stmt, &mut live);
+    }
+    let mut new_stmts = Vec::with_capacity(block.stmts.len());
+    for stmt in block.stmts {
+        match &stmt {
+            TypedStmt::VarDecl {
+                name,
+                value,
+                mutable,
+                ..
+            } => {
+                if !mutable && !live.contains(name) && !expr_has_side_effects_ctx(value, impure) {
+                    continue;
+                }
+            }
+            TypedStmt::Assign { target, value, .. } => {
+                if let (TypedExprKind::Ident(tname), TypedExprKind::Ident(vname)) =
+                    (&target.kind, &value.kind)
+                {
+                    if tname == vname {
+                        continue;
+                    }
+                }
+            }
+            _ => {}
+        }
+        let stmt = dce_stmt_ctx(stmt, impure);
+        new_stmts.push(stmt);
+    }
+    TypedBlock {
+        stmts: new_stmts,
+        span: block.span,
+    }
+}
+
+fn dce_stmt_ctx(stmt: TypedStmt, impure: &HashSet<String>) -> TypedStmt {
+    match stmt {
+        TypedStmt::If {
+            branches,
+            else_branch,
+            span,
+        } => TypedStmt::If {
+            branches: branches
+                .into_iter()
+                .map(|(c, b)| (c, dce_block_ctx(b, impure)))
+                .collect(),
+            else_branch: else_branch.map(|b| dce_block_ctx(b, impure)),
+            span,
+        },
+        TypedStmt::While { cond, body, span } => TypedStmt::While {
+            cond,
+            body: dce_block_ctx(body, impure),
+            span,
+        },
+        TypedStmt::DoWhile { body, cond, span } => TypedStmt::DoWhile {
+            body: dce_block_ctx(body, impure),
+            cond,
+            span,
+        },
+        TypedStmt::For {
+            binding,
+            binding_ty,
+            iterable,
+            body,
+            iter_ty,
+            span,
+        } => TypedStmt::For {
+            binding,
+            binding_ty,
+            iterable,
+            body: dce_block_ctx(body, impure),
+            iter_ty,
+            span,
+        },
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            span,
+        } => TypedStmt::TryCatch {
+            body: dce_block_ctx(body, impure),
+            handlers: handlers
+                .into_iter()
+                .map(|mut h| {
+                    h.body = dce_block_ctx(h.body, impure);
+                    h
+                })
+                .collect(),
+            finally: finally.map(|b| dce_block_ctx(b, impure)),
+            span,
+        },
+        TypedStmt::FnDef(mut f) => {
+            f.body = dce_block_ctx(f.body, impure);
+            TypedStmt::FnDef(f)
+        }
+        other => other,
+    }
+}
+
+/// Single-use inline pass using a known-impure set (emit path only).
+/// Unlike `single_use_inline_file`, this can inline bindings whose RHS calls pure functions.
+pub fn single_use_inline_file_with_purity(file: TypedFile, impure: &HashSet<String>) -> TypedFile {
+    let items = file
+        .items
+        .into_iter()
+        .map(|item| match item {
+            TypedItem::Function(mut f) => {
+                f.body = single_use_inline_block_ctx(f.body, impure);
+                TypedItem::Function(f)
+            }
+            TypedItem::ImplBlock(mut ib) => {
+                ib.methods = ib
+                    .methods
+                    .into_iter()
+                    .map(|mut f| {
+                        f.body = single_use_inline_block_ctx(f.body, impure);
+                        f
+                    })
+                    .collect();
+                ib.hooks = ib
+                    .hooks
+                    .into_iter()
+                    .map(|mut h| {
+                        h.body = single_use_inline_block_ctx(h.body, impure);
+                        h
+                    })
+                    .collect();
+                TypedItem::ImplBlock(ib)
+            }
+            other => other,
+        })
+        .collect();
+    TypedFile {
+        items,
+        span: file.span,
+    }
+}
+
+fn single_use_inline_block_ctx(block: TypedBlock, impure: &HashSet<String>) -> TypedBlock {
+    let mut stmts = block.stmts;
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut i = 0;
+        while i < stmts.len() {
+            let candidate = if let TypedStmt::VarDecl {
+                name,
+                mutable: false,
+                value,
+                ..
+            } = &stmts[i]
+            {
+                if !expr_has_side_effects_ctx(value, impure) {
+                    Some((name.clone(), value.clone()))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some((name, value)) = candidate {
+                let subsequent = &stmts[i + 1..];
+                let count = count_reads_in_stmts(subsequent, &name);
+                if count == 1 {
+                    let rest: Vec<TypedStmt> = stmts.drain(i + 1..).collect();
+                    let rest: Vec<TypedStmt> = rest
+                        .into_iter()
+                        .map(|s| substitute_name_in_stmt(s, &name, &value))
+                        .collect();
+                    stmts.remove(i);
+                    stmts.extend(rest);
+                    changed = true;
+                } else {
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        }
+    }
+    let stmts = stmts
+        .into_iter()
+        .map(|s| single_use_inline_stmt_ctx(s, impure))
+        .collect();
+    TypedBlock {
+        stmts,
+        span: block.span,
+    }
+}
+
+fn single_use_inline_stmt_ctx(stmt: TypedStmt, impure: &HashSet<String>) -> TypedStmt {
+    match stmt {
+        TypedStmt::If {
+            branches,
+            else_branch,
+            span,
+        } => TypedStmt::If {
+            branches: branches
+                .into_iter()
+                .map(|(c, b)| (c, single_use_inline_block_ctx(b, impure)))
+                .collect(),
+            else_branch: else_branch.map(|b| single_use_inline_block_ctx(b, impure)),
+            span,
+        },
+        TypedStmt::While { cond, body, span } => TypedStmt::While {
+            cond,
+            body: single_use_inline_block_ctx(body, impure),
+            span,
+        },
+        TypedStmt::DoWhile { body, cond, span } => TypedStmt::DoWhile {
+            body: single_use_inline_block_ctx(body, impure),
+            cond,
+            span,
+        },
+        TypedStmt::For {
+            binding,
+            binding_ty,
+            iterable,
+            body,
+            iter_ty,
+            span,
+        } => TypedStmt::For {
+            binding,
+            binding_ty,
+            iterable,
+            body: single_use_inline_block_ctx(body, impure),
+            iter_ty,
+            span,
+        },
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            span,
+        } => TypedStmt::TryCatch {
+            body: single_use_inline_block_ctx(body, impure),
+            handlers: handlers
+                .into_iter()
+                .map(|mut h| {
+                    h.body = single_use_inline_block_ctx(h.body, impure);
+                    h
+                })
+                .collect(),
+            finally: finally.map(|b| single_use_inline_block_ctx(b, impure)),
+            span,
+        },
+        other => other,
+    }
 }
 
 /// Remove user-defined functions not reachable from `main` (emit path only).

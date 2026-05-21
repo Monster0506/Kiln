@@ -555,6 +555,7 @@ mod tests {
                 is_inline: false,
                 is_declaration: false,
                 is_entry: false,
+                is_impure: false,
                 span: s(),
             })],
             span: s(),

@@ -17,6 +17,7 @@ pub mod op_hierarchy;
 pub mod opt_notes;
 pub mod pretty;
 pub mod prop;
+pub mod purity;
 pub mod resolve;
 pub mod returns;
 pub mod solve;
@@ -493,6 +494,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             "derive",
             "test",
             "entry",
+            "impure",
         ];
         let declared: std::collections::HashSet<String> = source
             .items
@@ -1255,6 +1257,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     is_inline: f.annotations.iter().any(|a| a.name == "inline"),
                     is_declaration: f.is_declaration,
                     is_entry: f.annotations.iter().any(|a| a.name == "entry"),
+                    is_impure: f.annotations.iter().any(|a| a.name == "impure"),
                     span: f.span,
                 }));
             }
@@ -1522,6 +1525,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         is_inline: method.annotations.iter().any(|a| a.name == "inline"),
                         is_declaration: false,
                         is_entry: false,
+                        is_impure: method.annotations.iter().any(|a| a.name == "impure"),
                         span: method.span,
                     });
                 }
@@ -1604,6 +1608,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                                 crate::parser::ast::HookName::Named(n) => n.clone(),
                                 crate::parser::ast::HookName::Op(s) => s.clone(),
                             }),
+                        is_impure: hook.annotations.iter().any(|a| a.name == "impure"),
                         name: hook.name.clone(),
                         params,
                         return_type: ret,

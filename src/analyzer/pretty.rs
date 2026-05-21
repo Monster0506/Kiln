@@ -124,8 +124,14 @@ fn emit_fn(f: &TypedFnDef, indent: usize) -> String {
     let ind = indent_str(indent);
     let params: Vec<String> = f.params.iter().map(emit_param).collect();
     let body = emit_block(&f.body, indent + 1);
+    let ann = if f.is_impure {
+        format!("{}@impure\n", ind)
+    } else {
+        String::new()
+    };
     format!(
-        "{}def {}({}) -> {} {}\n",
+        "{}{}def {}({}) -> {} {}\n",
+        ann,
         ind,
         f.name,
         params.join(", "),

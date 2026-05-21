@@ -287,7 +287,7 @@ fn run_build(
             }
         }
         {
-            use kiln_compiler::analyzer::{dce, fold, opt_notes, prop};
+            use kiln_compiler::analyzer::{dce, fold, opt_notes, prop, purity};
             // Final fold pass.
             opt_notes::reset_changes();
             opt = fold::fold_file(opt);
@@ -302,9 +302,13 @@ fn run_build(
             opt = dce::dce_file(opt);
             // Demote mut flags that are no longer assigned (emit-only).
             opt = dce::demote_mut_flags_file(opt);
-            // Inline single-use immutable bindings.
-            opt = dce::single_use_inline_file(opt);
-            opt = dce::dce_file(opt);
+            // Build impure set and tag transitively impure functions in the AST.
+            let impure = purity::build_impure_set(&opt);
+            opt = purity::tag_impure_functions(opt, &impure);
+            // Inline single-use immutable bindings (purity-aware: can inline pure calls).
+            opt = dce::single_use_inline_file_with_purity(opt, &impure);
+            // DCE using purity info (can drop dead bindings whose RHS calls pure functions).
+            opt = dce::dce_file_with_purity(opt, &impure);
             // Remove unreachable user functions and unused globals.
             opt = dce::eliminate_dead_fns(opt, &user_names);
             opt = dce::eliminate_dead_globals(opt, &user_names);

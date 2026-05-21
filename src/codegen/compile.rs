@@ -33,6 +33,7 @@ mod tests {
     fn hook_op(op: &str, params: Vec<TypedParam>) -> TypedHookDef {
         TypedHookDef {
             is_static: false,
+            is_impure: false,
             name: HookName::Op(op.into()),
             params,
             return_type: Ty::Void,
@@ -206,8 +207,10 @@ pub fn compile(
         let _ = crate::analyzer::opt_notes::drain_notes();
     }
 
-    // Dead code / assignment elimination.
-    let optimized = crate::analyzer::dce::dce_file(refolded);
+    // Dead code / assignment elimination, using impurity info for smarter decisions.
+    let impure = crate::analyzer::purity::build_impure_set(&refolded);
+    let tagged = crate::analyzer::purity::tag_impure_functions(refolded, &impure);
+    let optimized = crate::analyzer::dce::dce_file_with_purity(tagged, &impure);
 
     let typed_file = &optimized;
     declare_alloc_fns(&mut cgx.module);

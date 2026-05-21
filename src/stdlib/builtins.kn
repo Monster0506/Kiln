@@ -18,9 +18,11 @@ struct Vec[T] {
 }
 
 @builtin
+@impure
 def __kiln_print(s: str) -> void
 
 @builtin
+@impure
 def __kiln_println(s: str) -> void
 
 @builtin
@@ -39,12 +41,15 @@ def __kiln_str_concat(a: str, b: str) -> str
 def len(x: str) -> int
 
 @builtin
+@impure
 def panic(msg: str) -> void
 
 @builtin
+@impure
 def assert(cond: bool) -> void
 
 @builtin
+@impure
 def clock_ms() -> int
 
 @builtin

@@ -455,6 +455,7 @@ pub fn check_fn_def(
         is_inline: f.annotations.iter().any(|a| a.name == "inline"),
         is_declaration: false,
         is_entry: f.annotations.iter().any(|a| a.name == "entry"),
+        is_impure: f.annotations.iter().any(|a| a.name == "impure"),
         span: f.span,
     }
 }

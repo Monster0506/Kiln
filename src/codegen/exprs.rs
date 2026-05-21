@@ -25,6 +25,8 @@ pub struct LowerCtx<'a> {
     pub layouts: &'a StructLayouts,
     pub func_ids: &'a HashMap<String, FuncId>,
     pub global_vars: &'a HashMap<String, DataId>,
+    /// Immutable globals with scalar literal inits, inlined at every use site.
+    pub inline_globals: &'a HashMap<String, TypedExpr>,
     pub closure_counter: usize,
     pub self_type: Option<String>,
     pub return_clif_type: Option<Type>,
@@ -242,6 +244,9 @@ fn lower_typed_expr_inner(
                 if let Some(self_var) = vars.get("__self") {
                     return builder.use_var(self_var);
                 }
+            }
+            if let Some(lit_expr) = ctx.inline_globals.get(name.as_str()) {
+                return lower_typed_expr_inner(lit_expr, builder, vars, ctx);
             }
             if let Some(&data_id) = ctx.global_vars.get(name.as_str()) {
                 let gv = ctx.module.declare_data_in_func(data_id, builder.func);
@@ -672,6 +677,7 @@ fn lower_typed_expr_inner(
                     layouts: ctx.layouts,
                     func_ids: ctx.func_ids,
                     global_vars: ctx.global_vars,
+                    inline_globals: ctx.inline_globals,
                     closure_counter: ctx.closure_counter,
                     self_type: None,
                     return_clif_type: None,
@@ -1307,11 +1313,13 @@ mod tests {
         let global_vars = HashMap::new();
         let mut thunks = HashSet::new();
         let empty_inline: HashMap<String, (Vec<(String, Ty)>, TypedBlock)> = HashMap::new();
+        let empty_inline_globals: HashMap<String, TypedExpr> = HashMap::new();
         let mut lctx = LowerCtx {
             module: &mut cgx.module,
             layouts: &layouts,
             func_ids: &func_ids,
             global_vars: &global_vars,
+            inline_globals: &empty_inline_globals,
             closure_counter: 0,
             self_type: None,
             return_clif_type: None,

@@ -3,17 +3,74 @@ use crate::analyzer::typed_ast::{
     TypedBlock, TypedCatchHandler, TypedExpr, TypedExprKind, TypedFile, TypedFnDef, TypedHookDef,
     TypedItem, TypedStmt,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+/// Recursively collect the set of all names that appear as assignment targets in a block.
+/// Used to identify `mut` variables that are declared but never actually reassigned.
+fn collect_assigned_names(block: &TypedBlock) -> HashSet<String> {
+    let mut names = HashSet::new();
+    collect_assigned_in_block(block, &mut names);
+    names
+}
+
+fn collect_assigned_in_block(block: &TypedBlock, names: &mut HashSet<String>) {
+    for stmt in &block.stmts {
+        collect_assigned_in_stmt(stmt, names);
+    }
+}
+
+fn collect_assigned_in_stmt(stmt: &TypedStmt, names: &mut HashSet<String>) {
+    match stmt {
+        TypedStmt::Assign { target, .. } | TypedStmt::CompoundAssign { target, .. } => {
+            if let TypedExprKind::Ident(name) = &target.kind {
+                names.insert(name.clone());
+            }
+        }
+        TypedStmt::If {
+            branches,
+            else_branch,
+            ..
+        } => {
+            for (_, body) in branches {
+                collect_assigned_in_block(body, names);
+            }
+            if let Some(body) = else_branch {
+                collect_assigned_in_block(body, names);
+            }
+        }
+        TypedStmt::While { body, .. }
+        | TypedStmt::DoWhile { body, .. }
+        | TypedStmt::For { body, .. } => {
+            collect_assigned_in_block(body, names);
+        }
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            ..
+        } => {
+            collect_assigned_in_block(body, names);
+            for h in handlers {
+                collect_assigned_in_block(&h.body, names);
+            }
+            if let Some(f) = finally {
+                collect_assigned_in_block(f, names);
+            }
+        }
+        _ => {}
+    }
+}
 
 /// Propagate constants within a block. Maintains a map of definitely-constant bindings.
 /// Only propagates Int, Float, Bool literals (not Str to avoid complexity).
+/// Also promotes `mut` variables that are never reassigned anywhere in the block tree.
 pub fn propagate_block(block: TypedBlock) -> TypedBlock {
+    let ever_assigned = collect_assigned_names(&block);
     let mut constants: HashMap<String, TypedExprKind> = HashMap::new();
-    let stmts = block
-        .stmts
-        .into_iter()
-        .map(|stmt| propagate_stmt(stmt, &mut constants))
-        .collect();
+    let mut stmts = Vec::with_capacity(block.stmts.len());
+    for stmt in block.stmts {
+        stmts.push(propagate_stmt(stmt, &mut constants, &ever_assigned));
+    }
     // Run fold again to collapse newly-constant expressions
     fold_block(TypedBlock {
         stmts,
@@ -28,7 +85,11 @@ fn is_propagatable_literal(kind: &TypedExprKind) -> bool {
     )
 }
 
-fn propagate_stmt(stmt: TypedStmt, constants: &mut HashMap<String, TypedExprKind>) -> TypedStmt {
+fn propagate_stmt(
+    stmt: TypedStmt,
+    constants: &mut HashMap<String, TypedExprKind>,
+    ever_assigned: &HashSet<String>,
+) -> TypedStmt {
     match stmt {
         TypedStmt::VarDecl {
             name,
@@ -39,8 +100,16 @@ fn propagate_stmt(stmt: TypedStmt, constants: &mut HashMap<String, TypedExprKind
         } => {
             let value = propagate_expr(value, constants);
             let value = fold_expr(value);
-            // Register as constant if it's a propagatable literal and immutable
-            if !mutable && is_propagatable_literal(&value.kind) {
+            // Register as constant if it's a propagatable literal and either:
+            // (a) explicitly immutable, or
+            // (b) mutable but never reassigned anywhere in this block tree
+            let effectively_immutable = !mutable || !ever_assigned.contains(&name);
+            if effectively_immutable && is_propagatable_literal(&value.kind) {
+                if mutable {
+                    crate::analyzer::opt_notes::note(format!(
+                        "promote `mut {name}`: never reassigned, propagating as constant"
+                    ));
+                }
                 constants.insert(name.clone(), value.kind.clone());
             }
             TypedStmt::VarDecl {
@@ -332,6 +401,27 @@ fn propagate_expr(expr: TypedExpr, constants: &HashMap<String, TypedExprKind>) -
     }
 }
 
+/// Collect all names that appear as assignment targets across all function/hook bodies in a file.
+/// Used to identify `mut` globals that are never written to.
+fn collect_all_assigned_names(file: &TypedFile) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for item in &file.items {
+        match item {
+            TypedItem::Function(f) => collect_assigned_in_block(&f.body, &mut names),
+            TypedItem::ImplBlock(ib) => {
+                for m in &ib.methods {
+                    collect_assigned_in_block(&m.body, &mut names);
+                }
+                for h in &ib.hooks {
+                    collect_assigned_in_block(&h.body, &mut names);
+                }
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
 fn propagate_fn(f: TypedFnDef) -> TypedFnDef {
     TypedFnDef {
         body: propagate_block(f.body),
@@ -347,6 +437,10 @@ fn propagate_hook(h: TypedHookDef) -> TypedHookDef {
 }
 
 pub fn propagate_file(file: TypedFile) -> TypedFile {
+    // Pre-scan: find all names written to anywhere in the program.
+    // `mut` globals absent from this set are never reassigned and can be demoted.
+    let all_assigned = collect_all_assigned_names(&file);
+
     let items = file
         .items
         .into_iter()
@@ -358,6 +452,13 @@ pub fn propagate_file(file: TypedFile) -> TypedFile {
                 TypedItem::ImplBlock(ib)
             }
             TypedItem::Global(mut g) => {
+                if g.mutable && !all_assigned.contains(&g.name) {
+                    crate::analyzer::opt_notes::note(format!(
+                        "demote `mut {}` global: never reassigned",
+                        g.name
+                    ));
+                    g.mutable = false;
+                }
                 g.init = fold_expr(g.init);
                 TypedItem::Global(g)
             }
@@ -529,6 +630,79 @@ mod tests {
         ];
         let file = propagate_file(make_file(stmts));
         assert_return_is_int(&file, 7);
+    }
+
+    #[test]
+    fn mut_var_never_reassigned_is_propagated() {
+        // mut x = 5 with no assignment -> treated as constant, return x + 1 => 6
+        let stmts = vec![
+            TypedStmt::VarDecl {
+                name: "x".into(),
+                ty: Ty::Int,
+                value: int_expr(5),
+                mutable: true,
+                span: s(),
+            },
+            TypedStmt::Return {
+                value: Some(binop_expr(BinOp::Add, ident_expr("x"), int_expr(1))),
+                span: s(),
+            },
+        ];
+        let file = propagate_file(make_file(stmts));
+        assert_return_is_int(&file, 6);
+    }
+
+    #[test]
+    fn mut_var_assigned_in_nested_block_is_not_propagated() {
+        // mut x = 5; if cond { x = 10 }; return x  => return x (assigned in branch)
+        let inner_assign = TypedStmt::Assign {
+            target: ident_expr("x"),
+            value: int_expr(10),
+            span: s(),
+        };
+        let if_stmt = TypedStmt::If {
+            branches: vec![(
+                TypedExpr {
+                    kind: TypedExprKind::Bool(true),
+                    ty: Ty::Bool,
+                    span: s(),
+                },
+                TypedBlock {
+                    stmts: vec![inner_assign],
+                    span: s(),
+                },
+            )],
+            else_branch: None,
+            span: s(),
+        };
+        let stmts = vec![
+            TypedStmt::VarDecl {
+                name: "x".into(),
+                ty: Ty::Int,
+                value: int_expr(5),
+                mutable: true,
+                span: s(),
+            },
+            if_stmt,
+            TypedStmt::Return {
+                value: Some(ident_expr("x")),
+                span: s(),
+            },
+        ];
+        let file = propagate_file(make_file(stmts));
+        // x is assigned in the if-branch, so must NOT be propagated to 5
+        if let TypedItem::Function(f) = &file.items[0] {
+            for stmt in &f.body.stmts {
+                if let TypedStmt::Return { value: Some(e), .. } = stmt {
+                    assert!(
+                        !matches!(&e.kind, TypedExprKind::Int(5)),
+                        "mut var assigned in nested block should not propagate init value"
+                    );
+                    return;
+                }
+            }
+        }
+        panic!("no return found");
     }
 
     #[test]

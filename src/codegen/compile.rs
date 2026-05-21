@@ -224,11 +224,24 @@ pub fn compile(
             .ok();
     }
 
-    // Pass 0a: declare module-level globals as writable 8-byte data slots.
+    // Pass 0a: declare module-level globals.
+    // Immutable globals whose initializer is a scalar literal are inlined at every
+    // use site -- no data slot is allocated for them.
+    // All other globals (mutable, or immutable with a computed init) get a writable
+    // 8-byte data slot and are initialized by __kiln_init_globals at runtime.
     let mut global_data_ids: HashMap<String, DataId> = HashMap::new();
+    let mut inline_globals: HashMap<String, TypedExpr> = HashMap::new();
     let mut global_items: Vec<TypedGlobalVar> = Vec::new();
     for item in &typed_file.items {
         if let TypedItem::Global(g) = item {
+            if !g.mutable && is_scalar_literal(&g.init) {
+                crate::analyzer::opt_notes::note(format!(
+                    "inline global `{}`: immutable scalar, no data slot",
+                    g.name
+                ));
+                inline_globals.insert(g.name.clone(), g.init.clone());
+                continue;
+            }
             let data_name = format!("__kiln_global_{}", g.name);
             let data_id = cgx
                 .module
@@ -245,6 +258,13 @@ pub fn compile(
             global_data_ids.insert(g.name.clone(), data_id);
             global_items.push(g.clone());
         }
+    }
+    if verbose {
+        for n in crate::analyzer::opt_notes::drain_notes() {
+            eprintln!("[opt] {}", n);
+        }
+    } else {
+        let _ = crate::analyzer::opt_notes::drain_notes();
     }
 
     // Pass 0: build struct/enum layouts.
@@ -669,6 +689,7 @@ pub fn compile(
             layouts: &layouts,
             func_ids: &func_ids,
             global_vars: &global_data_ids,
+            inline_globals: &inline_globals,
             closure_counter: 0,
             self_type: job.self_type.clone(),
             return_clif_type,
@@ -718,4 +739,11 @@ pub fn compile(
     }
 
     Ok(fn_codegen_times)
+}
+
+fn is_scalar_literal(expr: &TypedExpr) -> bool {
+    matches!(
+        &expr.kind,
+        TypedExprKind::Int(_) | TypedExprKind::Float(_) | TypedExprKind::Bool(_)
+    )
 }

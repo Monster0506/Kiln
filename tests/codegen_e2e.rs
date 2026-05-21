@@ -426,3 +426,89 @@ def main() -> void {
     );
     assert_eq!(out.trim(), "1", "got: {out}");
 }
+
+// ---- Mut-to-immut promotion and global inlining --------------------------------
+
+#[test]
+fn immutable_int_global_is_readable() {
+    let out = kiln_run(
+        r#"
+LIMIT: int = 42
+def main() -> void {
+    println(LIMIT)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "42", "got: {out}");
+}
+
+#[test]
+fn immutable_float_global_is_readable() {
+    let out = kiln_run(
+        r#"
+PI: float = 3.14
+def main() -> void {
+    println(PI)
+}
+"#,
+    );
+    assert!(out.trim().starts_with("3.14"), "got: {out}");
+}
+
+#[test]
+fn immutable_bool_global_is_readable() {
+    let out = kiln_run(
+        r#"
+FLAG: bool = true
+def main() -> void {
+    if FLAG {
+        println(1)
+    } else {
+        println(0)
+    }
+}
+"#,
+    );
+    assert_eq!(out.trim(), "1", "got: {out}");
+}
+
+#[test]
+fn mutable_global_can_be_reassigned() {
+    let out = kiln_run(
+        r#"
+mut counter: int = 0
+def main() -> void {
+    counter = 99
+    println(counter)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "99", "got: {out}");
+}
+
+#[test]
+fn immutable_global_used_multiple_times() {
+    let out = kiln_run(
+        r#"
+BASE: int = 10
+def main() -> void {
+    println(BASE + BASE)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "20", "got: {out}");
+}
+
+#[test]
+fn mut_global_never_written_is_inlined() {
+    // `mut LIMIT` declared but never assigned -> should be promoted and inlined
+    let out = kiln_run(
+        r#"
+mut LIMIT: int = 100
+def main() -> void {
+    println(LIMIT)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "100", "got: {out}");
+}

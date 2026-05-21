@@ -41,15 +41,25 @@ impl<'src> Lexer<'src> {
         if let Some(c) = self.peek() {
             if c.is_ascii_digit() {
                 let mut raw = String::new();
+                let mut last_was_underscore = false;
                 while self
                     .peek()
                     .map(|c| c.is_ascii_digit() || c == '_')
                     .unwrap_or(false)
                 {
                     let ch = self.advance().unwrap();
-                    if ch != '_' {
+                    if ch == '_' {
+                        last_was_underscore = true;
+                    } else {
+                        last_was_underscore = false;
                         raw.push(ch);
                     }
+                }
+                // Trailing underscore before end-of-literal or decimal point is an error.
+                if last_was_underscore {
+                    return Err(LexError::InvalidNumeric {
+                        span: Span::new(start, self.pos),
+                    });
                 }
                 // Check for a float: `1.5` but not `1.foo`.
                 if self.peek() == Some('.') {
@@ -57,15 +67,24 @@ impl<'src> Lexer<'src> {
                     if after_dot.map(|c| c.is_ascii_digit()).unwrap_or(false) {
                         raw.push('.');
                         self.advance(); // consume '.'
+                        let mut last_was_underscore = false;
                         while self
                             .peek()
                             .map(|c| c.is_ascii_digit() || c == '_')
                             .unwrap_or(false)
                         {
                             let ch = self.advance().unwrap();
-                            if ch != '_' {
+                            if ch == '_' {
+                                last_was_underscore = true;
+                            } else {
+                                last_was_underscore = false;
                                 raw.push(ch);
                             }
+                        }
+                        if last_was_underscore {
+                            return Err(LexError::InvalidNumeric {
+                                span: Span::new(start, self.pos),
+                            });
                         }
                         let val: f64 = raw.parse().map_err(|_| LexError::InvalidNumeric {
                             span: Span::new(start, self.pos),

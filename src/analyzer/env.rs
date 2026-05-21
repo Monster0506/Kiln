@@ -69,6 +69,12 @@ pub enum Symbol {
         id: InterfaceId,
         span: Span,
     },
+    /// A compile-time constant. Uses of the name are inlined as the literal value.
+    Const {
+        ty: Ty,
+        value: crate::analyzer::typed_ast::TypedExprKind,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Default, Clone)]

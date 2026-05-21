@@ -975,6 +975,7 @@ fn subst_expr(
                     pattern: arm.pattern.clone(),
                     guard: arm.guard.as_ref().map(|g| se!(g)),
                     body: se!(&arm.body),
+                    narrowed_discriminant: arm.narrowed_discriminant,
                     span: arm.span,
                 })
                 .collect(),

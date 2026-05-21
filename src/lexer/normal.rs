@@ -218,6 +218,7 @@ fn keyword_or_ident(s: &str) -> TokenKind {
         "spawn" => TokenKind::Spawn,
         "as" => TokenKind::As,
         "mut" => TokenKind::Mut,
+        "const" => TokenKind::Const,
         "scope" => TokenKind::Scope,
         "gen" => TokenKind::Gen,
         "if" => TokenKind::If,

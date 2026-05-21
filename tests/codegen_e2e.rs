@@ -11,7 +11,7 @@ fn compile_source(src: &str) -> Vec<u8> {
     let ast = Parser::new(tokens).parse_file().expect("parse failed");
     let typed = analyze(&ast).expect("analyze failed");
     let mut cgx = CodegenContext::new("e2e_test");
-    compile(&typed, &mut cgx, false).expect("compile failed");
+    compile(&typed, &mut cgx, false, 3).expect("compile failed");
     emit_object(cgx).expect("emit failed")
 }
 

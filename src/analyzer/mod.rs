@@ -1,13 +1,21 @@
+pub mod cfg;
 pub mod check;
 pub mod collect;
 pub mod conformance;
 pub mod constrain;
+pub mod constraints;
+pub mod dce;
 pub mod env;
 pub mod error;
+pub mod escape;
 pub mod exhaustive;
+pub mod fold;
 pub mod infer;
 pub mod infer_bounds;
+pub mod liveness;
 pub mod op_hierarchy;
+pub mod opt_notes;
+pub mod prop;
 pub mod resolve;
 pub mod returns;
 pub mod solve;
@@ -26,7 +34,7 @@ use crate::analyzer::typed_ast::{
     TypedImplBlock, TypedInterfaceDef, TypedInterfaceMethod, TypedItem, TypedParam, TypedStructDef,
 };
 use crate::diagnostics::Span;
-use crate::parser::ast::{HookName, ImplKind, Item, SourceFile, TypeExpr};
+use crate::parser::ast::{Expr, HookName, ImplKind, Item, SourceFile, StringSegment, TypeExpr};
 
 fn register_builtins(_env: &mut Env, _registry: &mut ty::TypeRegistry) {
     // All builtin names are declared in prelude.kn.
@@ -414,18 +422,62 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
         }
     }
 
-    // Pass 1a: register module-level globals into the environment.
+    // Pass 1a: register module-level globals and consts into the environment.
     for item in &source.items {
-        if let Item::Global(g) = item {
-            let ty = resolve::resolve_type_expr(&g.ty, &env, &mut errors);
-            env.define(
-                &g.name,
-                env::Symbol::Var {
-                    ty,
-                    mutable: g.mutable,
-                    span: g.span,
-                },
-            );
+        match item {
+            Item::Global(g) => {
+                let ty = resolve::resolve_type_expr(&g.ty, &env, &mut errors);
+                env.define(
+                    &g.name,
+                    env::Symbol::Var {
+                        ty,
+                        mutable: g.mutable,
+                        span: g.span,
+                    },
+                );
+            }
+            Item::Const(c) => {
+                let ty = resolve::resolve_type_expr(&c.ty, &env, &mut errors);
+                // Const initializer must be a literal.
+                let value_kind = match &c.value {
+                    Expr::Int(n, _) => Some(crate::analyzer::typed_ast::TypedExprKind::Int(*n)),
+                    Expr::Float(f, _) => Some(crate::analyzer::typed_ast::TypedExprKind::Float(*f)),
+                    Expr::Bool(b, _) => Some(crate::analyzer::typed_ast::TypedExprKind::Bool(*b)),
+                    Expr::Str(segs, _) => {
+                        // Only allow all-text string literals.
+                        let text_segs: Option<Vec<_>> = segs
+                            .iter()
+                            .map(|seg| match seg {
+                                StringSegment::Text(t) => Some(
+                                    crate::analyzer::typed_ast::TypedStringSegment::Text(t.clone()),
+                                ),
+                                _ => None,
+                            })
+                            .collect();
+                        text_segs.map(crate::analyzer::typed_ast::TypedExprKind::Str)
+                    }
+                    _ => None,
+                };
+                match value_kind {
+                    Some(kind) => {
+                        env.define(
+                            &c.name,
+                            env::Symbol::Const {
+                                ty,
+                                value: kind,
+                                span: c.span,
+                            },
+                        );
+                    }
+                    None => {
+                        errors.push(AnalysisError::NonLiteralConst {
+                            name: c.name.clone(),
+                            span: c.span,
+                        });
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -1665,6 +1717,22 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 }));
             }
 
+            Item::Const(c) => {
+                // Symbol was already registered in pass 1a. Produce the typed item.
+                if let Some(env::Symbol::Const { ty, value, .. }) = env.lookup(&c.name) {
+                    let ty = ty.clone();
+                    let value = value.clone();
+                    typed_items.push(TypedItem::Const(
+                        crate::analyzer::typed_ast::TypedConstDef {
+                            name: c.name.clone(),
+                            ty,
+                            value,
+                            span: c.span,
+                        },
+                    ));
+                }
+            }
+
             Item::ProcessorDef(proc) => {
                 // Validate param and return types against the registry.
                 resolve_type_expr(&proc.target_param.ty, &env, &mut errors);
@@ -1685,6 +1753,14 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
     // Pass 3: constraint collection + solving (interface bound checks).
     let constraints = constrain::collect_constraints(&typed_file);
     errors.extend(solve::solve(&constraints, &registry));
+
+    // Pass 3a: boolean constraint propagation warnings (tautologies/contradictions).
+    errors.extend(crate::analyzer::constraints::check_tautological_conditions(
+        &typed_file,
+    ));
+
+    // Pass 3b: static division-by-zero detection (after constant folding in analysis).
+    errors.extend(crate::analyzer::fold::check_division_by_zero(&typed_file));
 
     // Pass 4: object safety — check that interfaces used as dynamic types are object-safe.
     {

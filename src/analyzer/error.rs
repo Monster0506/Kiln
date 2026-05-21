@@ -94,6 +94,24 @@ pub enum AnalysisError {
         module: String,
         span: Span,
     },
+
+    #[error("{span}: division by zero detected at compile time")]
+    DivisionByZero { span: Span },
+
+    #[error("{span}: {message}")]
+    RedundantMatchArm { message: String, span: Span },
+
+    #[error("{span}: condition is always true")]
+    TautologicalCondition { span: Span },
+
+    #[error("{span}: condition is always false")]
+    ContradictoryCondition { span: Span },
+
+    #[error("{span}: const initializer for '{name}' must be a literal value")]
+    NonLiteralConst { name: String, span: Span },
+
+    #[error("{span}: cannot assign to const '{name}'")]
+    AssignToConst { name: String, span: Span },
 }
 
 impl AnalysisError {
@@ -119,6 +137,12 @@ impl AnalysisError {
             AnalysisError::MissingImplementation { .. } => "E018",
             AnalysisError::ModuleNotFound { .. } => "E019",
             AnalysisError::SymbolNotExported { .. } => "E020",
+            AnalysisError::DivisionByZero { .. } => "E021",
+            AnalysisError::NonLiteralConst { .. } => "E022",
+            AnalysisError::AssignToConst { .. } => "E023",
+            AnalysisError::RedundantMatchArm { .. } => "W001",
+            AnalysisError::TautologicalCondition { .. } => "W002",
+            AnalysisError::ContradictoryCondition { .. } => "W003",
         }
     }
 
@@ -144,6 +168,12 @@ impl AnalysisError {
             AnalysisError::MissingImplementation { .. } => "declaration error",
             AnalysisError::ModuleNotFound { .. } => "module error",
             AnalysisError::SymbolNotExported { .. } => "module error",
+            AnalysisError::DivisionByZero { .. } => "arithmetic error",
+            AnalysisError::NonLiteralConst { .. } => "const error",
+            AnalysisError::AssignToConst { .. } => "mutability error",
+            AnalysisError::RedundantMatchArm { .. } => "warning",
+            AnalysisError::TautologicalCondition { .. } => "warning",
+            AnalysisError::ContradictoryCondition { .. } => "warning",
         }
     }
 
@@ -213,6 +243,18 @@ impl AnalysisError {
             AnalysisError::SymbolNotExported { symbol, module, .. } => {
                 format!("symbol `{symbol}` is not exported by module `{module}`")
             }
+            AnalysisError::DivisionByZero { .. } => {
+                "division by zero detected at compile time".into()
+            }
+            AnalysisError::NonLiteralConst { name, .. } => {
+                format!("const initializer for '{name}' must be a literal value")
+            }
+            AnalysisError::AssignToConst { name, .. } => {
+                format!("cannot assign to const '{name}'")
+            }
+            AnalysisError::RedundantMatchArm { message, .. } => message.clone(),
+            AnalysisError::TautologicalCondition { .. } => "condition is always true".into(),
+            AnalysisError::ContradictoryCondition { .. } => "condition is always false".into(),
         }
     }
 
@@ -246,6 +288,12 @@ impl AnalysisError {
             AnalysisError::MissingImplementation { span, .. } => *span,
             AnalysisError::ModuleNotFound { span, .. } => *span,
             AnalysisError::SymbolNotExported { span, .. } => *span,
+            AnalysisError::DivisionByZero { span } => *span,
+            AnalysisError::NonLiteralConst { span, .. } => *span,
+            AnalysisError::AssignToConst { span, .. } => *span,
+            AnalysisError::RedundantMatchArm { span, .. } => *span,
+            AnalysisError::TautologicalCondition { span } => *span,
+            AnalysisError::ContradictoryCondition { span } => *span,
         }
     }
 }

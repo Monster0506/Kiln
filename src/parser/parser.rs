@@ -198,6 +198,7 @@ impl Parser {
             TokenKind::Type => Ok(Item::TypeAlias(self.parse_type_alias()?)),
             TokenKind::Import => Ok(Item::Import(self.parse_import()?)),
             TokenKind::Export => Ok(Item::Export(self.parse_export()?)),
+            TokenKind::Const => Ok(Item::Const(self.parse_const_def()?)),
             TokenKind::Mut => Ok(Item::Global(self.parse_global(true)?)),
             TokenKind::Ident(_) if self.is_global_var_decl() => {
                 Ok(Item::Global(self.parse_global(false)?))
@@ -269,6 +270,23 @@ impl Parser {
             ty,
             value,
             mutable,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_const_def(&mut self) -> Result<crate::parser::ast::ConstDef, ParseError> {
+        let start = self.peek_span().start;
+        self.expect(TokenKind::Const)?;
+        let name = self.expect_ident()?;
+        self.expect(TokenKind::Colon)?;
+        let ty = self.parse_type()?;
+        self.expect(TokenKind::Eq)?;
+        let value = self.parse_expr(0)?;
+        let end = self.peek_span().start;
+        Ok(crate::parser::ast::ConstDef {
+            name,
+            ty,
+            value,
             span: Span::new(start, end),
         })
     }

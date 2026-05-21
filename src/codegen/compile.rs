@@ -152,6 +152,7 @@ struct FnJob {
     body: TypedBlock,
     self_type: Option<String>,
     is_entry: bool,
+    is_hook: bool,
 }
 
 /// Compile a typed Kiln source file into `cgx.module`.
@@ -159,9 +160,56 @@ pub fn compile(
     typed_file_in: &TypedFile,
     cgx: &mut CodegenContext,
     verbose: bool,
+    opt_level: u8,
 ) -> Result<Vec<(String, std::time::Duration)>, String> {
+    crate::analyzer::opt_notes::set_verbose(verbose);
+
     let mono_file = crate::codegen::mono::monomorphize(typed_file_in.clone());
-    let typed_file = &mono_file;
+
+    // Run opt_level iterations of fold + propagation, with early exit when nothing changes.
+    let mut current = mono_file;
+    for i in 0..opt_level {
+        if verbose {
+            eprintln!("[opt] --- pass {} of {} ---", i + 1, opt_level);
+        }
+        crate::analyzer::opt_notes::reset_changes();
+
+        let folded = crate::analyzer::fold::fold_file(current);
+        if verbose {
+            for n in crate::analyzer::opt_notes::drain_notes() {
+                eprintln!("[opt] {}", n);
+            }
+        } else {
+            let _ = crate::analyzer::opt_notes::drain_notes();
+        }
+
+        let propagated = crate::analyzer::prop::propagate_file(folded);
+
+        current = propagated;
+
+        if crate::analyzer::opt_notes::change_count() == 0 {
+            if verbose {
+                eprintln!("[opt] converged after {} pass(es), stopping early", i + 1);
+            }
+            break;
+        }
+    }
+
+    // Final fold to clean up any residual expressions after propagation.
+    crate::analyzer::opt_notes::reset_changes();
+    let refolded = crate::analyzer::fold::fold_file(current);
+    if verbose {
+        for n in crate::analyzer::opt_notes::drain_notes() {
+            eprintln!("[opt] {}", n);
+        }
+    } else {
+        let _ = crate::analyzer::opt_notes::drain_notes();
+    }
+
+    // Dead code / assignment elimination.
+    let optimized = crate::analyzer::dce::dce_file(refolded);
+
+    let typed_file = &optimized;
     declare_alloc_fns(&mut cgx.module);
     let runtime_ids = declare_str_runtime(&mut cgx.module);
     declare_exception_runtime(&mut cgx.module);
@@ -241,6 +289,17 @@ pub fn compile(
         })
         .collect();
 
+    // Pre-compute reachable function set so we never declare-but-not-define.
+    // Functions with Export linkage that have no body cause Cranelift to panic at finish().
+    let precomputed_reachable = {
+        use crate::codegen::call_graph::{
+            build_call_graph, is_always_reachable, reachable_functions,
+        };
+        let graph = build_call_graph(typed_file);
+        let reachable = reachable_functions(typed_file, &graph);
+        move |name: &str| -> bool { is_always_reachable(name) || reachable.contains(name) }
+    };
+
     // Pass 1: register all function prototypes.
     // Pre-seed func_ids with C runtime imports so Kiln code can call them by name.
     let mut func_ids: HashMap<String, FuncId> = runtime_ids.clone();
@@ -268,6 +327,7 @@ pub fn compile(
                     ty: Ty::Str,
                     span: s,
                 },
+                narrowed_discriminant: None,
                 span: s,
             })
             .collect();
@@ -316,6 +376,7 @@ pub fn compile(
             body,
             self_type: Some(enum_name.clone()),
             is_entry: false,
+            is_hook: false,
         });
     }
 
@@ -332,6 +393,11 @@ pub fn compile(
                 } else {
                     &f.name
                 };
+                // Skip dead functions -- declaring them with Export linkage without a body
+                // causes Cranelift to panic at finish() time.
+                if !precomputed_reachable(link_name) && !precomputed_reachable(&f.name) {
+                    continue;
+                }
                 // If already pre-seeded as a runtime import, skip re-declaration.
                 let id = if let Some(&existing) = func_ids.get(link_name) {
                     existing
@@ -357,6 +423,7 @@ pub fn compile(
                     body: f.body.clone(),
                     self_type: None,
                     is_entry: f.is_entry,
+                    is_hook: false,
                 });
             }
 
@@ -366,6 +433,10 @@ pub fn compile(
 
                 for method in &impl_block.methods {
                     let qualified = format!("{}_{}", type_name, method.name);
+                    // Skip dead methods to avoid Export-declared-but-not-defined panic.
+                    if !precomputed_reachable(&qualified) && !precomputed_reachable(&method.name) {
+                        continue;
+                    }
                     let id = register_fn(
                         &qualified,
                         true,
@@ -389,12 +460,15 @@ pub fn compile(
                         body: method.body.clone(),
                         self_type: Some(type_name.clone()),
                         is_entry: false,
+                        is_hook: false,
                     });
                 }
 
                 for hook in &impl_block.hooks {
                     let func_name = hook_qualified_name(type_name, hook);
                     let method_key = hook_method_key(hook);
+                    // Hooks are always kept: BinOp/UnOp codegen calls them implicitly
+                    // and the call graph does not track those implicit dispatch edges.
                     let id = register_fn(
                         &func_name,
                         !hook.is_static,
@@ -421,6 +495,7 @@ pub fn compile(
                             Some(type_name.clone())
                         },
                         is_entry: false,
+                        is_hook: true,
                     });
                 }
             }
@@ -463,11 +538,43 @@ pub fn compile(
             },
             self_type: None,
             is_entry: false,
+            is_hook: false,
         });
+    }
+
+    // Dead function elimination and auto-inlining via call graph analysis.
+    {
+        use crate::codegen::call_graph::{
+            build_call_graph, find_auto_inline_candidates, is_always_reachable, reachable_functions,
+        };
+        let graph = build_call_graph(typed_file);
+        let reachable = reachable_functions(typed_file, &graph);
+        let auto_inline = find_auto_inline_candidates(typed_file, &graph);
+        // Remove unreachable jobs. Hooks are always kept because BinOp/UnOp
+        // codegen calls them implicitly (not tracked in the call graph).
+        fn_jobs.retain(|job| {
+            job.is_hook || is_always_reachable(&job.name) || reachable.contains(&job.name)
+        });
+        // Mark auto-inline candidates so inline_bodies picks them up below.
+        for job in &mut fn_jobs {
+            if auto_inline.contains(&job.name) {
+                // The job itself doesn't have is_inline; auto-inline flag is applied through
+                // the TypedFile items when we build inline_bodies below.
+            }
+        }
+        // Apply auto-inline to the typed_file items by marking them inline.
+        // We do this by collecting the inline_bodies from both explicit @inline and auto-inline.
+        let _ = (reachable, auto_inline); // used below
     }
 
     // Build the inline_bodies map: @inline functions with single-return bodies
     // can be expanded at call sites instead of emitting a function call.
+    // Also include auto-inline candidates from the call graph.
+    let auto_inline_names = {
+        use crate::codegen::call_graph::{build_call_graph, find_auto_inline_candidates};
+        let graph = build_call_graph(typed_file);
+        find_auto_inline_candidates(typed_file, &graph)
+    };
     let inline_bodies: HashMap<
         String,
         (Vec<(String, Ty)>, crate::analyzer::typed_ast::TypedBlock),
@@ -475,7 +582,7 @@ pub fn compile(
         let mut map = HashMap::new();
         for item in &typed_file.items {
             if let TypedItem::Function(f) = item {
-                if f.is_inline && !f.is_builtin {
+                if (f.is_inline || auto_inline_names.contains(&f.name)) && !f.is_builtin {
                     let params: Vec<(String, Ty)> = f
                         .params
                         .iter()

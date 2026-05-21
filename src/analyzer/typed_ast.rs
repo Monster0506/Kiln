@@ -18,6 +18,15 @@ pub enum TypedItem {
     ImplBlock(TypedImplBlock),
     Interface(TypedInterfaceDef),
     Global(TypedGlobalVar),
+    Const(TypedConstDef),
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedConstDef {
+    pub name: String,
+    pub ty: Ty,
+    pub value: TypedExprKind,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -309,6 +318,9 @@ pub struct TypedMatchArm {
     pub pattern: TypedPattern,
     pub guard: Option<TypedExpr>,
     pub body: TypedExpr,
+    /// When the scrutinee is an enum variant pattern, the known discriminant value.
+    /// Set by the analyzer so codegen can omit redundant tag checks in the arm body.
+    pub narrowed_discriminant: Option<i64>,
     pub span: Span,
 }
 

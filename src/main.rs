@@ -57,6 +57,9 @@ enum Command {
         /// Print full timing detail to stderr (implies --timing)
         #[arg(long)]
         verbose: bool,
+        /// Number of optimization loop iterations (0 = none, default 3)
+        #[arg(short = 'O', long = "opt-level", default_value_t = 3u8)]
+        opt_level: u8,
     },
     /// Compile and run a source file
     Run {
@@ -68,6 +71,9 @@ enum Command {
         /// Print full timing detail to stderr (implies --timing)
         #[arg(long)]
         verbose: bool,
+        /// Number of optimization loop iterations (0 = none, default 3)
+        #[arg(short = 'O', long = "opt-level", default_value_t = 3u8)]
+        opt_level: u8,
     },
     /// Run @test-annotated functions in a source file
     Test {
@@ -79,12 +85,16 @@ enum Command {
         /// Print full timing detail to stderr (implies --timing)
         #[arg(long)]
         verbose: bool,
+        /// Number of optimization loop iterations (0 = none, default 3)
+        #[arg(short = 'O', long = "opt-level", default_value_t = 3u8)]
+        opt_level: u8,
     },
 }
 
 struct BuildOptions {
     timing: bool,
     verbose: bool,
+    opt_level: u8,
 }
 
 fn build_exe(file: &PathBuf, output: Option<PathBuf>, opts: &BuildOptions) -> PathBuf {
@@ -243,7 +253,7 @@ fn run_build(
     let mut cgx = CodegenContext::new(module_name);
 
     timer.start("codegen");
-    let fn_times = match compile(&typed_file, &mut cgx, verbose) {
+    let fn_times = match compile(&typed_file, &mut cgx, verbose, opts.opt_level) {
         Ok(t) => t,
         Err(e) => return BuildOutcome::Errors(vec![format!("codegen error: {e}")]),
     };
@@ -587,6 +597,7 @@ mod tests {
         let opts = BuildOptions {
             timing: false,
             verbose: false,
+            opt_level: 3,
         };
         let result = run_build(&file, None, true, &opts);
         assert!(
@@ -603,6 +614,7 @@ mod tests {
         let opts = BuildOptions {
             timing: false,
             verbose: false,
+            opt_level: 3,
         };
         let result = run_build(&file, None, true, &opts);
         assert!(
@@ -716,8 +728,13 @@ fn main() {
             watch,
             timing,
             verbose,
+            opt_level,
         } => {
-            let opts = BuildOptions { timing, verbose };
+            let opts = BuildOptions {
+                timing,
+                verbose,
+                opt_level,
+            };
             if watch {
                 run_build_watch(&file, output, no_link, &opts);
             } else {
@@ -737,8 +754,13 @@ fn main() {
             file,
             timing,
             verbose,
+            opt_level,
         } => {
-            let opts = BuildOptions { timing, verbose };
+            let opts = BuildOptions {
+                timing,
+                verbose,
+                opt_level,
+            };
             let exe_path = build_exe(&file, None, &opts);
             let status = std::process::Command::new(&exe_path)
                 .status()
@@ -753,8 +775,13 @@ fn main() {
             file,
             timing,
             verbose,
+            opt_level,
         } => {
-            let opts = BuildOptions { timing, verbose };
+            let opts = BuildOptions {
+                timing,
+                verbose,
+                opt_level,
+            };
             let path = file.to_string_lossy().to_string();
             let src = fs::read_to_string(&file).unwrap_or_else(|e| {
                 eprintln!("error reading {path}: {e}");
@@ -795,7 +822,7 @@ fn main() {
                 .and_then(|s| s.to_str())
                 .unwrap_or("module");
             let mut cgx = CodegenContext::new(module_name);
-            compile(&typed_file, &mut cgx, opts.verbose).unwrap_or_else(|e| {
+            compile(&typed_file, &mut cgx, opts.verbose, opts.opt_level).unwrap_or_else(|e| {
                 eprintln!("codegen error: {e}");
                 std::process::exit(1);
             });

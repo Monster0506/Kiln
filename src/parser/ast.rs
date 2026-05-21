@@ -111,6 +111,15 @@ pub enum Item {
     Import(Import),
     Export(Export),
     Global(GlobalVar),
+    Const(ConstDef),
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstDef {
+    pub name: String,
+    pub ty: TypeExpr,
+    pub value: Expr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]

@@ -43,7 +43,7 @@ pub fn infer_typed_expr(
                     Box::new(ret.clone()),
                 ),
                 Some(Symbol::FnOverloadSet { .. }) => {
-                    // Overloaded function used as first-class value — ambiguous without a call.
+                    // Overloaded function used as first-class value -- ambiguous without a call.
                     Ty::Unknown
                 }
                 Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), name.clone(), vec![]),
@@ -54,6 +54,12 @@ pub fn infer_typed_expr(
                         span,
                     });
                     ty
+                }
+                // Inline const value at use site.
+                Some(Symbol::Const { ty, value, .. }) => {
+                    let ty = ty.clone();
+                    let value = value.clone();
+                    return mk(value, ty, span);
                 }
                 _ => {
                     errors.push(AnalysisError::UndefinedName {
@@ -431,6 +437,7 @@ pub fn infer_typed_expr(
                         pattern: lower_pattern(&arm.pattern, env, registry, errors),
                         guard,
                         body,
+                        narrowed_discriminant: None,
                         span: arm.span,
                     }
                 })

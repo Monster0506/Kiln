@@ -1336,3 +1336,39 @@ fn import_nonexistent_module_is_error() {
         "importing a nonexistent module must produce an error"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Item 22: const declarations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn const_int_is_usable_in_expressions() {
+    let errs = run("const MAX_SIZE: int = 1024\ndef main() -> int { return MAX_SIZE }");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn const_float_is_usable_in_expressions() {
+    let errs = run("const PI: float = 3.14\ndef main() -> float { return PI }");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn assigning_to_const_is_error() {
+    let errs = run("const X: int = 10\ndef main() -> void { X = 20 }");
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E023") || e.contains("cannot assign to const")),
+        "expected AssignToConst error, got: {errs:?}"
+    );
+}
+
+#[test]
+fn const_non_literal_initializer_is_error() {
+    let errs = run("def helper() -> int { return 1 }\nconst X: int = helper()");
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E022") || e.contains("literal")),
+        "expected NonLiteralConst error, got: {errs:?}"
+    );
+}

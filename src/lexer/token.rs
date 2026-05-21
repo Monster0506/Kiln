@@ -38,6 +38,7 @@ pub enum TokenKind {
     Spawn,
     As,
     Mut,
+    Const,
     Scope,
     Gen,
     If,

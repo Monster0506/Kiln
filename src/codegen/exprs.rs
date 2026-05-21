@@ -74,6 +74,56 @@ fn inline_subst(expr: TypedExpr, subst: &HashMap<String, TypedExpr>) -> TypedExp
             object: Box::new(inline_subst(*object, subst)),
             field,
         },
+        TypedExprKind::StructLiteral { ty_name, fields } => TypedExprKind::StructLiteral {
+            ty_name,
+            fields: fields
+                .into_iter()
+                .map(|(k, v)| (k, inline_subst(v, subst)))
+                .collect(),
+        },
+        TypedExprKind::Tuple(exprs) => {
+            TypedExprKind::Tuple(exprs.into_iter().map(|e| inline_subst(e, subst)).collect())
+        }
+        TypedExprKind::Array(exprs) => {
+            TypedExprKind::Array(exprs.into_iter().map(|e| inline_subst(e, subst)).collect())
+        }
+        TypedExprKind::MethodCall {
+            object,
+            method_fn,
+            args,
+        } => TypedExprKind::MethodCall {
+            object: Box::new(inline_subst(*object, subst)),
+            method_fn,
+            args: args.into_iter().map(|a| inline_subst(a, subst)).collect(),
+        },
+        TypedExprKind::Unwrap(e) => TypedExprKind::Unwrap(Box::new(inline_subst(*e, subst))),
+        TypedExprKind::As { expr, ty } => TypedExprKind::As {
+            expr: Box::new(inline_subst(*expr, subst)),
+            ty,
+        },
+        TypedExprKind::Match { scrutinee, arms } => TypedExprKind::Match {
+            scrutinee: Box::new(inline_subst(*scrutinee, subst)),
+            arms: arms
+                .into_iter()
+                .map(|mut arm| {
+                    arm.body = inline_subst(arm.body, subst);
+                    if let Some(g) = arm.guard {
+                        arm.guard = Some(inline_subst(g, subst));
+                    }
+                    arm
+                })
+                .collect(),
+        },
+        TypedExprKind::Spawn(e) => TypedExprKind::Spawn(Box::new(inline_subst(*e, subst))),
+        TypedExprKind::Ref { mutable, expr } => TypedExprKind::Ref {
+            mutable,
+            expr: Box::new(inline_subst(*expr, subst)),
+        },
+        TypedExprKind::GenSplice(e) => TypedExprKind::GenSplice(Box::new(inline_subst(*e, subst))),
+        TypedExprKind::Index { object, index } => TypedExprKind::Index {
+            object: Box::new(inline_subst(*object, subst)),
+            index: Box::new(inline_subst(*index, subst)),
+        },
         other => other,
     };
     TypedExpr { kind, ty, span }

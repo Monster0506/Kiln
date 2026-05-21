@@ -90,6 +90,12 @@ fn check_typed_stmt(
                             span: *ident_span,
                         });
                     }
+                    Some(Symbol::Const { .. }) => {
+                        errors.push(AnalysisError::AssignToConst {
+                            name: name.clone(),
+                            span: *ident_span,
+                        });
+                    }
                     None => {
                         errors.push(AnalysisError::UndefinedName {
                             name: name.clone(),
@@ -119,6 +125,12 @@ fn check_typed_stmt(
                 match env.lookup(name) {
                     Some(Symbol::Var { mutable: false, .. }) => {
                         errors.push(AnalysisError::AssignToImmutable {
+                            name: name.clone(),
+                            span: *ident_span,
+                        });
+                    }
+                    Some(Symbol::Const { .. }) => {
+                        errors.push(AnalysisError::AssignToConst {
                             name: name.clone(),
                             span: *ident_span,
                         });

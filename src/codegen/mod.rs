@@ -1,3 +1,4 @@
+pub mod call_graph;
 pub mod compile;
 pub mod context;
 pub mod emit;

@@ -1,34 +1,13 @@
-# opt_showcase.kn -- exercises most compiler optimizations documented in
-# docs/optimizations.html. Build with: kiln build --verbose opt_showcase.kn
-# The --verbose flag prints [opt] notes for each optimization pass.
-
-# Immutable scalar globals: inlined at every use site; no data slot allocated.
 BASE: int = 100
 SCALE: float = 2.0
-
-# mut global that is never reassigned: promoted to immutable by prop pass,
-# then inlined the same way as BASE.
 mut INIT_ONLY: int = 42
-
-# ---- Small leaf function: auto-inlined at call sites by codegen ----
-# (<=5 stmts, no recursion)
 def add_two(a: int, b: int) -> int {
     return a + b
 }
-
-# ---- Dead function: never called from any reachable path ----
-# Eliminated entirely by dead-function elimination; not emitted to object file.
 def dead_helper(n: int) -> int {
     return n * 2
 }
-
 def main() -> void {
-
-    # ========================================================
-    # Constant Folding
-    # All expressions below are evaluated entirely at compile time.
-    # ========================================================
-
     cf_int_add: int = 2 + 3           # -> 5
     cf_int_mul: int = 10 * 4          # -> 40
     cf_int_div: int = 100 / 5         # -> 20
@@ -41,13 +20,7 @@ def main() -> void {
     cf_cmp_ne: bool = 2 != 2           # -> false
     cf_unary_neg: int = -5             # unary fold -> Int(-5)
     cf_unary_not: bool = !true         # -> false
-
-    # ========================================================
-    # Algebraic Identities
-    # ========================================================
-
     x: int = 7
-
     ai_add0: int = x + 0      # -> x (additive identity)
     ai_0add: int = 0 + x      # -> x (commuted)
     ai_sub0: int = x - 0      # -> x (subtractive identity)
@@ -59,26 +32,16 @@ def main() -> void {
     ai_mod1: int = x % 1      # -> 0 (modulo one)
     ai_self_sub: int = x - x  # -> 0 (self-subtraction)
     ai_self_mod: int = x % x  # -> 0 (self-modulo)
-
-    # Double negation: -(-x) = x
     ai_double_neg: int = -(-x)
-
     f: float = 2.5
     ai_add0f: float = f + 0.0      # -> f
     ai_sub0f: float = f - 0.0      # -> f
     ai_mul1f: float = f * 1.0      # -> f
     ai_div1f: float = f / 1.0      # -> f
     ai_double_neg_f: float = -(-f) # -> f
-
     b: bool = true
     ai_double_not: bool = !!b      # -> b
-
-    # ========================================================
-    # Boolean Short-circuit Simplification
-    # ========================================================
-
     bv: bool = false
-
     bs_true_and: bool = true && bv    # -> bv (identity for AND)
     bs_false_or: bool = false || bv   # -> bv (identity for OR)
     bs_false_and: bool = false && bv  # -> false (bv is pure)
@@ -87,22 +50,13 @@ def main() -> void {
     bs_and_false: bool = bv && false  # -> false (bv is pure)
     bs_idem_and: bool = bv && bv      # -> bv (idempotent AND)
     bs_idem_or: bool = bv || bv       # -> bv (idempotent OR)
-
-    # Boolean-literal comparison simplification
     bs_eq_true: bool = bv == true     # -> bv
     bs_eq_false: bool = bv == false   # -> !bv
     bs_ne_true: bool = bv != true     # -> !bv
     bs_ne_false: bool = bv != false   # -> bv
-
-    # DeMorgan's laws
     a: bool = true
     bs_demorgan_and: bool = !(a && bv)  # -> !a || !bv
     bs_demorgan_or: bool = !(a || bv)   # -> !a && !bv
-
-    # ========================================================
-    # Comparison Simplification (self-comparison identities)
-    # ========================================================
-
     cx: int = 9
     cs_eq: bool = cx == cx   # -> true
     cs_ne: bool = cx != cx   # -> false
@@ -110,108 +64,39 @@ def main() -> void {
     cs_gt: bool = cx > cx    # -> false
     cs_le: bool = cx <= cx   # -> true
     cs_ge: bool = cx >= cx   # -> true
-
-    # ========================================================
-    # Strength Reduction
-    # ========================================================
-
     y: int = 9
     ng: int = 4
-
     sr_double: int = y * 2       # -> y + y (mul-by-2)
     sr_2mul: int = 2 * y         # -> y + y
     sr_zero_sub: int = 0 - y     # -> -y
     sr_mul_neg1: int = y * -1    # -> -y
     sr_neg1_mul: int = -1 * y    # -> -y
     sr_sub_neg: int = y - (-ng)  # -> y + ng (sub of negation)
-
-    # Redundant same-type cast elimination
     sr_cast_int: int = x as int       # -> x (already int)
     sr_cast_float: float = f as float # -> f (already float)
-
-    # ========================================================
-    # Constant Propagation
-    # Immutable locals bound to literals are inlined at use sites.
-    # The subsequent expression is then re-folded.
-    # ========================================================
-
     cp_a: int = 3
     cp_b: int = 4
     cp_sum: int = cp_a + cp_b      # -> 3+4 after prop -> 7 after fold
-
     cp_p: float = 1.5
     cp_q: float = 0.5
     cp_pq: float = cp_p + cp_q    # -> 2.0
-
     cp_flag: bool = true
     cp_and: bool = cp_flag && false  # -> false (flag inlined, then fold)
-
-    # ========================================================
-    # Global Inlining (immutable scalar globals + promoted muts)
-    # ========================================================
-
     g_base: int = BASE + 1       # BASE inlined as 100 -> 101
     g_scale: float = SCALE       # SCALE inlined as 2.0
     g_init: int = INIT_ONLY      # promoted to immutable, inlined as 42
-
-    # ========================================================
-    # Control Flow Optimizations
-    # Literal `if true` / `while false` trigger the tautological condition
-    # warning (W002/W003) which is fatal. Using `true || true` / `false || false`
-    # instead: these are BinOp nodes in the pre-fold AST, so the tautological
-    # check passes, then fold collapses them to Bool literals and prunes branches.
-    # ========================================================
-
     mut chosen: int = 0
-
-    # Constant if-branch pruning: else branch is dead code, removed.
-    if true || true {
-        chosen = 1
-    } else {
-        chosen = 2   # pruned
-    }
-
-    # Dead while-false: entire loop and body are removed.
-    while false || false {
-        chosen = 999  # never executes, pruned
-    }
-
-    # ========================================================
-    # Dead Code Elimination
-    # ========================================================
-
-    # Dead variable: declared but never read -> removed by DCE.
+    chosen = 1
     dead_binding: int = 123
-
-    # Redundant self-assignment: x = x is removed.
     mut rx: int = 5
     rx = rx    # removed
-
-    # ========================================================
-    # Auto-inlining (small leaf function call)
-    # add_two has 1 stmt, no recursion: inlined at the call site.
-    # ========================================================
-
-    inlined: int = add_two(3, 4)   # -> 7 (body inlined)
-
-    # ========================================================
-    # Unreachable code after terminator (in dead_early_return below)
-    # ========================================================
-
-    # ========================================================
-    # Loop correctness: mut counter is NOT inlined
-    # i is assigned inside the loop body, so the pre-scan records it in
-    # ever_assigned and it is excluded from constant propagation.
-    # ========================================================
-
+    mut inlined: int = add_two(3, 4)   # -> 7 (body inlined)
     mut sum: int = 0
     mut i: int = 0
     while i < 5 {
         sum = sum + i
         i = i + 1
     }
-
-    # Verify outputs
     println(chosen)   # 1
     println(cp_sum)   # 7
     println(g_base)   # 101
@@ -220,9 +105,6 @@ def main() -> void {
     println(sum)      # 10  (0+1+2+3+4)
     println(rx)       # 5
 }
-
-# Exercises unreachable-code-after-terminator pruning.
-# Statements after the return are removed by fold_block.
 def dead_early_return(n: int) -> int {
     return n + 1
 }

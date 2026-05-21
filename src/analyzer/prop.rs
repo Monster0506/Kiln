@@ -65,13 +65,21 @@ fn collect_assigned_in_stmt(stmt: &TypedStmt, names: &mut HashSet<String>) {
 /// Only propagates Int, Float, Bool literals (not Str to avoid complexity).
 /// Also promotes `mut` variables that are never reassigned anywhere in the block tree.
 pub fn propagate_block(block: TypedBlock) -> TypedBlock {
+    propagate_block_seeded(block, &HashMap::new())
+}
+
+fn propagate_block_seeded(block: TypedBlock, seed: &HashMap<String, TypedExprKind>) -> TypedBlock {
     let ever_assigned = collect_assigned_names(&block);
-    let mut constants: HashMap<String, TypedExprKind> = HashMap::new();
+    // Pre-populate from seed, excluding names that are locally assigned.
+    let mut constants: HashMap<String, TypedExprKind> = seed
+        .iter()
+        .filter(|(name, _)| !ever_assigned.contains(*name))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     let mut stmts = Vec::with_capacity(block.stmts.len());
     for stmt in block.stmts {
         stmts.push(propagate_stmt(stmt, &mut constants, &ever_assigned));
     }
-    // Run fold again to collapse newly-constant expressions
     fold_block(TypedBlock {
         stmts,
         span: block.span,
@@ -241,7 +249,7 @@ fn propagate_stmt(
                 span,
             }
         }
-        TypedStmt::FnDef(f) => TypedStmt::FnDef(propagate_fn(f)),
+        TypedStmt::FnDef(f) => TypedStmt::FnDef(propagate_fn(f, &HashMap::new())),
         TypedStmt::Expr(e) => TypedStmt::Expr(fold_expr(propagate_expr(e, constants))),
         other => other,
     }
@@ -422,16 +430,16 @@ fn collect_all_assigned_names(file: &TypedFile) -> HashSet<String> {
     names
 }
 
-fn propagate_fn(f: TypedFnDef) -> TypedFnDef {
+fn propagate_fn(f: TypedFnDef, seed: &HashMap<String, TypedExprKind>) -> TypedFnDef {
     TypedFnDef {
-        body: propagate_block(f.body),
+        body: propagate_block_seeded(f.body, seed),
         ..f
     }
 }
 
-fn propagate_hook(h: TypedHookDef) -> TypedHookDef {
+fn propagate_hook(h: TypedHookDef, seed: &HashMap<String, TypedExprKind>) -> TypedHookDef {
     TypedHookDef {
-        body: propagate_block(h.body),
+        body: propagate_block_seeded(h.body, seed),
         ..h
     }
 }
@@ -441,16 +449,12 @@ pub fn propagate_file(file: TypedFile) -> TypedFile {
     // `mut` globals absent from this set are never reassigned and can be demoted.
     let all_assigned = collect_all_assigned_names(&file);
 
-    let items = file
+    // First pass: process globals, collect immutable scalar literals as seeds.
+    let mut global_consts: HashMap<String, TypedExprKind> = HashMap::new();
+    let items: Vec<_> = file
         .items
         .into_iter()
         .map(|item| match item {
-            TypedItem::Function(f) => TypedItem::Function(propagate_fn(f)),
-            TypedItem::ImplBlock(mut ib) => {
-                ib.methods = ib.methods.into_iter().map(propagate_fn).collect();
-                ib.hooks = ib.hooks.into_iter().map(propagate_hook).collect();
-                TypedItem::ImplBlock(ib)
-            }
             TypedItem::Global(mut g) => {
                 if g.mutable && !all_assigned.contains(&g.name) {
                     crate::analyzer::opt_notes::note(format!(
@@ -460,11 +464,37 @@ pub fn propagate_file(file: TypedFile) -> TypedFile {
                     g.mutable = false;
                 }
                 g.init = fold_expr(g.init);
+                if !g.mutable && is_propagatable_literal(&g.init.kind) {
+                    global_consts.insert(g.name.clone(), g.init.kind.clone());
+                }
                 TypedItem::Global(g)
             }
             other => other,
         })
         .collect();
+
+    // Second pass: propagate function/hook bodies seeded with immutable globals.
+    let items = items
+        .into_iter()
+        .map(|item| match item {
+            TypedItem::Function(f) => TypedItem::Function(propagate_fn(f, &global_consts)),
+            TypedItem::ImplBlock(mut ib) => {
+                ib.methods = ib
+                    .methods
+                    .into_iter()
+                    .map(|f| propagate_fn(f, &global_consts))
+                    .collect();
+                ib.hooks = ib
+                    .hooks
+                    .into_iter()
+                    .map(|h| propagate_hook(h, &global_consts))
+                    .collect();
+                TypedItem::ImplBlock(ib)
+            }
+            other => other,
+        })
+        .collect();
+
     TypedFile {
         items,
         span: file.span,

@@ -126,6 +126,19 @@ fn inline_subst(expr: TypedExpr, subst: &HashMap<String, TypedExpr>) -> TypedExp
             object: Box::new(inline_subst(*object, subst)),
             index: Box::new(inline_subst(*index, subst)),
         },
+        TypedExprKind::Str(segs) => {
+            use crate::analyzer::typed_ast::TypedStringSegment;
+            let segs = segs
+                .into_iter()
+                .map(|seg| match seg {
+                    TypedStringSegment::Interp(e) => {
+                        TypedStringSegment::Interp(inline_subst(e, subst))
+                    }
+                    other => other,
+                })
+                .collect();
+            TypedExprKind::Str(segs)
+        }
         other => other,
     };
     TypedExpr { kind, ty, span }

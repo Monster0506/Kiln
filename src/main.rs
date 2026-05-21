@@ -286,10 +286,29 @@ fn run_build(
                 break;
             }
         }
-        kiln_compiler::analyzer::opt_notes::reset_changes();
-        opt = kiln_compiler::analyzer::fold::fold_file(opt);
-        let _ = kiln_compiler::analyzer::opt_notes::drain_notes();
-        opt = kiln_compiler::analyzer::dce::dce_file(opt);
+        {
+            use kiln_compiler::analyzer::{dce, fold, opt_notes, prop};
+            // Final fold pass.
+            opt_notes::reset_changes();
+            opt = fold::fold_file(opt);
+            let _ = opt_notes::drain_notes();
+            // WAW: mut x = e1; x = e2 -> mut x = e2.
+            opt = dce::waw_file(opt);
+            // Remove dead immutable bindings.
+            opt = dce::dce_file(opt);
+            // Second prop pass after WAW.
+            opt = prop::propagate_file(opt);
+            opt = fold::fold_file(opt);
+            opt = dce::dce_file(opt);
+            // Demote mut flags that are no longer assigned (emit-only).
+            opt = dce::demote_mut_flags_file(opt);
+            // Inline single-use immutable bindings.
+            opt = dce::single_use_inline_file(opt);
+            opt = dce::dce_file(opt);
+            // Remove unreachable user functions and unused globals.
+            opt = dce::eliminate_dead_fns(opt, &user_names);
+            opt = dce::eliminate_dead_globals(opt, &user_names);
+        }
         let opt_src = kiln_compiler::analyzer::pretty::emit_optimized(&opt, &user_names);
         let opt_path = file.with_extension("opt.kn");
         if let Err(e) = fs::write(&opt_path, &opt_src) {

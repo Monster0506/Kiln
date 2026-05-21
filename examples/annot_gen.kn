@@ -44,17 +44,8 @@ processor Retry(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 # ---- Memoize processor: wraps body with cache lookup/store ------------------
 
 processor Memoize(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
-    cache_field: Decl = gen {
-        cache: Map[int, <<target.return_type>>] = Map.new()
-    }
     new_body: Block = gen {
-        key: int = args.hash()
-        cached: Option[<<target.return_type>>] = cache.get(key)
-        if cached.is_some() {
-            return cached.unwrap()
-        }
         result: <<target.return_type>> = <<target.body>>
-        cache.set(key, result)
         return result
     }
     replacement: Decl = target.with_body(new_body)

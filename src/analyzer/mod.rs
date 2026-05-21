@@ -859,6 +859,14 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         },
                     );
                 }
+                let fields: Vec<(String, Ty)> = s
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.clone(), resolve_type_expr(&f.ty, &env, &mut errors)))
+                    .collect();
+                if !fields.is_empty() {
+                    registry.register_struct_fields(&s.name, fields);
+                }
                 if has_generics {
                     env.pop_scope();
                 }
@@ -1741,11 +1749,23 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             }
 
             Item::ProcessorDef(proc) => {
-                // Validate param and return types against the registry.
-                resolve_type_expr(&proc.target_param.ty, &env, &mut errors);
-                if let Some(ret) = &proc.return_type {
-                    resolve_type_expr(ret, &env, &mut errors);
-                }
+                let param_ty = resolve_type_expr(&proc.target_param.ty, &env, &mut errors);
+                let ret_ty = if let Some(ret) = &proc.return_type {
+                    resolve_type_expr(ret, &env, &mut errors)
+                } else {
+                    Ty::Void
+                };
+                env.push_scope();
+                env.define(
+                    &proc.target_param.name,
+                    Symbol::Var {
+                        ty: param_ty,
+                        mutable: false,
+                        span: proc.target_param.span,
+                    },
+                );
+                check::check_typed_block(&proc.body, &mut env, &registry, &ret_ty, &mut errors);
+                env.pop_scope();
             }
 
             _ => {}

@@ -294,7 +294,8 @@ pub fn infer_typed_expr(
         } => {
             let to = infer_typed_expr(object, env, registry, errors);
             let field_ty = resolve_field_ty(&to.ty, field, registry);
-            if field_ty == Ty::Unknown && to.ty != Ty::Unknown {
+            let is_annot_args = matches!(&to.ty, Ty::Named(_, n, _) if n == "AnnotArgs");
+            if field_ty == Ty::Unknown && to.ty != Ty::Unknown && !is_annot_args {
                 errors.push(AnalysisError::NoField {
                     ty: to.ty.to_string(),
                     field: field.clone(),
@@ -541,11 +542,31 @@ pub fn infer_typed_expr(
         }
 
         Expr::Gen { body, .. } => {
-            let typed_stmts: Vec<_> = body
-                .stmts
-                .iter()
-                .map(|s| lower_stmt_shallow(s, env, registry, errors))
-                .collect();
+            let mut gen_env = env.clone();
+            gen_env.push_scope();
+            let mut typed_stmts: Vec<crate::analyzer::typed_ast::TypedStmt> = Vec::new();
+            for s in &body.stmts {
+                let ts = lower_stmt_shallow(s, &gen_env, registry, errors);
+                if let crate::analyzer::typed_ast::TypedStmt::VarDecl {
+                    ref name,
+                    ref ty,
+                    mutable,
+                    span: vspan,
+                    ..
+                } = ts
+                {
+                    gen_env.define(
+                        name,
+                        crate::analyzer::env::Symbol::Var {
+                            ty: ty.clone(),
+                            mutable,
+                            span: vspan,
+                        },
+                    );
+                }
+                typed_stmts.push(ts);
+            }
+            gen_env.pop_scope();
             let tb = crate::analyzer::typed_ast::TypedBlock {
                 stmts: typed_stmts,
                 span: body.span,
@@ -1148,11 +1169,26 @@ fn lower_stmt_shallow(
                 body: shallow_block(body, env, registry, errors),
                 handlers: handlers
                     .iter()
-                    .map(|h| TypedCatchHandler {
-                        ty: resolve_type_expr(&h.ty, env, errors),
-                        binding: h.binding.clone(),
-                        body: shallow_block(&h.body, env, registry, errors),
-                        span: h.span,
+                    .map(|h| {
+                        let handler_ty = resolve_type_expr(&h.ty, env, errors);
+                        let mut handler_env = env.clone();
+                        handler_env.push_scope();
+                        handler_env.define(
+                            &h.binding,
+                            crate::analyzer::env::Symbol::Var {
+                                ty: handler_ty.clone(),
+                                mutable: false,
+                                span: h.span,
+                            },
+                        );
+                        let handler_body = shallow_block(&h.body, &handler_env, registry, errors);
+                        handler_env.pop_scope();
+                        TypedCatchHandler {
+                            ty: handler_ty,
+                            binding: h.binding.clone(),
+                            body: handler_body,
+                            span: h.span,
+                        }
                     })
                     .collect(),
                 finally: finally

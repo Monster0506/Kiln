@@ -83,11 +83,9 @@ pub fn resolve_type_expr(
             // Full projection resolution requires type-level evaluation.
             Ty::GenericParam(format!("{base}.{assoc}"))
         }
-        TypeExpr::GenSplice(_, span) => {
-            errors.push(AnalysisError::UndefinedName {
-                name: "<gen-splice>".into(),
-                span: *span,
-            });
+        TypeExpr::GenSplice(_, _) => {
+            // A <<expr>> in type position is intentional inside gen blocks;
+            // the splice is evaluated at processor run time, not statically.
             Ty::Unknown
         }
     }

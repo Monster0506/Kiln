@@ -4,7 +4,7 @@
 #   - gen { } producing a Block from quasi-quoted code
 #   - <<target.body>> splicing the original body into a new context
 #   - <<target.annot.field>> splicing annotation argument values into the body
-#   - Multiple stacked annotations: each processor runs in declaration order
+#   - Multiple stacked annotations: bottom annotation is innermost (runs first)
 #
 # Usage: kiln run examples/annotations/gen_processor.kn
 
@@ -66,8 +66,8 @@ def process(data: str) -> str {
     return data
 }
 
-@Retry { count: 2 }
 @LogEnter
+@Retry { count: 2 }
 def upload(payload: str) -> void {
     println("uploading")
 }

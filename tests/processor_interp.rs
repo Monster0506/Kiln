@@ -118,7 +118,8 @@ fn parse_and_run(src: &str) -> kiln_compiler::parser::ast::SourceFile {
     let tokens = Lexer::new(src).tokenize().expect("lex failed");
     let mut ast = Parser::new(tokens).parse_file().expect("parse failed");
     let registry = default_registry();
-    run_user_processors(&mut ast, &registry);
+    let mut _proc_errors = vec![];
+    run_user_processors(&mut ast, &registry, &mut _proc_errors);
     ast
 }
 

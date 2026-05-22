@@ -243,7 +243,8 @@ fn run_build(
     let registry = default_registry();
     timer.start("processors");
     run_processors(&mut ast, &registry);
-    let proc_runs = run_user_processors(&mut ast, &registry);
+    let mut proc_errors: Vec<kiln_compiler::analyzer::AnalysisError> = vec![];
+    let proc_runs = run_user_processors(&mut ast, &registry, &mut proc_errors);
     timer.stop();
     stats.processor_runs = proc_runs;
 
@@ -251,6 +252,10 @@ fn run_build(
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    if !proc_errors.is_empty() {
+        emit_analysis_errors(&proc_errors, &map, &src, &path);
+    }
 
     timer.start("analyze");
     let typed_file = match analyze_with_base(&ast, &base_dir) {
@@ -510,7 +515,8 @@ fn run_check(file: &PathBuf) -> CheckOutcome {
 
     let registry = default_registry();
     run_processors(&mut ast, &registry);
-    run_user_processors(&mut ast, &registry);
+    let mut proc_errors: Vec<kiln_compiler::analyzer::AnalysisError> = vec![];
+    run_user_processors(&mut ast, &registry, &mut proc_errors);
 
     let base_dir = file
         .parent()
@@ -899,7 +905,8 @@ fn main() {
             });
             let registry = default_registry();
             run_processors(&mut ast, &registry);
-            run_user_processors(&mut ast, &registry);
+            let mut proc_errors: Vec<kiln_compiler::analyzer::AnalysisError> = vec![];
+            run_user_processors(&mut ast, &registry, &mut proc_errors);
             inject_harness(&mut ast);
             let base_dir = file
                 .parent()

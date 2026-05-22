@@ -1,0 +1,111 @@
+# diag.kn -- compile-time diagnostics with Diag.fail() and Diag.warn()
+#
+# Processors can emit diagnostics at compile time by calling:
+#
+#   Diag.fail(msg)   -- aborts the transformation; reported as error E024.
+#                       The annotated item is left unchanged and compilation
+#                       continues (so other errors can surface).
+#
+#   Diag.warn(msg)   -- records a warning W004 but does NOT abort.
+#                       The transformation is still applied normally.
+#
+# Both calls accept a string message.  The message is attached to the span
+# of the annotation use site, so the diagnostic points at @AnnotationName
+# in the source file.
+#
+# Demonstrates:
+#   - @RequireParams { min }: fails if the function has fewer params than `min`
+#   - @LimitParams  { max }: warns if the function exceeds `max` params
+#
+# Usage: kiln run examples/annotations/diag.kn
+
+# ---- @RequireParams ----------------------------------------------------------
+#
+# Validates at compile time that a function has at least `min` parameters.
+# If not, Diag.fail is called and the processor does not produce a replacement.
+#
+# Example that would trigger the error:
+#
+#   @RequireParams { min: 2 }
+#   def nothing() -> void { }
+#   # error[E024]: processor error: requires at least 2 param(s), found 0
+
+annotation RequireParams {
+    min: int = 1
+}
+
+processor RequireParams(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    mut count: int = 0
+    for p <- target.params {
+        println("p: {p}")
+        count = count + 1
+    }
+    if count < target.annot.min {
+        Diag.fail("requires at least {target.annot.min} param(s), found {count}")
+    }
+    return (None, Vec.new())
+}
+
+# ---- @LimitParams ------------------------------------------------------------
+#
+# Warns at compile time when a function has more parameters than `max`.
+# The warning is informational; compilation and transformation still succeed.
+
+annotation LimitParams {
+    max: int = 4
+}
+
+processor LimitParams(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    mut count: int = 0
+    for p <- target.params {
+        count = count + 1
+    }
+    if count > target.annot.max {
+        Diag.warn("function has {count} param(s), limit is {target.annot.max}; consider splitting")
+    }
+    return (None, Vec.new())
+}
+
+# ---- Functions ---------------------------------------------------------------
+
+# 2 params, min = 1: passes cleanly, no diagnostic.
+@RequireParams
+def connect(host: str, port: str) -> void {
+    println("connecting")
+}
+
+# 3 params, min = 2: passes cleanly.
+@RequireParams { min: 2 }
+def open_file(path: str, mode: str, enc: str) -> void {
+    println("opening")
+}
+
+# 2 params, max = 4: under the limit, no warning.
+@LimitParams
+def read(path: str, buf: str) -> void {
+    println("reading")
+}
+
+# 6 params, max = 4: triggers Diag.warn at compile time.
+# warning[W004]: processor warning: function has 6 param(s), limit is 4; consider splitting
+@LimitParams
+def transform(a: str, b: str, c: str, d: str, e: str, f: str) -> void {
+    println("transforming")
+}
+
+# Stacked: RequireParams validates first, then LimitParams checks the upper end.
+@RequireParams { min: 2 }
+@LimitParams { max: 3 }
+def copy(src: str, dst: str) -> void {
+    println("copying")
+}
+
+# ---- main -------------------------------------------------------------------
+
+def main() -> void {
+    connect("localhost", "8080")
+    open_file("a.txt", "r", "utf8")
+    read("b.txt", "buf")
+    transform("1", "2", "3", "4", "5", "6")
+    copy("src", "dst")
+}

@@ -1,0 +1,139 @@
+# generics.kn -- generic functions: monomorphization and type dispatch
+#
+# def f[T](...) declares a generic function.  The compiler monomorphizes it:
+# each distinct concrete call site produces a separate instantiation.
+# The inliner then collapses small monomorphs directly at the call site.
+#
+# Patterns shown:
+#   - Identity / pass-through: def echo[T](x: T) -> T
+#   - Unary transform:         def to_str[T](x: T) -> str
+#   - Binary selector:         def max_of[T](a: T, b: T) -> T
+#   - Three-arg guard:         def clamp[T](val: T, lo: T, hi: T) -> T
+#   - Two independent params:  def describe[A, B](a: A, b: B) -> str
+#   - Vec[T] parameter:        def first_of[T] / last_of[T](items: Vec[T]) -> T
+#   - Vec[T] return:           def singleton[T](x: T) -> Vec[T]
+#
+# Usage: kiln run examples/generics.kn
+
+# ---- Identity ----------------------------------------------------------------
+
+def echo[T](x: T) -> T {
+    return x
+}
+
+# ---- Unary transform ---------------------------------------------------------
+
+def to_str[T](x: T) -> str {
+    return "{x}"
+}
+
+def quoted[T](x: T) -> str {
+    return "\"{x}\""
+}
+
+# ---- Binary selectors --------------------------------------------------------
+
+def max_of[T](a: T, b: T) -> T {
+    if a > b { return a }
+    return b
+}
+
+def min_of[T](a: T, b: T) -> T {
+    if a < b { return a }
+    return b
+}
+
+def pick_longer[T](a: T, b: T, description_a: str, description_b: str) -> str {
+    if description_a > description_b { return "{description_a}: {a}" }
+    return "{description_b}: {b}"
+}
+
+# ---- Three-arg guard ---------------------------------------------------------
+
+def clamp[T](val: T, lo: T, hi: T) -> T {
+    if val < lo { return lo }
+    if val > hi { return hi }
+    return val
+}
+
+# ---- Two independent type params --------------------------------------------
+
+def describe[A, B](a: A, b: B) -> str {
+    return "({a}, {b})"
+}
+
+def zip_str[A, B](a: A, b: B) -> str {
+    return "{a}:{b}"
+}
+
+# ---- Vec[T] parameter -------------------------------------------------------
+
+def first_of[T](items: Vec[T]) -> T {
+    for x <- items {
+        return x
+    }
+    return items[0]
+}
+
+def last_of[T](items: Vec[T]) -> T {
+    mut result: T = items[0]
+    for x <- items {
+        result = x
+    }
+    return result
+}
+
+# ---- Vec[T] return -----------------------------------------------------------
+
+def singleton[T](x: T) -> Vec[T] {
+    return [x]
+}
+
+# ---- main -------------------------------------------------------------------
+
+def main() -> void {
+    # echo: same type in and out, monomorphized for int and str
+    println(echo(42))
+    println(echo("hello"))
+    println(echo(true))
+
+    # to_str / quoted: any T formatted as a string
+    println(to_str(3.14))
+    println(to_str(false))
+    println(quoted("world"))
+    println(quoted(99))
+
+    # max_of / min_of: works for any ordered type
+    println(max_of(3, 7))
+    println(max_of(3.14, 2.71))
+    println(max_of("apple", "banana"))
+    println(min_of(10, 4))
+    println(min_of("cat", "ant"))
+
+    # clamp: three-arg guard, same type for all three
+    println(clamp(5, 1, 10))
+    println(clamp(-3, 1, 10))
+    println(clamp(99, 1, 10))
+    println(clamp(0.5, 0.0, 1.0))
+
+    # describe / zip_str: two independent type params
+    println(describe(1, "one"))
+    println(describe("pi", 3.14))
+    println(describe(true, 0))
+    println(zip_str("x", 42))
+    println(zip_str(3.14, false))
+
+    # first_of / last_of / contains_str: Vec[T] as parameter
+    ints: Vec[int] = [10, 20, 30]
+    strs: Vec[str] = ["alpha", "beta", "gamma"]
+
+    println(first_of(ints))
+    println(first_of(strs))
+    println(last_of(ints))
+    println(last_of(strs))
+    # singleton: Vec[T] return, monomorphized for int and str
+    v_int: Vec[int] = singleton(7)
+    v_str: Vec[str] = singleton("only")
+    for x <- v_int { println(x) }
+    for s <- v_str { println(s) }
+}

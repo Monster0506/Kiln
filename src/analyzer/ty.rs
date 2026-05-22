@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 /// One way a type can satisfy an interface.
@@ -124,6 +124,8 @@ pub struct TypeRegistry {
     conformances: HashMap<(String, String), Vec<ConformanceEntry>>,
     /// iface_name -> method signatures declared in that interface
     interface_methods: HashMap<String, Vec<MethodEntry>>,
+    /// iface_name -> direct superinterfaces it extends
+    interface_supers: HashMap<String, Vec<String>>,
 }
 
 impl TypeRegistry {
@@ -239,6 +241,41 @@ impl TypeRegistry {
             .iter()
             .filter(|(_, methods)| methods.iter().any(|m| m.method_name == hook_name))
             .map(|(iface, _)| iface.clone())
+            .collect()
+    }
+
+    pub fn register_interface_supers(&mut self, iface: &str, supers: Vec<String>) {
+        self.interface_supers.insert(iface.to_string(), supers);
+    }
+
+    /// True if `from` implies `target` through the superinterface chain.
+    /// BFS with visited set -- safe for diamonds and cycles.
+    pub fn iface_implies(&self, from: &str, target: &str) -> bool {
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(from.to_string());
+        while let Some(current) = queue.pop_front() {
+            if current == target {
+                return true;
+            }
+            if !visited.insert(current.clone()) {
+                continue;
+            }
+            if let Some(supers) = self.interface_supers.get(&current) {
+                for s in supers {
+                    queue.push_back(s.clone());
+                }
+            }
+        }
+        false
+    }
+
+    /// All interfaces for which this type has a direct conformance entry.
+    pub fn conformance_ifaces_for(&self, type_name: &str) -> Vec<&str> {
+        self.conformances
+            .keys()
+            .filter(|(t, _)| t == type_name)
+            .map(|(_, i)| i.as_str())
             .collect()
     }
 }

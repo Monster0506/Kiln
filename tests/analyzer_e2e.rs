@@ -1271,7 +1271,8 @@ fn analyze_file_from(path: &str) -> Vec<String> {
     let mut ast = Parser::new(tokens).parse_file().expect("parse failed");
     let registry = default_registry();
     run_processors(&mut ast, &registry);
-    run_user_processors(&mut ast, &registry);
+    let mut _proc_errors = vec![];
+    run_user_processors(&mut ast, &registry, &mut _proc_errors);
     let base = PathBuf::from(path).parent().unwrap().to_path_buf();
     match analyze_with_base(&ast, &base) {
         Ok(_) => vec![],

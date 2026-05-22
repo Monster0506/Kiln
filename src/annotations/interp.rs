@@ -33,8 +33,21 @@ pub enum Value {
 // Interpreter
 // ---------------------------------------------------------------------------
 
+/// Outcome returned by `run_processor` after a processor body executes.
+#[derive(Debug)]
+pub enum ProcessorOutcome {
+    /// Normal completion; replacement item and any extra items.
+    Ok(Option<Item>, Vec<Item>),
+    /// `Diag.fail(msg)` was called; transformation aborted.
+    Fail(String),
+    /// One or more `Diag.warn(msg)` calls fired; transformation still applied.
+    Warn(Vec<String>, Option<Item>, Vec<Item>),
+}
+
 pub struct Interpreter {
     env: HashMap<String, Value>,
+    fail_msg: Option<String>,
+    warnings: Vec<String>,
 }
 
 enum StmtOutcome {
@@ -54,6 +67,8 @@ impl Interpreter {
     pub fn new() -> Self {
         Self {
             env: HashMap::new(),
+            fail_msg: None,
+            warnings: vec![],
         }
     }
 
@@ -77,7 +92,7 @@ impl Interpreter {
         fn_def: &FnDef,
         proc: &ProcessorDef,
         annot_args: &[(String, Expr)],
-    ) -> Option<(Option<Item>, Vec<Item>)> {
+    ) -> ProcessorOutcome {
         let mut interp = Interpreter::new();
         let args_map = Interpreter::eval_annot_args(annot_args);
 
@@ -85,7 +100,7 @@ impl Interpreter {
         fn_fields.insert("name".into(), Value::Str(fn_def.name.clone()));
         fn_fields.insert(
             "return_type".into(),
-            Value::Str(type_expr_to_str(&fn_def.return_type)),
+            type_expr_to_value(&fn_def.return_type),
         );
         fn_fields.insert("body".into(), Value::Block(fn_def.body.clone()));
         fn_fields.insert(
@@ -101,7 +116,7 @@ impl Interpreter {
             .map(|p| {
                 let mut pf = HashMap::new();
                 pf.insert("name".into(), Value::Str(p.name.clone()));
-                pf.insert("ty".into(), Value::Str(type_expr_to_str(&p.ty)));
+                pf.insert("ty".into(), type_expr_to_value(&p.ty));
                 Value::Struct {
                     ty: "Param".into(),
                     fields: pf,
@@ -121,8 +136,23 @@ impl Interpreter {
         };
         interp.bind(&proc.target_param.name, target);
 
-        let result = interp.eval_block(&proc.body).ok()?;
-        decode_processor_result(result)
+        match interp.eval_block(&proc.body) {
+            Err(()) => {
+                if let Some(msg) = interp.fail_msg {
+                    return ProcessorOutcome::Fail(msg);
+                }
+                ProcessorOutcome::Ok(None, vec![])
+            }
+            Ok(result) => {
+                let (replacement, extras) =
+                    decode_processor_result(result).unwrap_or((None, vec![]));
+                if interp.warnings.is_empty() {
+                    ProcessorOutcome::Ok(replacement, extras)
+                } else {
+                    ProcessorOutcome::Warn(interp.warnings, replacement, extras)
+                }
+            }
+        }
     }
 
     fn eval_block(&mut self, block: &Block) -> Result<Value, ()> {
@@ -247,13 +277,10 @@ impl Interpreter {
                 for seg in segs {
                     match seg {
                         StringSegment::Text(t) => parts.push(t.clone()),
-                        StringSegment::Interp(e) => match self.eval_expr(e)? {
-                            Value::Str(s) => parts.push(s),
-                            Value::Int(n) => parts.push(n.to_string()),
-                            Value::Float(f) => parts.push(f.to_string()),
-                            Value::Bool(b) => parts.push(b.to_string()),
-                            _ => return Err(()),
-                        },
+                        StringSegment::Interp(e) => {
+                            let v = self.eval_expr(e)?;
+                            parts.push(display_value(&v));
+                        }
                     }
                 }
                 Ok(Value::Str(parts.join("")))
@@ -305,9 +332,18 @@ impl Interpreter {
         let args = args?;
 
         match callee {
+            Expr::Ident(name, _) if name == "println" => {
+                let msg = args.iter().map(display_value).collect::<Vec<_>>().join(" ");
+                eprintln!("[processor] {msg}");
+                Ok(Value::Void)
+            }
             Expr::Field { object, field, .. } => {
-                // Try static call first (e.g. Vec.new())
                 if let Expr::Ident(type_name, _) = object.as_ref() {
+                    // Diag.fail / Diag.warn
+                    if type_name == "Diag" {
+                        return self.eval_diag_call(field, args);
+                    }
+                    // Static method (e.g. Vec.new(), Block.empty())
                     if let Ok(v) = eval_static_method(type_name, field, &args) {
                         return Ok(v);
                     }
@@ -315,6 +351,24 @@ impl Interpreter {
                 // Instance method call
                 let obj = self.eval_expr(object)?;
                 eval_method(obj, field, args)
+            }
+            _ => Err(()),
+        }
+    }
+
+    fn eval_diag_call(&mut self, method: &str, args: Vec<Value>) -> Result<Value, ()> {
+        let msg = match args.into_iter().next() {
+            Some(Value::Str(s)) => s,
+            _ => String::new(),
+        };
+        match method {
+            "fail" => {
+                self.fail_msg = Some(msg);
+                Err(())
+            }
+            "warn" => {
+                self.warnings.push(msg);
+                Ok(Value::Void)
             }
             _ => Err(()),
         }
@@ -643,6 +697,20 @@ fn eval_binop(op: &BinOp, lv: Value, rv: Value) -> Result<Value, ()> {
         (BinOp::Or, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a || b)),
         (BinOp::Eq, Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a == b)),
         (BinOp::Ne, Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a != b)),
+        (
+            BinOp::Eq,
+            ref lhs @ Value::Struct { ty: ref ta, .. },
+            ref rhs @ Value::Struct { ty: ref tb, .. },
+        ) if ta == "Type" && tb == "Type" => Ok(Value::Bool(
+            type_value_to_str(lhs) == type_value_to_str(rhs),
+        )),
+        (
+            BinOp::Ne,
+            ref lhs @ Value::Struct { ty: ref ta, .. },
+            ref rhs @ Value::Struct { ty: ref tb, .. },
+        ) if ta == "Type" && tb == "Type" => Ok(Value::Bool(
+            type_value_to_str(lhs) != type_value_to_str(rhs),
+        )),
         _ => Err(()),
     }
 }
@@ -703,6 +771,88 @@ fn eval_method(obj: Value, method: &str, args: Vec<Value>) -> Result<Value, ()> 
             }
             Err(())
         }
+        // Strip all parameters (empty list only); useful for generating zero-arg companion fns.
+        (Value::Struct { ty, .. }, "with_params") if ty == "FnDecl" && args.len() == 1 => {
+            if let (Value::Struct { fields, .. }, Value::List(new_params)) =
+                (obj, args.into_iter().next().unwrap())
+            {
+                if new_params.is_empty() {
+                    if let Some(Value::Decl(Item::Function(ref orig))) = fields.get("__fn_def__") {
+                        let mut new_fn = orig.clone();
+                        new_fn.params = vec![];
+                        new_fn.variadic = None;
+                        new_fn.generic_params = vec![];
+                        return Ok(Value::Decl(Item::Function(new_fn)));
+                    }
+                }
+            }
+            Err(())
+        }
+        (Value::Decl(Item::Function(_)), "with_params") if args.len() == 1 => {
+            if let (Value::Decl(Item::Function(mut fn_def)), Value::List(new_params)) =
+                (obj, args.into_iter().next().unwrap())
+            {
+                if new_params.is_empty() {
+                    fn_def.params = vec![];
+                    fn_def.variadic = None;
+                    fn_def.generic_params = vec![];
+                    return Ok(Value::Decl(Item::Function(fn_def)));
+                }
+            }
+            Err(())
+        }
+        (Value::Struct { ty, fields }, "with_return_type") if ty == "FnDecl" && args.len() == 1 => {
+            if let Value::Str(type_name) = &args[0] {
+                if let Some(Value::Decl(Item::Function(ref orig))) = fields.get("__fn_def__") {
+                    let mut new_fn = orig.clone();
+                    new_fn.return_type = crate::parser::ast::TypeExpr::Named {
+                        name: type_name.clone(),
+                        generics: vec![],
+                        bindings: vec![],
+                        span: new_fn.return_type.span(),
+                    };
+                    return Ok(Value::Decl(Item::Function(new_fn)));
+                }
+            }
+            Err(())
+        }
+        // Chaining support: with_body / with_name on an already-built Decl value.
+        (Value::Decl(Item::Function(_)), "with_body") if args.len() == 1 => {
+            if let (Value::Decl(Item::Function(mut fn_def)), Value::Block(new_body)) =
+                (obj, args.into_iter().next().unwrap())
+            {
+                fn_def.body = new_body;
+                Ok(Value::Decl(Item::Function(fn_def)))
+            } else {
+                Err(())
+            }
+        }
+        (Value::Decl(Item::Function(_)), "with_name") if args.len() == 1 => {
+            if let (Value::Decl(Item::Function(mut fn_def)), Value::Str(new_name)) =
+                (obj, args.into_iter().next().unwrap())
+            {
+                fn_def.name = new_name;
+                Ok(Value::Decl(Item::Function(fn_def)))
+            } else {
+                Err(())
+            }
+        }
+        (Value::Decl(Item::Function(_)), "with_return_type") if args.len() == 1 => {
+            if let (Value::Decl(Item::Function(mut fn_def)), Value::Str(type_name)) =
+                (obj, args.into_iter().next().unwrap())
+            {
+                let span = fn_def.return_type.span();
+                fn_def.return_type = crate::parser::ast::TypeExpr::Named {
+                    name: type_name,
+                    generics: vec![],
+                    bindings: vec![],
+                    span,
+                };
+                Ok(Value::Decl(Item::Function(fn_def)))
+            } else {
+                Err(())
+            }
+        }
         (Value::List(_), "push") if args.len() == 1 => {
             if let Value::List(mut items) = obj {
                 items.push(args.into_iter().next().unwrap());
@@ -757,10 +907,202 @@ fn value_to_expr(val: Value, span: Span) -> Result<Expr, ()> {
     }
 }
 
-fn type_expr_to_str(ty: &TypeExpr) -> String {
+fn type_expr_to_value(ty: &TypeExpr) -> Value {
+    let mut fields: HashMap<String, Value> = HashMap::new();
     match ty {
-        TypeExpr::Named { name, .. } => name.clone(),
-        _ => "unknown".into(),
+        TypeExpr::Named {
+            name,
+            generics,
+            bindings,
+            ..
+        } => {
+            fields.insert("name".into(), Value::Str(name.clone()));
+            fields.insert(
+                "generics".into(),
+                Value::List(generics.iter().map(type_expr_to_value).collect()),
+            );
+            let binding_vals: Vec<Value> = bindings
+                .iter()
+                .map(|(k, v)| {
+                    let mut bf = HashMap::new();
+                    bf.insert("name".into(), Value::Str(k.clone()));
+                    bf.insert("ty".into(), type_expr_to_value(v));
+                    Value::Struct {
+                        ty: "TypeBinding".into(),
+                        fields: bf,
+                    }
+                })
+                .collect();
+            fields.insert("bindings".into(), Value::List(binding_vals));
+        }
+        TypeExpr::Union(variants, _) => {
+            fields.insert("name".into(), Value::Str("union".into()));
+            fields.insert(
+                "generics".into(),
+                Value::List(variants.iter().map(type_expr_to_value).collect()),
+            );
+        }
+        TypeExpr::Tuple(elems, _) => {
+            fields.insert("name".into(), Value::Str("tuple".into()));
+            fields.insert(
+                "generics".into(),
+                Value::List(elems.iter().map(type_expr_to_value).collect()),
+            );
+        }
+        TypeExpr::Callable { params, ret, .. } => {
+            fields.insert("name".into(), Value::Str("callable".into()));
+            fields.insert("generics".into(), Value::List(vec![]));
+            fields.insert(
+                "params".into(),
+                Value::List(params.iter().map(type_expr_to_value).collect()),
+            );
+            fields.insert("return_type".into(), type_expr_to_value(ret));
+        }
+        TypeExpr::Ref {
+            mutable,
+            lifetime,
+            inner,
+            ..
+        } => {
+            fields.insert("name".into(), Value::Str("ref".into()));
+            fields.insert("generics".into(), Value::List(vec![]));
+            fields.insert("mutable".into(), Value::Bool(*mutable));
+            fields.insert(
+                "lifetime".into(),
+                match lifetime {
+                    Some(lt) => Value::Some(Box::new(Value::Str(lt.clone()))),
+                    None => Value::None,
+                },
+            );
+            fields.insert("inner".into(), type_expr_to_value(inner));
+        }
+        TypeExpr::Projection { base, assoc, .. } => {
+            fields.insert("name".into(), Value::Str("projection".into()));
+            fields.insert("generics".into(), Value::List(vec![]));
+            fields.insert("base".into(), Value::Str(base.clone()));
+            fields.insert("assoc".into(), Value::Str(assoc.clone()));
+        }
+        TypeExpr::GenSplice(..) => {
+            fields.insert("name".into(), Value::Str("unknown".into()));
+            fields.insert("generics".into(), Value::List(vec![]));
+        }
+    }
+    Value::Struct {
+        ty: "Type".into(),
+        fields,
+    }
+}
+
+fn type_value_to_str(v: &Value) -> String {
+    if let Value::Struct { ty, fields } = v {
+        if ty != "Type" {
+            return display_value(v);
+        }
+        let name = match fields.get("name") {
+            Some(Value::Str(s)) => s.as_str(),
+            _ => return "?".into(),
+        };
+        match name {
+            "union" => {
+                if let Some(Value::List(items)) = fields.get("generics") {
+                    return items
+                        .iter()
+                        .map(type_value_to_str)
+                        .collect::<Vec<_>>()
+                        .join(" | ");
+                }
+            }
+            "tuple" => {
+                if let Some(Value::List(items)) = fields.get("generics") {
+                    let parts = items
+                        .iter()
+                        .map(type_value_to_str)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return format!("({parts})");
+                }
+            }
+            "callable" => {
+                if let (Some(Value::List(params)), Some(ret)) =
+                    (fields.get("params"), fields.get("return_type"))
+                {
+                    let ps = params
+                        .iter()
+                        .map(type_value_to_str)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let rs = type_value_to_str(ret);
+                    return format!("Callable[({ps}), {rs}]");
+                }
+            }
+            "ref" => {
+                if let Some(inner) = fields.get("inner") {
+                    let is_mut = matches!(fields.get("mutable"), Some(Value::Bool(true)));
+                    let inner_str = type_value_to_str(inner);
+                    return if is_mut {
+                        format!("&mut {inner_str}")
+                    } else {
+                        format!("&{inner_str}")
+                    };
+                }
+            }
+            "projection" => {
+                if let (Some(Value::Str(base)), Some(Value::Str(assoc))) =
+                    (fields.get("base"), fields.get("assoc"))
+                {
+                    return format!("{base}.{assoc}");
+                }
+            }
+            _ => {
+                if let Some(Value::List(generics)) = fields.get("generics") {
+                    if !generics.is_empty() {
+                        let gs = generics
+                            .iter()
+                            .map(type_value_to_str)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return format!("{name}[{gs}]");
+                    }
+                }
+                return name.to_string();
+            }
+        }
+    }
+    display_value(v)
+}
+
+fn display_value(v: &Value) -> String {
+    match v {
+        Value::Int(n) => n.to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::Str(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::Void => "void".into(),
+        Value::None => "None".into(),
+        Value::Some(inner) => format!("Some({})", display_value(inner)),
+        Value::Block(b) => format!("Block({} stmts)", b.stmts.len()),
+        Value::Decl(_) => "Decl(...)".into(),
+        Value::List(items) => {
+            let inner: Vec<String> = items.iter().map(display_value).collect();
+            format!("[{}]", inner.join(", "))
+        }
+        Value::Tuple(items) => {
+            let inner: Vec<String> = items.iter().map(display_value).collect();
+            format!("({})", inner.join(", "))
+        }
+        Value::Struct { ty, fields } => {
+            if ty == "Type" {
+                return type_value_to_str(v);
+            }
+            let mut pairs: Vec<(&String, &Value)> = fields.iter().collect();
+            pairs.sort_by_key(|(k, _)| k.as_str());
+            let inner: Vec<String> = pairs
+                .iter()
+                .filter(|(k, _)| !k.starts_with("__"))
+                .map(|(k, v)| format!("{}: {}", k, display_value(v)))
+                .collect();
+            format!("{} {{ {} }}", ty, inner.join(", "))
+        }
     }
 }
 
@@ -907,7 +1249,15 @@ mod tests {
         let fn_def = simple_fn("foo", vec![void_stmt()]);
         let mut fn_fields: HashMap<String, Value> = HashMap::new();
         fn_fields.insert("name".into(), Value::Str("foo".into()));
-        fn_fields.insert("return_type".into(), Value::Str("void".into()));
+        fn_fields.insert(
+            "return_type".into(),
+            type_expr_to_value(&TypeExpr::Named {
+                name: "void".into(),
+                generics: vec![],
+                bindings: vec![],
+                span: zero(),
+            }),
+        );
         fn_fields.insert("body".into(), Value::Block(fn_def.body.clone()));
         fn_fields.insert(
             "annot".into(),
@@ -948,7 +1298,15 @@ mod tests {
         let fn_def = simple_fn("foo", vec![void_stmt()]);
         let mut fn_fields: HashMap<String, Value> = HashMap::new();
         fn_fields.insert("name".into(), Value::Str("foo".into()));
-        fn_fields.insert("return_type".into(), Value::Str("void".into()));
+        fn_fields.insert(
+            "return_type".into(),
+            type_expr_to_value(&TypeExpr::Named {
+                name: "void".into(),
+                generics: vec![],
+                bindings: vec![],
+                span: zero(),
+            }),
+        );
         fn_fields.insert("body".into(), Value::Block(fn_def.body.clone()));
         fn_fields.insert(
             "annot".into(),
@@ -1220,13 +1578,144 @@ mod tests {
             span: zero(),
         };
 
-        let result = Interpreter::run_processor(&fn_def, &proc, &[]).unwrap();
-        let (replacement, extras) = result;
+        let (replacement, extras) = match Interpreter::run_processor(&fn_def, &proc, &[]) {
+            ProcessorOutcome::Ok(r, e) => (r, e),
+            ProcessorOutcome::Warn(_, r, e) => (r, e),
+            ProcessorOutcome::Fail(msg) => panic!("processor failed: {msg}"),
+        };
         assert!(extras.is_empty());
         if let Some(Item::Function(new_fn)) = replacement {
             assert_eq!(new_fn.body.stmts.len(), 3, "one stmt per param");
         } else {
             panic!("expected Some(Function)");
         }
+    }
+
+    fn diag_call(method: &str, msg: &str) -> Stmt {
+        Stmt::Expr(Expr::Call {
+            callee: Box::new(Expr::Field {
+                object: Box::new(Expr::Ident("Diag".into(), zero())),
+                field: method.into(),
+                span: zero(),
+            }),
+            args: vec![Expr::Str(vec![StringSegment::Text(msg.into())], zero())],
+            span: zero(),
+        })
+    }
+
+    fn run_proc_body(stmts: Vec<Stmt>) -> ProcessorOutcome {
+        let fn_def = simple_fn("subject", vec![]);
+        let proc = ProcessorDef {
+            annotation_name: "Test".into(),
+            target_param: crate::parser::ast::Param {
+                name: "target".into(),
+                ty: TypeExpr::Named {
+                    name: "FnDecl".into(),
+                    generics: vec![],
+                    bindings: vec![],
+                    span: zero(),
+                },
+                span: zero(),
+            },
+            return_type: None,
+            body: Block {
+                stmts,
+                span: zero(),
+            },
+            span: zero(),
+        };
+        Interpreter::run_processor(&fn_def, &proc, &[])
+    }
+
+    #[test]
+    fn fail_in_processor_body_returns_fail_outcome() {
+        let outcome = run_proc_body(vec![diag_call("fail", "bad input")]);
+        assert!(matches!(outcome, ProcessorOutcome::Fail(_)));
+    }
+
+    #[test]
+    fn fail_message_is_preserved_in_outcome() {
+        let outcome = run_proc_body(vec![diag_call("fail", "type mismatch")]);
+        if let ProcessorOutcome::Fail(msg) = outcome {
+            assert_eq!(msg, "type mismatch");
+        } else {
+            panic!("expected Fail");
+        }
+    }
+
+    #[test]
+    fn warn_outcome_includes_message_and_replacement() {
+        // Processor: Diag.warn("note"); return (Some { value: target.with_body(gen {}) }, Vec.new())
+        let with_body_call = Expr::Call {
+            callee: Box::new(Expr::Field {
+                object: Box::new(Expr::Ident("target".into(), zero())),
+                field: "with_body".into(),
+                span: zero(),
+            }),
+            args: vec![Expr::Gen {
+                body: Block {
+                    stmts: vec![],
+                    span: zero(),
+                },
+                span: zero(),
+            }],
+            span: zero(),
+        };
+        let return_stmt = Stmt::Return {
+            value: Some(Expr::Tuple(
+                vec![
+                    Expr::StructLiteral {
+                        ty: "Some".into(),
+                        fields: vec![("value".into(), with_body_call)],
+                        span: zero(),
+                    },
+                    Expr::Call {
+                        callee: Box::new(Expr::Field {
+                            object: Box::new(Expr::Ident("Vec".into(), zero())),
+                            field: "new".into(),
+                            span: zero(),
+                        }),
+                        args: vec![],
+                        span: zero(),
+                    },
+                ],
+                zero(),
+            )),
+            span: zero(),
+        };
+        let outcome = run_proc_body(vec![diag_call("warn", "note"), return_stmt]);
+        if let ProcessorOutcome::Warn(msgs, replacement, _) = outcome {
+            assert_eq!(msgs, vec!["note"]);
+            assert!(replacement.is_some());
+        } else {
+            panic!("expected Warn");
+        }
+    }
+
+    #[test]
+    fn multiple_warns_are_all_collected() {
+        let outcome = run_proc_body(vec![
+            diag_call("warn", "first"),
+            diag_call("warn", "second"),
+            diag_call("warn", "third"),
+        ]);
+        if let ProcessorOutcome::Warn(msgs, _, _) = outcome {
+            assert_eq!(msgs, vec!["first", "second", "third"]);
+        } else {
+            panic!("expected Warn");
+        }
+    }
+
+    #[test]
+    fn fail_after_warn_returns_fail_not_warn() {
+        let outcome = run_proc_body(vec![
+            diag_call("warn", "partial"),
+            diag_call("fail", "fatal"),
+        ]);
+        assert!(
+            matches!(outcome, ProcessorOutcome::Fail(ref m) if m == "fatal"),
+            "fail after warn must produce Fail, got {:?}",
+            outcome,
+        );
     }
 }

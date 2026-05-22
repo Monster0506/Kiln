@@ -31,25 +31,25 @@ processor Typecheck(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
     mut guards: Block = Block.empty()
 
     for p <- target.params {
-        if p.ty == "str" {
+        if p.ty.name == "str" {
             g: Block = gen {
                 guard_str(<<p.name>>, <<target.annot.strict>>)
             }
             guards = guards.concat(g)
         }
-        if p.ty == "int" {
+        if p.ty.name == "int" {
             g: Block = gen {
                 guard_int(<<p.name>>, <<target.annot.strict>>)
             }
             guards = guards.concat(g)
         }
-        if p.ty == "float" {
+        if p.ty.name == "float" {
             g: Block = gen {
                 guard_float(<<p.name>>, <<target.annot.strict>>)
             }
             guards = guards.concat(g)
         }
-        if p.ty == "bool" {
+        if p.ty.name == "bool" {
             g: Block = gen {
                 guard_bool(<<p.name>>, <<target.annot.strict>>)
             }
@@ -85,6 +85,17 @@ processor Summary(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
     replacement: Decl = target.with_body(new_body)
     return (Some { value: replacement }, Vec.new())
 }
+
+# ---- Stubs -------------------------------------------------------------------
+
+def guard_str(label: str, strict: bool) -> void { println(label) }
+def guard_int(label: str, strict: bool) -> void { println(label) }
+def guard_float(label: str, strict: bool) -> void { println(label) }
+def guard_bool(label: str, strict: bool) -> void { println(label) }
+def describe_param(label: str, ty: str) -> void { println(label) }
+def open_conn(host: str, user: str) -> bool { return true }
+def do_work(n: int) -> void { println("work") }
+def move_funds(src: str, dst: str, amount: int) -> bool { return true }
 
 # ---- Annotated functions -----------------------------------------------------
 

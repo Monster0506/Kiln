@@ -1,0 +1,139 @@
+# type_dispatch.kn -- first-class type inspection with p.ty.generics
+#
+# p.ty is a structured Type value:
+#   p.ty.name      -- base name: "str", "int", "Option", "Vec", ...
+#   p.ty.generics  -- list of inner Type values
+#   p.ty           -- displays as canonical string: "Option[str]", "Vec[int]", ...
+#
+# This lets processors distinguish Option[str] from Option[int], Vec[str]
+# from Vec[float], etc.  With a flat string, all you could see was "Option".
+#
+# Two processors:
+#
+#   @TypeGuard  -- prepends a type-appropriate guard call per parameter.
+#                  Dispatches on the inner type for containers:
+#                    int          ->  guard_int(label)
+#                    Option[str]  ->  guard_opt_str(label)
+#                    Option[int]  ->  guard_opt_int(label)   <- different guard
+#                    Vec[str]     ->  guard_vec_str(label)
+#                    Vec[int]     ->  guard_vec_int(label)   <- different guard
+#
+#   @TypeDoc    -- emits a zero-arg companion <name>_doc() that prints each
+#                  parameter's full type signature at runtime.
+#
+# Usage: kiln run examples/annotations/type_dispatch.kn
+
+# ---- guard stubs -------------------------------------------------------------
+
+def guard_str(label: str) -> void       { println(label) }
+def guard_int(label: str) -> void       { println(label) }
+def guard_float(label: str) -> void     { println(label) }
+def guard_bool(label: str) -> void      { println(label) }
+def guard_opt_str(label: str) -> void   { println(label) }
+def guard_opt_int(label: str) -> void   { println(label) }
+def guard_opt_float(label: str) -> void { println(label) }
+def guard_vec_str(label: str) -> void   { println(label) }
+def guard_vec_int(label: str) -> void   { println(label) }
+def guard_vec_float(label: str) -> void { println(label) }
+
+# ---- @TypeGuard --------------------------------------------------------------
+#
+# For each parameter emit the guard that matches its full type.
+# Option[str] and Option[int] produce DIFFERENT guards -- only possible
+# because p.ty.generics exposes the inner type.
+
+annotation TypeGuard { }
+
+processor TypeGuard(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    mut guards: Block = Block.empty()
+
+    for p <- target.params {
+        if p.ty.name == "str"   { guards = guards.concat(gen { guard_str(<<p.name>>) }) }
+        if p.ty.name == "int"   { guards = guards.concat(gen { guard_int(<<p.name>>) }) }
+        if p.ty.name == "float" { guards = guards.concat(gen { guard_float(<<p.name>>) }) }
+        if p.ty.name == "bool"  { guards = guards.concat(gen { guard_bool(<<p.name>>) }) }
+
+        if p.ty.name == "Option" {
+            for g <- p.ty.generics {
+                if g.name == "str"   { guards = guards.concat(gen { guard_opt_str(<<p.name>>) }) }
+                if g.name == "int"   { guards = guards.concat(gen { guard_opt_int(<<p.name>>) }) }
+                if g.name == "float" { guards = guards.concat(gen { guard_opt_float(<<p.name>>) }) }
+            }
+        }
+
+        if p.ty.name == "Vec" {
+            for g <- p.ty.generics {
+                if g.name == "str"   { guards = guards.concat(gen { guard_vec_str(<<p.name>>) }) }
+                if g.name == "int"   { guards = guards.concat(gen { guard_vec_int(<<p.name>>) }) }
+                if g.name == "float" { guards = guards.concat(gen { guard_vec_float(<<p.name>>) }) }
+            }
+        }
+    }
+
+    new_body: Block = guards.concat(gen { <<target.body>> })
+    return (Some { value: target.with_body(new_body) }, Vec.new())
+}
+
+# ---- @TypeDoc ----------------------------------------------------------------
+#
+# Emits a zero-arg companion <name>_doc() that prints the full type of each
+# parameter when called.
+#
+# Key technique: build each description string at PROCESSOR time using
+# {p.name} and {p.ty} (where p.ty displays as "Option[str]", "Vec[int]", etc.),
+# then splice the pre-built string into the gen block with <<entry>>.
+#
+# Demonstrates with_name / with_params([]) / with_body chaining on a Decl.
+
+annotation TypeDoc { }
+
+processor TypeDoc(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    header: str = "--- {target.name} ---"
+    mut doc_body: Block = gen { println(<<header>>) }
+
+    for p <- target.params {
+        entry: str = "  {p.name}: {p.ty}"
+        doc_body = doc_body.concat(gen { println(<<entry>>) })
+    }
+
+    companion: Decl = target.with_name("{target.name}_doc").with_params([]).with_body(doc_body)
+    return (None, [companion])
+}
+
+# ---- Annotated functions -----------------------------------------------------
+
+# All four primitives: four distinct guards emitted in declaration order.
+@TypeGuard
+def process(name: str, count: int, weight: float, flag: bool) -> void {
+    println("process")
+}
+
+# Option[str] and Option[int]: same container, different inner types,
+# so different guard functions are generated.
+@TypeGuard
+def fetch(endpoint: Option[str], retries: Option[int]) -> void {
+    println("fetch")
+}
+
+# Vec[str] and Vec[int]: same story for list types.
+@TypeGuard
+def load(tags: Vec[str], ids: Vec[int]) -> void {
+    println("load")
+}
+
+# TypeDoc: generates report_doc() as a zero-arg companion at compile time.
+# The companion prints full type strings including generics.
+@TypeDoc
+def report(title: str, score: float, tags: Vec[str], rating: Option[int]) -> void {
+    println("report")
+}
+
+# ---- main -------------------------------------------------------------------
+
+def main() -> void {
+    process("hello", 3, 1.5, true)
+    fetch(None, None)
+    load([], [])
+    report("summary", 9.5, [], None)
+    report_doc()
+}

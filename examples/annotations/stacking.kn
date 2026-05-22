@@ -1,12 +1,16 @@
-# stacking.kn -- multiple processors applied in declaration order, composing
+# stacking.kn -- multiple processors applied in bottom-up order, composing
+#
+# Kiln uses Python decorator convention: the annotation closest to the function
+# is the innermost transform (applied first); the topmost annotation is the
+# outermost wrapper (applied last).
 #
 # Each processor in a stack receives the OUTPUT of the previous one as its
 # `target`.  This is guaranteed: run_user_processors chains transformations
 # rather than applying each independently.
 #
 # Demonstrates:
-#   - Retry wraps the body in a retry loop
-#   - LogEnter prepends a log statement to whatever Retry produced
+#   - @Retry (bottom/inner) wraps the body in a retry loop first
+#   - @LogEnter (top/outer) prepends a log statement to whatever Retry produced
 #   - Final body: [log_stmt, retry_loop_wrapping_original_body]
 #
 # Usage: kiln run examples/annotations/stacking.kn
@@ -53,8 +57,8 @@ processor LogEnter(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 
 # ---- Functions using both annotations ---------------------------------------
 #
-# @Retry { count: 2 } runs FIRST -> wraps body in retry loop
-# @LogEnter runs SECOND -> sees the retry-wrapped body and prepends the log stmt
+# @LogEnter is on top (outer) -> runs SECOND, sees the retry-wrapped body
+# @Retry { count: 2 } is below (inner) -> runs FIRST, wraps body in retry loop
 #
 # The generated body is equivalent to:
 #
@@ -73,8 +77,8 @@ processor LogEnter(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 #       }
 #   }
 
-@Retry { count: 2 }
 @LogEnter { label: "debug" }
+@Retry { count: 2 }
 def upload(payload: str) -> void {
     println("uploading")
 }

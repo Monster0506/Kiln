@@ -112,6 +112,12 @@ pub enum AnalysisError {
 
     #[error("{span}: cannot assign to const '{name}'")]
     AssignToConst { name: String, span: Span },
+
+    #[error("{span}: processor error: {msg}")]
+    ProcessorFail { msg: String, span: Span },
+
+    #[error("{span}: processor warning: {msg}")]
+    ProcessorWarn { msg: String, span: Span },
 }
 
 impl AnalysisError {
@@ -143,6 +149,8 @@ impl AnalysisError {
             AnalysisError::RedundantMatchArm { .. } => "W001",
             AnalysisError::TautologicalCondition { .. } => "W002",
             AnalysisError::ContradictoryCondition { .. } => "W003",
+            AnalysisError::ProcessorFail { .. } => "E024",
+            AnalysisError::ProcessorWarn { .. } => "W004",
         }
     }
 
@@ -174,6 +182,8 @@ impl AnalysisError {
             AnalysisError::RedundantMatchArm { .. } => "warning",
             AnalysisError::TautologicalCondition { .. } => "warning",
             AnalysisError::ContradictoryCondition { .. } => "warning",
+            AnalysisError::ProcessorFail { .. } => "processor error",
+            AnalysisError::ProcessorWarn { .. } => "warning",
         }
     }
 
@@ -255,6 +265,8 @@ impl AnalysisError {
             AnalysisError::RedundantMatchArm { message, .. } => message.clone(),
             AnalysisError::TautologicalCondition { .. } => "condition is always true".into(),
             AnalysisError::ContradictoryCondition { .. } => "condition is always false".into(),
+            AnalysisError::ProcessorFail { msg, .. } => msg.clone(),
+            AnalysisError::ProcessorWarn { msg, .. } => msg.clone(),
         }
     }
 
@@ -262,6 +274,7 @@ impl AnalysisError {
     pub fn note_info(&self) -> Vec<(String, Option<Span>)> {
         match self {
             AnalysisError::BoundViolation { notes, .. } => notes.clone(),
+            AnalysisError::ProcessorFail { .. } | AnalysisError::ProcessorWarn { .. } => vec![],
             _ => vec![],
         }
     }
@@ -294,6 +307,8 @@ impl AnalysisError {
             AnalysisError::RedundantMatchArm { span, .. } => *span,
             AnalysisError::TautologicalCondition { span } => *span,
             AnalysisError::ContradictoryCondition { span } => *span,
+            AnalysisError::ProcessorFail { span, .. } => *span,
+            AnalysisError::ProcessorWarn { span, .. } => *span,
         }
     }
 }

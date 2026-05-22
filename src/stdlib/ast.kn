@@ -3,15 +3,21 @@
 # Declared here so the analyzer can type-check processor signatures and bodies.
 
 @builtin
+struct Type {
+    name: str
+    generics: Vec[Type]
+}
+
+@builtin
 struct Param {
     name: str
-    ty: str
+    ty: Type
 }
 
 @builtin
 struct StructField {
     name: str
-    ty: str
+    ty: Type
     mutable: bool
 }
 
@@ -50,7 +56,7 @@ struct Block {
 struct FnDecl {
     name: str
     params: Vec[Param]
-    return_type: str
+    return_type: Type
     body: Block
     annot: AnnotArgs
 }
@@ -74,4 +80,4 @@ enum Decl {
     Enum { decl: EnumDecl }
 }
 
-export { Param, StructField, AnnotArgs, Stmt, Expr, Block, FnDecl, StructDecl, EnumDecl, Decl }
+export { Type, Param, StructField, AnnotArgs, Stmt, Expr, Block, FnDecl, StructDecl, EnumDecl, Decl }

@@ -1,0 +1,118 @@
+# block_algebra.kn -- Block.empty(), concat(), and prepend() in processor bodies
+#
+# Block algebra lets a processor build generated code proportional to function
+# shape: one statement per parameter, one per annotation arg, etc.
+#
+# Three operations:
+#   Block.empty()       -- the identity element; a block with no statements
+#   a.concat(b)         -- a followed by b  (a stays first)
+#   a.prepend(b)        -- b followed by a  (b is inserted before a)
+#
+# Demonstrates:
+#   - @Instrument: builds a preamble of track() calls, one per param, via concat
+#   - @Bracket: wraps the body with enter/exit calls via prepend and concat
+#
+# Usage: kiln run examples/annotations/block_algebra.kn
+
+# ---- helpers (stand-ins for a real instrumentation runtime) ------------------
+
+def track(name: str, val: str) -> void {
+    println(name)
+}
+
+def enter_span(label: str) -> void {
+    println(label)
+}
+
+def exit_span(label: str) -> void {
+    println(label)
+}
+
+# ---- @Instrument -------------------------------------------------------------
+#
+# Prepends one track(param_name, param_name) call per parameter before the
+# original body.  Uses Block.empty() as the accumulator seed and concat to
+# grow the preamble in declaration order.
+#
+# For a function with N params the generated preamble contains exactly N calls.
+
+annotation Instrument { }
+
+processor Instrument(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    mut preamble: Block = Block.empty()
+
+    for p <- target.params {
+        call: Block = gen {
+            track(<<p.name>>, <<p.name>>)
+        }
+        preamble = preamble.concat(call)
+    }
+
+    body_block: Block = gen { <<target.body>> }
+    new_body: Block = preamble.concat(body_block)
+    return (Some { value: target.with_body(new_body) }, Vec.new())
+}
+
+# ---- @Bracket ----------------------------------------------------------------
+#
+# Wraps the function body with an enter_span call before and an exit_span call
+# after.  Uses prepend to insert the enter call, then concat to append exit.
+#
+# Generated shape for any annotated function:
+#   enter_span(fn_name)
+#   <original body>
+#   exit_span(fn_name)
+
+annotation Bracket { }
+
+processor Bracket(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    enter_block: Block = gen {
+        enter_span(<<target.name>>)
+    }
+    exit_block: Block = gen {
+        exit_span(<<target.name>>)
+    }
+
+    body_block: Block = gen { <<target.body>> }
+    bracketed: Block = body_block.prepend(enter_block)
+    new_body: Block = bracketed.concat(exit_block)
+    return (Some { value: target.with_body(new_body) }, Vec.new())
+}
+
+# ---- Annotated functions -----------------------------------------------------
+
+# 3 params -> 3 track() calls prepended, then the original body.
+@Instrument
+def compute(x: str, y: str, z: str) -> void {
+    println("computing")
+}
+
+# 1 param -> 1 track() call.
+@Instrument
+def load(path: str) -> void {
+    println("loading")
+}
+
+# enter_span, original body, exit_span.
+@Bracket
+def save(data: str) -> void {
+    println("saving")
+}
+
+# Stacked: @Instrument (inner) runs first, building the track() preamble.
+# @Bracket (outer) then wraps the result with enter/exit.
+# Final order: enter_span, track(src), track(dst), original body, exit_span.
+@Bracket
+@Instrument
+def transfer(src: str, dst: str) -> void {
+    println("transferring")
+}
+
+# ---- main -------------------------------------------------------------------
+
+def main() -> void {
+    compute("a", "b", "c")
+    load("file.txt")
+    save("payload")
+    transfer("alice", "bob")
+}

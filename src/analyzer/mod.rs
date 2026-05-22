@@ -1162,6 +1162,21 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     InterfaceItemKind::AssocType { .. } => {}
                 }
             }
+            // Register direct superinterfaces for implication reasoning.
+            let supers: Vec<String> = iface
+                .extends
+                .iter()
+                .filter_map(|t| {
+                    if let crate::parser::ast::TypeExpr::Named { name, .. } = t {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if !supers.is_empty() {
+                registry.register_interface_supers(&iface.name, supers);
+            }
             env.pop_scope();
         }
     }

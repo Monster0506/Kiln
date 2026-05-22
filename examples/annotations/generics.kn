@@ -1,0 +1,207 @@
+# generics.kn -- annotations applied to generic functions
+#
+# Processors run before monomorphization, so they see the uninstantiated
+# signature: a parameter typed T has p.ty.name == "T", not "int" or "str".
+# This lets a single processor behave differently for:
+#   - concrete-only functions   (all p.ty.name in {str, int, float, bool})
+#   - fully generic functions   (all p.ty.name is an uppercase param like T)
+#   - mixed functions           (some concrete, some generic params)
+#
+# Three processors:
+#
+#   @SigDoc      -- emits a zero-arg companion <name>_doc() that prints each
+#                   parameter with its type, labelling generic params "(generic)".
+#                   Uses with_name / with_params([]) / with_return_type("void") /
+#                   with_body chaining to build the companion.
+#
+#   @ConcreteOnly -- Diag.fail if any parameter has a non-primitive type name.
+#                    Enforces that the annotated function takes only concrete args.
+#
+#   @Validate    -- generates a type-appropriate guard call per parameter:
+#                   str/int/float/bool -> check_<type>(param_name_label)
+#                   T / A / B / ...   -> check_generic(param_name_label)
+#                   A function with mixed concrete + generic params gets a
+#                   mix of guard call types -- exactly the right ones.
+#
+# Usage: kiln run examples/annotations/generics.kn
+
+# ---- guard stubs used by @Validate ------------------------------------------
+
+def check_str(label: str)     -> void { println("str:     {label}") }
+def check_int(label: str)     -> void { println("int:     {label}") }
+def check_float(label: str)   -> void { println("float:   {label}") }
+def check_bool(label: str)    -> void { println("bool:    {label}") }
+def check_generic(label: str) -> void { println("generic: {label}") }
+
+# ---- @SigDoc ----------------------------------------------------------------
+#
+# Generates a zero-arg companion <name>_doc() that prints each parameter name
+# and its type at runtime.  Generic type params are labelled "(generic)" so
+# callers can see the difference between str and T at a glance.
+#
+# Key: with_params([]) strips all params AND clears generic_params so the
+# companion is not itself generic.  with_return_type("void") corrects the
+# return type when the original function returned T or some other non-void type.
+
+annotation SigDoc { }
+
+processor SigDoc(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    header: str = "--- {target.name} ---"
+    mut doc_body: Block = gen { println(<<header>>) }
+
+    for p <- target.params {
+        if p.ty.name == "str"   { entry: str = "  {p.name}: str"   doc_body = doc_body.concat(gen { println(<<entry>>) }) }
+        if p.ty.name == "int"   { entry: str = "  {p.name}: int"   doc_body = doc_body.concat(gen { println(<<entry>>) }) }
+        if p.ty.name == "float" { entry: str = "  {p.name}: float" doc_body = doc_body.concat(gen { println(<<entry>>) }) }
+        if p.ty.name == "bool"  { entry: str = "  {p.name}: bool"  doc_body = doc_body.concat(gen { println(<<entry>>) }) }
+        if p.ty.name != "str" {
+            if p.ty.name != "int" {
+                if p.ty.name != "float" {
+                    if p.ty.name != "bool" {
+                        entry: str = "  {p.name}: {p.ty.name} (generic)"
+                        doc_body = doc_body.concat(gen { println(<<entry>>) })
+                    }
+                }
+            }
+        }
+    }
+
+    companion: Decl = target
+        .with_name("{target.name}_doc")
+        .with_params([])
+        .with_return_type("void")
+        .with_body(doc_body)
+    return (None, [companion])
+}
+
+# ---- @ConcreteOnly ----------------------------------------------------------
+#
+# Diag.fail at compile time if any parameter has a non-primitive type name.
+# Useful for annotations that only make sense when all types are known --
+# serializers, schema generators, etc.
+
+annotation ConcreteOnly { }
+
+processor ConcreteOnly(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    for p <- target.params {
+        if p.ty.name != "str" {
+            if p.ty.name != "int" {
+                if p.ty.name != "float" {
+                    if p.ty.name != "bool" {
+                        Diag.fail("@ConcreteOnly: param '{p.name}' has generic type '{p.ty.name}'")
+                    }
+                }
+            }
+        }
+    }
+    return (Some { value: target }, Vec.new())
+}
+
+# ---- @Validate --------------------------------------------------------------
+#
+# Prepends one guard call per parameter.  The guard is chosen based on whether
+# the parameter type is a known concrete primitive or a generic type param:
+#
+#   str / int / float / bool  ->  check_<type>(param_name_as_label)
+#   T / A / B / ...           ->  check_generic(param_name_as_label)
+#
+# The same annotation applied to three different functions:
+#   process(str, int, float, bool)  -> four typed guards
+#   swap[T](T, T)                   -> two generic guards
+#   tag[T](str, T)                  -> one str guard + one generic guard
+
+annotation Validate { }
+
+processor Validate(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
+    mut guards: Block = Block.empty()
+
+    for p <- target.params {
+        if p.ty.name == "str"   { guards = guards.concat(gen { check_str(<<p.name>>) }) }
+        if p.ty.name == "int"   { guards = guards.concat(gen { check_int(<<p.name>>) }) }
+        if p.ty.name == "float" { guards = guards.concat(gen { check_float(<<p.name>>) }) }
+        if p.ty.name == "bool"  { guards = guards.concat(gen { check_bool(<<p.name>>) }) }
+        if p.ty.name != "str" {
+            if p.ty.name != "int" {
+                if p.ty.name != "float" {
+                    if p.ty.name != "bool" {
+                        guards = guards.concat(gen { check_generic(<<p.name>>) })
+                    }
+                }
+            }
+        }
+    }
+
+    new_body: Block = guards.concat(gen { <<target.body>> })
+    return (Some { value: target.with_body(new_body) }, Vec.new())
+}
+
+# ---- @SigDoc targets --------------------------------------------------------
+
+# All concrete params.
+@SigDoc
+def process(name: str, count: int, weight: float, flag: bool) -> void {
+    println("process")
+}
+
+# All generic -- two distinct type params.
+@SigDoc
+def describe[A, B](a: A, b: B) -> str {
+    return "({a}, {b})"
+}
+
+# Mixed: one concrete, one generic.
+@SigDoc
+def tag[T](label: str, value: T) -> str {
+    return "{label}={value}"
+}
+
+# ---- @ConcreteOnly targets --------------------------------------------------
+
+# Passes: all params are concrete.
+@ConcreteOnly
+def serialize(name: str, id: int) -> void {
+    println("{name}:{id}")
+}
+
+# Fails at compile time: x has generic type T.
+# Uncomment to see the error:
+# @ConcreteOnly
+# def bad[T](x: T) -> void { println(x) }
+
+# ---- @Validate targets ------------------------------------------------------
+
+# All four concrete types -> four typed guards.
+@Validate
+def run(name: str, count: int, weight: float, flag: bool) -> void {
+    println("run")
+}
+
+# Fully generic -> two generic guards.
+@Validate
+def swap[T](a: T, b: T) -> T {
+    return b
+}
+
+# Mixed -> one str guard + one generic guard per call site.
+@Validate
+def label_value[T](label: str, value: T) -> str {
+    return "{label}={value}"
+}
+
+# ---- main -------------------------------------------------------------------
+
+def main() -> void {
+    # SigDoc companions: print each param with concrete vs generic label
+    process_doc()
+    describe_doc()
+    tag_doc()
+
+    # ConcreteOnly: works on concrete function
+    serialize("alice", 1)
+
+    # Validate: typed guards for concrete, generic guard for T
+    run("x", 1, 1.5, true)
+    println(swap(10, 20))
+    println(label_value("score", 99))
+    println(label_value("name", "alice"))
+}

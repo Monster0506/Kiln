@@ -62,7 +62,8 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
                     return true;
                 }
             }
-            false
+            // Fall back to superinterface implication.
+            satisfies_by_implication(name.as_str(), iface, registry)
         }
 
         // Primitives look up conformances by name.
@@ -74,9 +75,18 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
             if !entries.is_empty() {
                 return true;
             }
-            false
+            satisfies_by_implication(&name, iface, registry)
         }
     }
+}
+
+/// Returns true if any directly registered conformance for `type_name` implies
+/// `iface` through the superinterface hierarchy.
+fn satisfies_by_implication(type_name: &str, iface: &str, registry: &TypeRegistry) -> bool {
+    registry
+        .conformance_ifaces_for(type_name)
+        .iter()
+        .any(|known| registry.iface_implies(known, iface))
 }
 
 /// Maps a shorthand operator interface to its heterogeneous `*With` variant.
@@ -228,5 +238,41 @@ mod tests {
     fn solve_empty_returns_no_errors() {
         let r = make_registry();
         assert!(solve(&[], &r).is_empty());
+    }
+
+    // Superinterface implication: int has Ord, and Ord extends PartialOrd,
+    // so int should satisfy PartialOrd without a direct conformance entry.
+    #[test]
+    fn int_satisfies_partial_ord_via_ord() {
+        let mut r = TypeRegistry::new();
+        r.register_conformance("int", "Ord", ConformanceEntry { bounds: vec![] });
+        // Ord directly extends PartialOrd.
+        r.register_interface_supers("Ord", vec!["PartialOrd".to_string()]);
+        // No direct (int, PartialOrd) entry -- must derive via implication.
+        assert!(
+            !r.get_conformances("int", "PartialOrd").is_empty() || {
+                // The real test: satisfies() uses the implication path.
+                satisfies(&Ty::Int, "PartialOrd", &r)
+            }
+        );
+    }
+
+    // Transitive implication: Ord -> PartialOrd -> Eq (two hops).
+    #[test]
+    fn int_satisfies_eq_transitively_via_ord() {
+        let mut r = TypeRegistry::new();
+        r.register_conformance("int", "Ord", ConformanceEntry { bounds: vec![] });
+        r.register_interface_supers("Ord", vec!["PartialOrd".to_string()]);
+        r.register_interface_supers("PartialOrd", vec!["Eq".to_string()]);
+        assert!(satisfies(&Ty::Int, "Eq", &r));
+    }
+
+    // No spurious implication: int has Ord but not Display via implication.
+    #[test]
+    fn int_does_not_satisfy_display_via_ord() {
+        let mut r = TypeRegistry::new();
+        r.register_conformance("int", "Ord", ConformanceEntry { bounds: vec![] });
+        r.register_interface_supers("Ord", vec!["PartialOrd".to_string()]);
+        assert!(!satisfies(&Ty::Int, "Display", &r));
     }
 }

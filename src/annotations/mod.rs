@@ -2,9 +2,11 @@ pub mod api;
 pub mod builtins;
 pub mod interp;
 
+use crate::analyzer::AnalysisError;
 use crate::annotations::api::{AnnotationArgs, AnnotationTarget};
+use crate::annotations::interp::ProcessorOutcome;
 use crate::diagnostics::timing::ProcessorRun;
-use crate::parser::ast::{ImplBlock, Item, ProcessorDef, SourceFile, TypeExpr};
+use crate::parser::ast::{AnnotationDef, ImplBlock, Item, ProcessorDef, SourceFile, TypeExpr};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
@@ -91,8 +93,9 @@ pub fn run_processors(source: &mut SourceFile, registry: &ProcessorRegistry) {
 pub fn run_user_processors(
     source: &mut SourceFile,
     _registry: &ProcessorRegistry,
+    errors: &mut Vec<AnalysisError>,
 ) -> Vec<ProcessorRun> {
-    // Collect processor defs by annotation name.
+    // Collect processor defs and annotation defs by annotation name.
     let procs: Vec<ProcessorDef> = source
         .items
         .iter()
@@ -108,6 +111,18 @@ pub fn run_user_processors(
     if procs.is_empty() {
         return vec![];
     }
+
+    let ann_defs: Vec<AnnotationDef> = source
+        .items
+        .iter()
+        .filter_map(|i| {
+            if let Item::AnnotationDef(a) = i {
+                Some(a.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
     let mut new_items: Vec<Item> = vec![];
     // Track (item_count, total_duration) per processor name, in insertion order.
@@ -125,7 +140,10 @@ pub fn run_user_processors(
             _ => continue,
         };
 
-        for ann in &annotations {
+        // Bottom-up order (Python decorator convention): the annotation closest
+        // to the function is applied first (innermost), so the topmost annotation
+        // ends up as the outermost wrapper.
+        for ann in annotations.iter().rev() {
             let proc = match procs.iter().find(|p| p.annotation_name == ann.name) {
                 Some(p) => p.clone(),
                 None => continue,
@@ -137,15 +155,56 @@ pub fn run_user_processors(
                 _ => continue,
             };
 
+            // Merge annotation defaults: start with declared field defaults, then
+            // overlay the explicitly provided args so caller args always win.
+            let resolved_args: Vec<(String, crate::parser::ast::Expr)> = {
+                let mut merged = Vec::new();
+                if let Some(adef) = ann_defs.iter().find(|a| a.name == ann.name) {
+                    for field in &adef.fields {
+                        if let Some(default_expr) = &field.default {
+                            merged.push((field.name.clone(), default_expr.clone()));
+                        }
+                    }
+                }
+                for (k, v) in &ann.args {
+                    if let Some(pos) = merged.iter().position(|(n, _)| n == k) {
+                        merged[pos] = (k.clone(), v.clone());
+                    } else {
+                        merged.push((k.clone(), v.clone()));
+                    }
+                }
+                merged
+            };
+
             let t0 = Instant::now();
-            let result = interp::Interpreter::run_processor(&fn_def, &proc, &ann.args);
+            let outcome = interp::Interpreter::run_processor(&fn_def, &proc, &resolved_args);
             let elapsed = t0.elapsed();
 
-            if let Some((replacement, extras)) = result {
-                if let Some(rep) = replacement {
-                    source.items[idx] = rep;
+            match outcome {
+                ProcessorOutcome::Ok(replacement, extras) => {
+                    if let Some(rep) = replacement {
+                        source.items[idx] = rep;
+                    }
+                    new_items.extend(extras);
                 }
-                new_items.extend(extras);
+                ProcessorOutcome::Fail(msg) => {
+                    errors.push(AnalysisError::ProcessorFail {
+                        msg,
+                        span: ann.span,
+                    });
+                }
+                ProcessorOutcome::Warn(msgs, replacement, extras) => {
+                    for msg in msgs {
+                        errors.push(AnalysisError::ProcessorWarn {
+                            msg,
+                            span: ann.span,
+                        });
+                    }
+                    if let Some(rep) = replacement {
+                        source.items[idx] = rep;
+                    }
+                    new_items.extend(extras);
+                }
             }
 
             let entry = proc_stats.entry(ann.name.clone()).or_insert_with(|| {

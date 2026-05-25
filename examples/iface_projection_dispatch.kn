@@ -1,0 +1,89 @@
+# iface_projection_dispatch.kn -- projection method dispatch
+#
+# When a generic parameter T is bounded by an interface with associated types,
+# calling a method that returns an associated type now produces a
+# Ty::Projection for the return value. The analyzer can then continue
+# type-checking downstream code that uses that projected type.
+#
+# Example:
+#   def first_item[T: Iterable](col: T) -> T.Item
+#
+# The return type T.Item is a projection. If T is pinned to Vec[int],
+# the projection normalizes to int.
+
+
+
+# interface Iterable {
+#     type Item
+# 
+#     hook iter() -> Iterator[Item = Item]
+#     hook len() -> int
+# }
+
+# ---- Concrete Iterable: Vec[int] wrapper ------------------------------------
+
+struct IntVec {
+    data: Vec[int]
+    cursor: int
+}
+
+impl Iterator for IntVec {
+    type Item = int
+
+    hook next() -> Option[int] {
+        if self.cursor >= self.data.length() {
+            return None
+        }
+        val: int = self.data.get(self.cursor)
+        self.cursor = self.cursor + 1
+        return Some(val)
+    }
+
+    hook has_next() -> bool {
+        return self.cursor < self.data.length()
+    }
+}
+
+impl Iterable for IntVec {
+    type Item = int
+
+    hook iter() -> Iterator[Item = int] {
+        return IntVec { data: self.data, cursor: 0 }
+    }
+
+    hook len() -> int {
+        return data.length()
+    }
+}
+
+impl Display for IntVec {
+    hook to_str() -> str {
+        return "IntVec(len={data.length()})"
+    }
+}
+
+# ---- Generic function returning T.Item via projection -----------------------
+#
+# The analyzer resolves T.Item to int when T = IntVec, so the assignment
+# `first: int = first_item(v)` type-checks correctly without annotation.
+
+def sum_items[T: Iterable](col: T) -> int {
+    it: Iterator[Item = T.Item] = col.iter()
+    mut total: int = 0
+    while it.has_next() {
+        item: T.Item = it.next().unwrap()
+        total = total + 1
+    }
+    return total
+}
+
+def main() -> void {
+    raw: Vec[int] = Vec.new()
+    raw.add(10)
+    raw.add(20)
+    raw.add(30)
+
+    iv: IntVec = IntVec { data: raw, cursor: 0 }
+    count: int = sum_items(iv)
+    print("counted {count} elements")
+}

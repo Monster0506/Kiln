@@ -61,10 +61,24 @@ impl ConstraintReason {
     }
 }
 
+/// The kind of constraint being checked.
+#[derive(Debug, Clone)]
+pub enum ConstraintKind {
+    /// Simple interface bound: `ty` must satisfy `iface`.
+    Bound { ty: Ty, iface: String },
+    /// Projected bound: `base_ty` implements `base_iface`, and its associated type
+    /// `assoc_name` must satisfy `required_iface`.
+    ProjectedBound {
+        base_ty: Ty,
+        base_iface: String,
+        assoc_name: String,
+        required_iface: String,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct Constraint {
-    pub ty: Ty,
-    pub iface: String,
+    pub kind: ConstraintKind,
     pub span: Span,
     pub reason: ConstraintReason,
 }
@@ -125,8 +139,10 @@ fn collect_stmt(stmt: &TypedStmt, out: &mut Vec<Constraint>) {
             collect_expr(rhs, out);
             if let Some(iface) = compound_assign_iface(op) {
                 out.push(Constraint {
-                    ty: target.ty.clone(),
-                    iface: iface.to_string(),
+                    kind: ConstraintKind::Bound {
+                        ty: target.ty.clone(),
+                        iface: iface.to_string(),
+                    },
                     span: *span,
                     reason: ConstraintReason::CompoundAssign(op.clone()),
                 });
@@ -188,8 +204,10 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
             collect_expr(right, out);
             if let Some(iface) = binop_required_iface(op) {
                 out.push(Constraint {
-                    ty: left.ty.clone(),
-                    iface: iface.to_string(),
+                    kind: ConstraintKind::Bound {
+                        ty: left.ty.clone(),
+                        iface: iface.to_string(),
+                    },
                     span: expr.span,
                     reason: ConstraintReason::Operator(op.clone()),
                 });
@@ -200,16 +218,20 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
             collect_expr(operand, out);
             if matches!(op, crate::parser::ast::UnOp::Neg) {
                 out.push(Constraint {
-                    ty: operand.ty.clone(),
-                    iface: "Negatable".into(),
+                    kind: ConstraintKind::Bound {
+                        ty: operand.ty.clone(),
+                        iface: "Negatable".into(),
+                    },
                     span: expr.span,
                     reason: ConstraintReason::UnaryNeg,
                 });
             }
             if matches!(op, crate::parser::ast::UnOp::Pos) {
                 out.push(Constraint {
-                    ty: operand.ty.clone(),
-                    iface: "Normalizeable".into(),
+                    kind: ConstraintKind::Bound {
+                        ty: operand.ty.clone(),
+                        iface: "Normalizeable".into(),
+                    },
                     span: expr.span,
                     reason: ConstraintReason::UnaryPos,
                 });
@@ -221,8 +243,10 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
                 if let TypedStringSegment::Interp(e) = seg {
                     collect_expr(e, out);
                     out.push(Constraint {
-                        ty: e.ty.clone(),
-                        iface: "Display".into(),
+                        kind: ConstraintKind::Bound {
+                            ty: e.ty.clone(),
+                            iface: "Display".into(),
+                        },
                         span: e.span,
                         reason: ConstraintReason::Interpolation,
                     });
@@ -379,20 +403,38 @@ pub fn emit_call_bound_constraints(
 
     for bound in bounds {
         if let Some((concrete_ty, span)) = subst.get(&bound.param) {
+            let reason = ConstraintReason::GenericBoundCheck {
+                param: bound.param.clone(),
+                bound: bound.iface.clone(),
+                fn_name: fn_name.to_string(),
+                is_explicit: bound.is_explicit,
+                decl_span: bound.decl_span,
+                source_span: bound.source_span,
+                source_desc: bound.source_desc.clone(),
+            };
             out.push(Constraint {
-                ty: concrete_ty.clone(),
-                iface: bound.iface.clone(),
-                span: *span,
-                reason: ConstraintReason::GenericBoundCheck {
-                    param: bound.param.clone(),
-                    bound: bound.iface.clone(),
-                    fn_name: fn_name.to_string(),
-                    is_explicit: bound.is_explicit,
-                    decl_span: bound.decl_span,
-                    source_span: bound.source_span,
-                    source_desc: bound.source_desc.clone(),
+                kind: ConstraintKind::Bound {
+                    ty: concrete_ty.clone(),
+                    iface: bound.iface.clone(),
                 },
+                span: *span,
+                reason: reason.clone(),
             });
+            // Emit projected bounds for any associated type bindings that resolve to interfaces.
+            for (assoc_name, assoc_ty) in &bound.assoc_bindings {
+                if let Ty::Interface(_, iface_name) = assoc_ty {
+                    out.push(Constraint {
+                        kind: ConstraintKind::ProjectedBound {
+                            base_ty: concrete_ty.clone(),
+                            base_iface: bound.iface.clone(),
+                            assoc_name: assoc_name.clone(),
+                            required_iface: iface_name.clone(),
+                        },
+                        span: *span,
+                        reason: reason.clone(),
+                    });
+                }
+            }
         }
     }
 }
@@ -457,7 +499,7 @@ mod tests {
         };
         let mut out = vec![];
         collect_expr(&expr, &mut out);
-        assert!(out.iter().any(|c| c.iface == "Addable" && c.ty == Ty::Int));
+        assert!(out.iter().any(|c| matches!(&c.kind, ConstraintKind::Bound { ty, iface } if *ty == Ty::Int && iface == "Addable")));
     }
 
     #[test]
@@ -474,7 +516,7 @@ mod tests {
         };
         let mut out = vec![];
         collect_expr(&expr, &mut out);
-        assert!(out.iter().any(|c| c.iface == "Display" && c.ty == Ty::Int));
+        assert!(out.iter().any(|c| matches!(&c.kind, ConstraintKind::Bound { ty, iface } if *ty == Ty::Int && iface == "Display")));
     }
 
     #[test]

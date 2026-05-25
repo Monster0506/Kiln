@@ -99,6 +99,95 @@ fn subst_generic_params_unknown(ty: &Ty, params: &[String]) -> Ty {
     }
 }
 
+/// Extract the interface name from a bound TypeExpr (e.g. `Iterator[Item=int]` -> `"Iterator"`).
+fn bound_iface_name(tex: &TypeExpr, env: &Env) -> Option<String> {
+    if let TypeExpr::Named { name, .. } = tex {
+        // If the name is a type alias for an interface, resolve through it.
+        if let Some(crate::analyzer::env::Symbol::TypeAlias(crate::analyzer::ty::Ty::Interface(
+            _,
+            real,
+        ))) = env.lookup(name)
+        {
+            return Some(real.clone());
+        }
+        Some(name.clone())
+    } else {
+        None
+    }
+}
+
+/// Resolve assoc bindings from a bound TypeExpr. For `Iterator[Item=int]` returns
+/// `[("Item", Ty::Int)]`; for `Iterator[Item=Display]` returns `[("Item", Ty::Interface(...))]`.
+fn bound_assoc_bindings(
+    tex: &TypeExpr,
+    env: &Env,
+    errors: &mut Vec<AnalysisError>,
+) -> Vec<(String, Ty)> {
+    if let TypeExpr::Named { bindings, .. } = tex {
+        bindings
+            .iter()
+            .map(|(name, ty_expr)| (name.clone(), resolve_type_expr(ty_expr, env, errors)))
+            .collect()
+    } else {
+        vec![]
+    }
+}
+
+/// Build GenericBounds from a slice of GenericParam, resolving assoc bindings.
+fn build_generic_bounds(
+    generic_params: &[crate::parser::ast::GenericParam],
+    env: &Env,
+    errors: &mut Vec<AnalysisError>,
+) -> Vec<GenericBound> {
+    let mut bounds = Vec::new();
+    for g in generic_params {
+        for b in &g.bounds {
+            if let Some(iface) = bound_iface_name(b, env) {
+                let assoc_bindings = bound_assoc_bindings(b, env, errors);
+                bounds.push(GenericBound {
+                    param: g.name.clone(),
+                    iface,
+                    assoc_bindings,
+                    is_explicit: true,
+                    decl_span: Some(g.span),
+                    source_span: None,
+                    source_desc: String::new(),
+                });
+            }
+        }
+    }
+    bounds
+}
+
+/// Register projection pins from generic params into the env's innermost scope.
+/// Call this after push_scope() and after generic params are defined as Symbol::Type.
+fn register_projection_pins(
+    generic_params: &[crate::parser::ast::GenericParam],
+    env: &mut Env,
+    errors: &mut Vec<AnalysisError>,
+) {
+    for gp in generic_params {
+        for b in &gp.bounds {
+            if let TypeExpr::Named {
+                name: iface_name,
+                bindings,
+                ..
+            } = b
+            {
+                // Track that this param is bounded by this interface (for method dispatch).
+                env.register_param_iface(&gp.name, iface_name);
+                for (assoc_name, binding_ty_expr) in bindings {
+                    let binding_ty = resolve_type_expr(binding_ty_expr, env, errors);
+                    // Only pin if it's a concrete type (not an interface bound like Item=Display).
+                    if !matches!(binding_ty, Ty::Interface(_, _)) {
+                        env.pin_projection(&gp.name, assoc_name, binding_ty);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Analyze `source`, producing a `TypedFile` or a list of errors.
 ///
 /// The stdlib prelude is always prepended before user items.
@@ -148,7 +237,57 @@ pub fn analyze_with_base(
     };
 
     match analyze_inner(&combined) {
-        Ok(typed) if import_errors.is_empty() => Ok(typed),
+        Ok((typed, _registry)) if import_errors.is_empty() => Ok(typed),
+        Ok(_) => Err(import_errors),
+        Err(mut errs) => {
+            import_errors.append(&mut errs);
+            Err(import_errors)
+        }
+    }
+}
+
+/// Like `analyze_with_base`, but also returns the `TypeRegistry` built during analysis.
+/// Used by codegen paths that need the registry for monomorphization.
+pub fn analyze_with_base_and_registry(
+    source: &SourceFile,
+    base_dir: &std::path::Path,
+) -> Result<(TypedFile, ty::TypeRegistry), Vec<AnalysisError>> {
+    let prelude_src = crate::stdlib::parse_prelude();
+    let ast_stdlib = crate::stdlib::parse_ast_stdlib();
+    let stdlib_vfs = crate::stdlib::stdlib_virtual_fs();
+
+    let mut import_errors: Vec<AnalysisError> = Vec::new();
+
+    let mut prelude_items: Vec<Item> = Vec::new();
+    resolve_imports_into(
+        &prelude_src,
+        base_dir,
+        &mut prelude_items,
+        &mut import_errors,
+        &stdlib_vfs,
+    );
+
+    let mut user_items: Vec<Item> = Vec::new();
+    resolve_imports_into(
+        source,
+        base_dir,
+        &mut user_items,
+        &mut import_errors,
+        &stdlib_vfs,
+    );
+
+    let combined_items: Vec<_> = prelude_items
+        .into_iter()
+        .chain(ast_stdlib.items)
+        .chain(user_items)
+        .collect();
+    let combined = SourceFile {
+        items: combined_items,
+        span: source.span,
+    };
+
+    match analyze_inner(&combined) {
+        Ok((typed, registry)) if import_errors.is_empty() => Ok((typed, registry)),
         Ok(_) => Err(import_errors),
         Err(mut errs) => {
             import_errors.append(&mut errs);
@@ -384,7 +523,7 @@ fn item_top_name(item: &Item) -> Option<&str> {
     }
 }
 
-fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
+fn analyze_inner(source: &SourceFile) -> Result<(TypedFile, ty::TypeRegistry), Vec<AnalysisError>> {
     let mut errors: Vec<AnalysisError> = Vec::new();
     let mut env = Env::new();
     let mut registry = ty::TypeRegistry::new();
@@ -568,6 +707,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             },
                         );
                     }
+                    register_projection_pins(&f.generic_params, &mut env, &mut errors);
                 }
                 let ret = resolve_type_expr(&f.return_type, &env, &mut errors);
                 let params: Vec<(String, Ty)> = f
@@ -575,25 +715,12 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     .iter()
                     .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                     .collect();
+                let generic_bounds = build_generic_bounds(&f.generic_params, &env, &mut errors);
                 if has_generics {
                     env.pop_scope();
                 }
                 let generic_param_names: Vec<String> =
                     f.generic_params.iter().map(|g| g.name.clone()).collect();
-                let generic_bounds: Vec<GenericBound> = f
-                    .generic_params
-                    .iter()
-                    .flat_map(|g| {
-                        g.bounds.iter().map(move |b| GenericBound {
-                            param: g.name.clone(),
-                            iface: b.clone(),
-                            is_explicit: true,
-                            decl_span: Some(g.span),
-                            source_span: None,
-                            source_desc: String::new(),
-                        })
-                    })
-                    .collect();
 
                 // @builtin def with no params is a value-level declaration (a nullary
                 // constructor). Register it as Symbol::Var so that bare references
@@ -656,6 +783,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                                 },
                             );
                         }
+                        register_projection_pins(&f.generic_params, &mut env, &mut errors);
                     }
                     let ret = resolve_type_expr(&f.return_type, &env, &mut errors);
                     let params: Vec<(String, Ty)> = f
@@ -663,23 +791,10 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         .iter()
                         .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
                         .collect();
+                    let generic_bounds = build_generic_bounds(&f.generic_params, &env, &mut errors);
                     if has_generics {
                         env.pop_scope();
                     }
-                    let generic_bounds: Vec<GenericBound> = f
-                        .generic_params
-                        .iter()
-                        .flat_map(|g| {
-                            g.bounds.iter().map(move |b| GenericBound {
-                                param: g.name.clone(),
-                                iface: b.clone(),
-                                is_explicit: true,
-                                decl_span: Some(g.span),
-                                source_span: None,
-                                source_desc: String::new(),
-                            })
-                        })
-                        .collect();
                     let generic_param_names: Vec<String> =
                         f.generic_params.iter().map(|g| g.name.clone()).collect();
                     let is_builtin = f.annotations.iter().any(|a| a.name == "builtin");
@@ -883,6 +998,9 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             },
                         );
                     }
+                    let param_names: Vec<String> =
+                        s.generic_params.iter().map(|g| g.name.clone()).collect();
+                    registry.register_generic_param_order(&s.name, param_names);
                 }
                 let fields: Vec<(String, Ty)> = s
                     .fields
@@ -890,9 +1008,93 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     .map(|f| (f.name.clone(), resolve_type_expr(&f.ty, &env, &mut errors)))
                     .collect();
                 registry.register_struct_fields(&s.name, fields);
+                // Register inline method signatures for type-checking call sites.
+                for method in &s.methods {
+                    let params: Vec<(String, Ty)> = method
+                        .params
+                        .iter()
+                        .map(|p| (p.name.clone(), resolve_type_expr(&p.ty, &env, &mut errors)))
+                        .collect();
+                    let ret = resolve_type_expr(&method.return_type, &env, &mut errors);
+                    let qualified_fn = format!("{}_{}", s.name, method.name);
+                    registry.register_method(
+                        &s.name,
+                        ty::MethodEntry {
+                            method_name: method.name.clone(),
+                            qualified_fn,
+                            params,
+                            ret,
+                        },
+                    );
+                }
                 if has_generics {
                     env.pop_scope();
                 }
+            }
+        }
+    }
+
+    // Fix 6b: detect recursive struct types that lack @indirect on the self-referential field.
+    // A struct like `struct Node { next: Node }` has infinite size; the field must carry @indirect.
+    for item in &source.items {
+        if let Item::Struct(s) = item {
+            if s.is_builtin {
+                continue;
+            }
+            for field in &s.fields {
+                let is_indirect = field.annotations.iter().any(|a| a.name == "indirect");
+                if is_indirect {
+                    continue;
+                }
+                // Check if the field's type directly names this struct (ignoring generics).
+                let refers_to_self = match &field.ty {
+                    TypeExpr::Named { name, .. } => name == &s.name,
+                    _ => false,
+                };
+                if refers_to_self {
+                    errors.push(AnalysisError::RecursiveTypeWithoutIndirect {
+                        ty: s.name.clone(),
+                        field: field.name.clone(),
+                        span: field.span,
+                    });
+                }
+            }
+        }
+    }
+
+    // Pass 1c2: register enum variant fields and generic param order so match arm
+    // bindings get properly-typed variables (e.g. `v: int` in `Some { value: v }`
+    // when the scrutinee is `Option[int]`).
+    for item in &source.items {
+        if let Item::Enum(e) = item {
+            let has_generics = !e.generic_params.is_empty();
+            if has_generics {
+                env.push_scope();
+                for gp in &e.generic_params {
+                    env.define(
+                        &gp.name,
+                        Symbol::Type {
+                            id: TypeId(0),
+                            span: gp.span,
+                        },
+                    );
+                }
+                let param_names: Vec<String> =
+                    e.generic_params.iter().map(|g| g.name.clone()).collect();
+                registry.register_generic_param_order(&e.name, param_names);
+            }
+            for variant in &e.variants {
+                if !variant.fields.is_empty() {
+                    let fields: Vec<(String, Ty)> = variant
+                        .fields
+                        .iter()
+                        .map(|f| (f.name.clone(), resolve_type_expr(&f.ty, &env, &mut errors)))
+                        .collect();
+                    registry.register_struct_fields(&variant.name, fields);
+                }
+            }
+            if has_generics {
+                env.pop_scope();
             }
         }
     }
@@ -909,22 +1111,8 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                 _ => String::new(),
             };
 
-            // Register conformance entry. Bounds come from impl-level generic params.
-            if !iface_name.is_empty() {
-                let bounds: Vec<(String, String)> = impl_block
-                    .generic_params
-                    .iter()
-                    .flat_map(|gp| gp.bounds.iter().map(move |b| (gp.name.clone(), b.clone())))
-                    .collect();
-                registry.register_conformance(
-                    &type_name,
-                    &iface_name,
-                    ty::ConformanceEntry { bounds },
-                );
-            }
-
-            // Push scope for generic params. Prefer explicit impl-level params; fall
-            // back to extracting them from the for_type generics list.
+            // Push scope for generic params before resolving assoc bindings or types.
+            // Prefer explicit impl-level params; fall back to extracting from for_type generics.
             let scope_params: Vec<String> = if !impl_block.generic_params.is_empty() {
                 impl_block
                     .generic_params
@@ -960,13 +1148,44 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     );
                 }
             }
+            // Register conformance entry. Bounds come from impl-level generic params.
+            // Assoc bindings are resolved with generic params in scope.
+            if !iface_name.is_empty() {
+                let bounds: Vec<(String, String)> = impl_block
+                    .generic_params
+                    .iter()
+                    .flat_map(|gp| {
+                        gp.bounds.iter().filter_map(move |b| {
+                            if let TypeExpr::Named { name, .. } = b {
+                                Some((gp.name.clone(), name.clone()))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect();
+                let bindings: Vec<(String, ty::Ty)> = impl_block
+                    .assoc_bindings
+                    .iter()
+                    .map(|(name, ty_expr)| {
+                        (name.clone(), resolve_type_expr(ty_expr, &env, &mut errors))
+                    })
+                    .collect();
+                registry.register_conformance(
+                    &type_name,
+                    &iface_name,
+                    ty::ConformanceEntry { bounds, bindings },
+                );
+            }
+
             // Define `Self` and any user alias so hook/method signatures can use them.
             // Look up the concrete type from the registry so Self resolves to Ty::Named("Item")
-            // rather than a generic param.
+            // rather than a generic param. Primitive types (int, bool, float, str) are not in
+            // the registry by name, so fall back to resolve_type_expr on the for_type.
             let self_concrete_ty = if let Some(e) = registry.lookup_by_name(&type_name) {
                 Ty::Named(e.id.clone(), type_name.clone(), vec![])
             } else {
-                Ty::Unknown
+                resolve_type_expr(&impl_block.for_type, &env, &mut errors)
             };
             env.push_scope();
             env.define("Self", Symbol::TypeAlias(self_concrete_ty.clone()));
@@ -1055,7 +1274,10 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
             registry.register_conformance(
                 &e.name,
                 "Display",
-                ty::ConformanceEntry { bounds: vec![] },
+                ty::ConformanceEntry {
+                    bounds: vec![],
+                    bindings: vec![],
+                },
             );
         }
     }
@@ -1093,6 +1315,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             span: iitem.span,
                         },
                     );
+                    registry.register_iface_assoc_type(&iface.name, name);
                 }
             }
             for iitem in &iface.items {
@@ -1181,6 +1404,154 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
         }
     }
 
+    // Precompute the transitive superinterface closure after all interfaces are registered.
+    // Converts iface_implies from per-query BFS to O(1) set lookup for constraint solving.
+    registry.precompute_transitive_closures();
+
+    // Fix 6a: detect cyclic interface hierarchies (interface A extends B extends A).
+    // After precompute, a cycle exists iff an interface is in its own transitive closure.
+    for item in &source.items {
+        if let Item::Interface(iface) = item {
+            if registry.iface_implies(&iface.name, &iface.name)
+                && registry
+                    .get_transitive_supers(&iface.name)
+                    .map(|s| s.contains(&iface.name))
+                    .unwrap_or(false)
+            {
+                // Build a human-readable cycle string: A -> B -> A
+                let cycle = format!("{} -> ... -> {}", iface.name, iface.name);
+                errors.push(AnalysisError::CyclicInterface {
+                    iface: iface.name.clone(),
+                    cycle,
+                    span: iface.span,
+                });
+            }
+        }
+    }
+
+    // Pass 1e2: conformance propagation.
+    // For every direct (type, iface) conformance, also register it for every transitive
+    // superinterface of iface so that constraint solving never needs to traverse the
+    // superinterface graph at query time.
+    {
+        let direct = registry.all_direct_conformances();
+        for (type_name, iface_name, entries) in direct {
+            let supers: Vec<String> = registry
+                .get_transitive_supers(&iface_name)
+                .map(|s| s.iter().cloned().collect())
+                .unwrap_or_default();
+            for super_iface in supers {
+                // Only add if not already registered to avoid duplicates.
+                if registry
+                    .get_conformances(&type_name, &super_iface)
+                    .is_empty()
+                {
+                    for e in &entries {
+                        registry.register_conformance(&type_name, &super_iface, e.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 1f: compute variance for all generic type parameters.
+    //
+    // For each struct and builtin struct with generic params:
+    //   1. Register the param name order.
+    //   2. Infer variance from method signatures: output-only => covariant,
+    //      input-only => contravariant, both => invariant, neither => bivariant.
+    //   3. Apply any explicit variance annotation (+T/-T) from the AST, overriding
+    //      the inferred result.
+    //
+    // After inference, override hardcoded invariant types (Mutex[T]).
+    {
+        use crate::analyzer::ty::ComputedVariance;
+        use crate::parser::ast::Variance;
+
+        fn variance_of_ty(ty: &Ty, param: &str) -> (bool, bool) {
+            // Returns (appears_in_output, appears_in_input)
+            match ty {
+                Ty::GenericParam(n) if n == param => (true, false),
+                Ty::Named(_, _, args) => args
+                    .iter()
+                    .map(|a| variance_of_ty(a, param))
+                    .fold((false, false), |(ao, ai), (o, i)| (ao || o, ai || i)),
+                Ty::Tuple(ts) => ts
+                    .iter()
+                    .map(|t| variance_of_ty(t, param))
+                    .fold((false, false), |(ao, ai), (o, i)| (ao || o, ai || i)),
+                Ty::Callable(params, ret) => {
+                    // Callable is contravariant in params, covariant in ret.
+                    let (_, in_params) = params
+                        .iter()
+                        .map(|p| variance_of_ty(p, param))
+                        .fold((false, false), |(ao, ai), (o, i)| (ao || o, ai || i));
+                    let (in_ret, _) = variance_of_ty(ret, param);
+                    (in_ret, in_params)
+                }
+                Ty::Ref(inner, _) => variance_of_ty(inner, param),
+                Ty::Union(ts) | Ty::Compound(ts) => ts
+                    .iter()
+                    .map(|t| variance_of_ty(t, param))
+                    .fold((false, false), |(ao, ai), (o, i)| (ao || o, ai || i)),
+                _ => (false, false),
+            }
+        }
+
+        for item in &source.items {
+            let (type_name, generic_params) = match item {
+                Item::Struct(s) if !s.generic_params.is_empty() => (&s.name, &s.generic_params),
+                _ => continue,
+            };
+
+            let param_names: Vec<String> = generic_params.iter().map(|g| g.name.clone()).collect();
+            registry.register_generic_param_order(type_name, param_names.clone());
+
+            // Look up all registered methods for this type.
+            for (idx, gp) in generic_params.iter().enumerate() {
+                // If the user declared an explicit variance annotation, use it.
+                let explicit = match gp.variance {
+                    Variance::Covariant => Some(ComputedVariance::Covariant),
+                    Variance::Contravariant => Some(ComputedVariance::Contravariant),
+                    Variance::Invariant => None, // default; infer from signatures
+                };
+                if let Some(v) = explicit {
+                    registry.register_type_variance(type_name, idx, v);
+                    continue;
+                }
+
+                // Infer from method signatures.
+                let mut combined = ComputedVariance::Bivariant;
+                // Look at the struct's fields for variance hints.
+                if let Some(fields) = registry.get_struct_fields(type_name) {
+                    let fields: Vec<_> = fields.to_vec();
+                    for (_, fty) in &fields {
+                        let (in_out, in_in) = variance_of_ty(fty, &gp.name);
+                        let pos_variance = match (in_out, in_in) {
+                            (true, true) => ComputedVariance::Invariant,
+                            (true, false) => ComputedVariance::Covariant,
+                            (false, true) => ComputedVariance::Contravariant,
+                            (false, false) => ComputedVariance::Bivariant,
+                        };
+                        combined = combined.combine(pos_variance);
+                    }
+                }
+                registry.register_type_variance(type_name, idx, combined);
+            }
+        }
+
+        // Hardcoded invariant overrides for types with interior mutability.
+        // Mutex[T] must be invariant in T regardless of what method signatures say.
+        if let Some(order) = registry
+            .get_generic_param_order("Mutex")
+            .map(|o| o.to_vec())
+        {
+            for (idx, _) in order.iter().enumerate() {
+                registry.register_type_variance("Mutex", idx, ComputedVariance::Invariant);
+            }
+        }
+    }
+
     // Pass 2: check each item and produce typed items.
     let mut typed_items: Vec<TypedItem> = Vec::new();
     let mut plain_impls_seen: std::collections::HashSet<(String, String)> =
@@ -1228,13 +1599,14 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                         &p.name,
                         Symbol::Var {
                             ty: pty.clone(),
-                            mutable: false,
+                            mutable: p.mutable,
                             span: p.span,
                         },
                     );
                     params.push(TypedParam {
                         name: p.name.clone(),
                         ty: pty,
+                        mutable: p.mutable,
                         span: p.span,
                     });
                 }
@@ -1323,6 +1695,132 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                     fields,
                     span: s.span,
                 }));
+
+                // Emit TypedItem::Function for each inline method body.
+                if !s.methods.is_empty() {
+                    // Reconstruct self_ty: Named(id, name, [GenericParam(p) for each param]).
+                    let type_id = registry
+                        .lookup_by_name(&s.name)
+                        .map(|e| e.id.clone())
+                        .unwrap_or(ty::TypeId(0));
+                    let self_ty = if s.generic_params.is_empty() {
+                        ty::Ty::Named(type_id, s.name.clone(), vec![])
+                    } else {
+                        ty::Ty::Named(
+                            type_id,
+                            s.name.clone(),
+                            s.generic_params
+                                .iter()
+                                .map(|gp| ty::Ty::GenericParam(gp.name.clone()))
+                                .collect(),
+                        )
+                    };
+
+                    // Push generic param scope.
+                    if has_struct_generics {
+                        env.push_scope();
+                        for gp in &s.generic_params {
+                            env.define(
+                                &gp.name,
+                                Symbol::Type {
+                                    id: ty::TypeId(0),
+                                    span: gp.span,
+                                },
+                            );
+                        }
+                    }
+
+                    let struct_fields: Vec<(String, ty::Ty)> = registry
+                        .get_struct_fields(&s.name)
+                        .map(|fs| fs.to_vec())
+                        .unwrap_or_default();
+
+                    for method in &s.methods {
+                        env.push_scope();
+                        env.define(
+                            "self",
+                            Symbol::Var {
+                                ty: self_ty.clone(),
+                                mutable: false,
+                                span: method.span,
+                            },
+                        );
+                        env.define("Self", Symbol::TypeAlias(self_ty.clone()));
+                        for (fname, fty) in &struct_fields {
+                            env.define(fname, Symbol::StructField { ty: fty.clone() });
+                        }
+                        let ret_raw =
+                            resolve::resolve_type_expr(&method.return_type, &env, &mut errors);
+                        // Erase generic params in the ABI signature so is_generic_fn returns
+                        // false: all Kiln values are i64 at codegen, so one version works for
+                        // all T.  The body retains GenericParam types for correct type-checking.
+                        let gp_names: Vec<String> =
+                            s.generic_params.iter().map(|gp| gp.name.clone()).collect();
+                        let ret = subst_generic_params_unknown(&ret_raw, &gp_names);
+                        let self_ty_erased = subst_generic_params_unknown(&self_ty, &gp_names);
+                        // Prepend __self so codegen has a pointer to the struct in slot 0.
+                        let mut params: Vec<TypedParam> = vec![TypedParam {
+                            name: "__self".to_string(),
+                            ty: self_ty_erased,
+                            mutable: false,
+                            span: method.span,
+                        }];
+                        for p in &method.params {
+                            let pty = resolve::resolve_type_expr(&p.ty, &env, &mut errors);
+                            env.define(
+                                &p.name,
+                                Symbol::Var {
+                                    ty: pty.clone(),
+                                    mutable: p.mutable,
+                                    span: p.span,
+                                },
+                            );
+                            let pty_erased = subst_generic_params_unknown(&pty, &gp_names);
+                            params.push(TypedParam {
+                                name: p.name.clone(),
+                                ty: pty_erased,
+                                mutable: p.mutable,
+                                span: p.span,
+                            });
+                        }
+                        let body = check::check_typed_block(
+                            &method.body,
+                            &mut env,
+                            &registry,
+                            &ret,
+                            &mut errors,
+                        );
+                        env.pop_scope();
+
+                        if ret != ty::Ty::Void
+                            && !method.body.stmts.is_empty()
+                            && !returns::always_returns(&method.body)
+                        {
+                            errors.push(AnalysisError::MissingReturn {
+                                name: format!("{}::{}", s.name, method.name),
+                                span: method.span,
+                            });
+                        }
+
+                        typed_items.push(TypedItem::Function(TypedFnDef {
+                            name: format!("{}_{}", s.name, method.name),
+                            params,
+                            variadic: method.variadic.as_ref().map(|v| v.name.clone()),
+                            return_type: ret,
+                            body,
+                            is_builtin: false,
+                            is_inline: method.annotations.iter().any(|a| a.name == "inline"),
+                            is_declaration: false,
+                            is_entry: false,
+                            is_impure: method.annotations.iter().any(|a| a.name == "impure"),
+                            span: method.span,
+                        }));
+                    }
+
+                    if has_struct_generics {
+                        env.pop_scope();
+                    }
+                }
             }
 
             Item::Enum(e) => {
@@ -1521,13 +2019,14 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             &p.name,
                             Symbol::Var {
                                 ty: pty.clone(),
-                                mutable: false,
+                                mutable: p.mutable,
                                 span: p.span,
                             },
                         );
                         params.push(TypedParam {
                             name: p.name.clone(),
                             ty: pty,
+                            mutable: p.mutable,
                             span: p.span,
                         });
                     }
@@ -1608,13 +2107,14 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             &p.name,
                             Symbol::Var {
                                 ty: pty.clone(),
-                                mutable: false,
+                                mutable: p.mutable,
                                 span: p.span,
                             },
                         );
                         params.push(TypedParam {
                             name: p.name.clone(),
                             ty: pty,
+                            mutable: p.mutable,
                             span: p.span,
                         });
                     }
@@ -1712,6 +2212,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
                             .map(|p| TypedParam {
                                 name: p.name.clone(),
                                 ty: resolve_type_expr(&p.ty, &env, &mut errors),
+                                mutable: p.mutable,
                                 span: p.span,
                             })
                             .collect();
@@ -1804,35 +2305,71 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
     // Pass 3b: static division-by-zero detection (after constant folding in analysis).
     errors.extend(crate::analyzer::fold::check_division_by_zero(&typed_file));
 
-    // Pass 4: object safety — check that interfaces used as dynamic types are object-safe.
+    // Pass 4: object safety -- check that interfaces used as dynamic types are object-safe.
     {
-        use crate::parser::ast::InterfaceItemKind;
-        // Compute which interfaces are NOT object-safe: any method that returns Self
-        // or has Self in a parameter type position makes the interface non-object-safe.
+        use crate::parser::ast::{HookName, InterfaceItemKind};
+        // Build the non-erasable set: iface_name -> violating method/hook name.
+        // An interface is not erasable when any hook or method:
+        //   - uses Self in a non-receiver parameter type, or
+        //   - uses Self in the return type, or
+        //   - is itself generic (a method with its own type parameters).
         let non_object_safe: std::collections::HashMap<String, String> = interfaces
             .iter()
             .filter_map(|iface| {
                 for iitem in &iface.items {
-                    if let InterfaceItemKind::Method(m) = &iitem.kind {
-                        if type_expr_uses_self(&m.return_type)
-                            || m.params.iter().any(|p| type_expr_uses_self(&p.ty))
-                        {
-                            return Some((iface.name.clone(), m.name.clone()));
+                    match &iitem.kind {
+                        InterfaceItemKind::Method(m) => {
+                            if !m.generic_params.is_empty()
+                                || type_expr_uses_self(&m.return_type)
+                                || m.params.iter().any(|p| type_expr_uses_self(&p.ty))
+                            {
+                                return Some((iface.name.clone(), m.name.clone()));
+                            }
                         }
+                        InterfaceItemKind::Hook {
+                            name,
+                            params,
+                            return_type,
+                            ..
+                        } => {
+                            let hook_str = match name {
+                                HookName::Named(n) => n.clone(),
+                                HookName::Op(op) => op.clone(),
+                            };
+                            let ret_bad = return_type
+                                .as_ref()
+                                .map(type_expr_uses_self)
+                                .unwrap_or(false);
+                            if ret_bad || params.iter().any(|p| type_expr_uses_self(&p.ty)) {
+                                return Some((iface.name.clone(), hook_str));
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 None
             })
             .collect();
-        // Scan all function params in the typed file for dynamic interface types.
+        // Scan all type positions in the typed file for uses of non-erasable interfaces.
         for item in &typed_file.items {
             match item {
                 TypedItem::Function(f) => {
                     check_params_object_safe(&f.params, &non_object_safe, &mut errors, f.span);
+                    check_ty_object_safe(&f.return_type, &non_object_safe, &mut errors, f.span);
                 }
                 TypedItem::ImplBlock(ib) => {
                     for m in &ib.methods {
                         check_params_object_safe(&m.params, &non_object_safe, &mut errors, m.span);
+                        check_ty_object_safe(&m.return_type, &non_object_safe, &mut errors, m.span);
+                    }
+                    for h in &ib.hooks {
+                        check_params_object_safe(&h.params, &non_object_safe, &mut errors, h.span);
+                        check_ty_object_safe(&h.return_type, &non_object_safe, &mut errors, h.span);
+                    }
+                }
+                TypedItem::Struct(s) => {
+                    for field in &s.fields {
+                        check_ty_object_safe(&field.ty, &non_object_safe, &mut errors, s.span);
                     }
                 }
                 _ => {}
@@ -1841,7 +2378,7 @@ fn analyze_inner(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
     }
 
     if errors.is_empty() {
-        Ok(typed_file)
+        Ok((typed_file, registry))
     } else {
         Err(errors)
     }
@@ -1860,6 +2397,7 @@ fn type_expr_uses_self(ty: &TypeExpr) -> bool {
         }
         TypeExpr::Ref { inner, .. } => type_expr_uses_self(inner),
         TypeExpr::GenSplice(..) => false,
+        TypeExpr::Compound(parts, _) => parts.iter().any(type_expr_uses_self),
     }
 }
 
@@ -1966,6 +2504,23 @@ fn warn_deprecated_in_expr(
     }
 }
 
+fn check_ty_object_safe(
+    ty: &ty::Ty,
+    non_object_safe: &std::collections::HashMap<String, String>,
+    errors: &mut Vec<error::AnalysisError>,
+    span: Span,
+) {
+    if let ty::Ty::Interface(_, ref iface_name) = ty {
+        if let Some(method_name) = non_object_safe.get(iface_name) {
+            errors.push(error::AnalysisError::NonObjectSafeInterface {
+                iface: iface_name.clone(),
+                method: method_name.clone(),
+                span,
+            });
+        }
+    }
+}
+
 fn check_params_object_safe(
     params: &[typed_ast::TypedParam],
     non_object_safe: &std::collections::HashMap<String, String>,
@@ -1973,14 +2528,6 @@ fn check_params_object_safe(
     span: Span,
 ) {
     for p in params {
-        if let ty::Ty::Interface(_, ref iface_name) = p.ty {
-            if let Some(method_name) = non_object_safe.get(iface_name) {
-                errors.push(error::AnalysisError::NonObjectSafeInterface {
-                    iface: iface_name.clone(),
-                    method: method_name.clone(),
-                    span,
-                });
-            }
-        }
+        check_ty_object_safe(&p.ty, non_object_safe, errors, span);
     }
 }

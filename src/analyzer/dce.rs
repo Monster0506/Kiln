@@ -354,10 +354,17 @@ fn collect_reads_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
             }
         }
         TypedExprKind::GenSplice(e) => collect_reads_expr(e, out),
+        TypedExprKind::Str(segs) => {
+            use crate::analyzer::typed_ast::TypedStringSegment;
+            for seg in segs {
+                if let TypedStringSegment::Interp(e) = seg {
+                    collect_reads_expr(e, out);
+                }
+            }
+        }
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)
-        | TypedExprKind::Str(_)
         | TypedExprKind::EnumVariant { .. } => {}
     }
 }

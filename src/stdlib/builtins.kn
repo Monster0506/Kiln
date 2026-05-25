@@ -55,11 +55,35 @@ def clock_ms() -> int
 @builtin
 struct Exception {}
 
+# Mutex[T] -- interior-mutability wrapper.
+# Declared invariant in T by the compiler (see variance pass in analyzer/mod.rs).
+@builtin
+struct Mutex[T] {
+    def new(value: T) -> Mutex[T]
+    def lock() -> T
+    def unlock(value: T) -> void
+}
+
+@builtin
+struct RangeIter {
+    current: int
+    limit:   int
+}
+
+@builtin
+struct Range {
+    start: int
+    end:   int
+}
+
 export {
     VecIter, Vec,
     __kiln_print, __kiln_println,
     __kiln_int_to_str, __kiln_float_to_str, __kiln_bool_to_str,
     __kiln_str_concat,
     len, panic, assert, clock_ms,
-    Exception
+    Exception,
+    Mutex,
+    RangeIter, Range
 }
+

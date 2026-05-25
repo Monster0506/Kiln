@@ -64,11 +64,13 @@ mod tests {
                 Param {
                     name: "a".into(),
                     ty: named_ty("int"),
+                    mutable: false,
                     span: s(),
                 },
                 Param {
                     name: "b".into(),
                     ty: named_ty("int"),
+                    mutable: false,
                     span: s(),
                 },
             ],

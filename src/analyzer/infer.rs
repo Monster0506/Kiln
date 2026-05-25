@@ -401,14 +401,62 @@ pub fn infer_typed_expr(
                 .map(|arm| {
                     // Clone env and add struct/variant pattern field bindings for the arm body.
                     let mut arm_env = env.clone();
-                    if let Pattern::Struct { fields, .. } = &arm.pattern {
+                    if let Pattern::Struct {
+                        variant, fields, ..
+                    } = &arm.pattern
+                    {
                         arm_env.push_scope();
-                        for (_, binding_name) in fields {
+                        // Build substitution from the scrutinee's concrete type args so
+                        // that match-bound vars like `v` in `Some { value: v }` get type
+                        // `int` instead of `Unknown` when the scrutinee is `Option[int]`.
+                        let subst: std::collections::HashMap<String, Ty> = {
+                            let mut m = std::collections::HashMap::new();
+                            if let Ty::Named(_, _, concrete_args) = &ts.ty {
+                                if !concrete_args.is_empty() {
+                                    let enum_name = registry
+                                        .enum_for_variant(variant)
+                                        .map(|e| e.name.clone())
+                                        .or_else(|| {
+                                            if let Ty::Named(_, n, _) = &ts.ty {
+                                                Some(n.clone())
+                                            } else {
+                                                None
+                                            }
+                                        });
+                                    if let Some(ename) = enum_name {
+                                        if let Some(params) =
+                                            registry.get_generic_param_order(&ename)
+                                        {
+                                            for (pname, arg) in
+                                                params.iter().zip(concrete_args.iter())
+                                            {
+                                                m.insert(pname.clone(), arg.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            m
+                        };
+                        for (field_name, binding_name) in fields {
                             if binding_name != "_" {
+                                let raw_ty = registry
+                                    .get_struct_fields(variant)
+                                    .and_then(|fs| {
+                                        fs.iter()
+                                            .find(|(n, _)| n == field_name)
+                                            .map(|(_, t)| t.clone())
+                                    })
+                                    .unwrap_or(Ty::Unknown);
+                                let field_ty = if subst.is_empty() {
+                                    raw_ty
+                                } else {
+                                    subst_generic_ty(&raw_ty, &subst)
+                                };
                                 arm_env.define(
                                     binding_name,
                                     Symbol::Var {
-                                        ty: Ty::Unknown,
+                                        ty: field_ty,
                                         mutable: false,
                                         span: arm.span,
                                     },
@@ -464,6 +512,7 @@ pub fn infer_typed_expr(
                 .map(|p| TypedParam {
                     name: p.name.clone(),
                     ty: resolve_type_expr(&p.ty, env, errors),
+                    mutable: p.mutable,
                     span: p.span,
                 })
                 .collect();
@@ -663,13 +712,24 @@ fn infer_call_field(
             }
         }
     }
+    // .unwrap() on a Try type is equivalent to the ! postfix operator.
+    if field == "unwrap" {
+        if let Ty::Named(_, name, args) = &to.ty {
+            if !registry.get_conformances(name, "Try").is_empty() {
+                let inner_ty = args.first().cloned().unwrap_or(Ty::Unknown);
+                return mk(TypedExprKind::Unwrap(Box::new(to)), inner_ty, span);
+            }
+        }
+    }
+
     let (method_fn, ret) = if let Some(tname) = &obj_type {
         let qfn = format!("{}_{}", tname, field);
 
-        // For generic containers (Vec[X], Set[X]), substitute X for T in the
-        // method signature so argument types and the return type are concrete.
+        // For any single-argument generic type (Vec[X], Option[X], Set[X], ...),
+        // substitute the concrete element type for T throughout the method signature
+        // so argument types and the return type are concrete.
         let elem_ty: Option<Ty> = match &to.ty {
-            Ty::Named(_, name, args) if name == "Vec" || name == "Set" => args.first().cloned(),
+            Ty::Named(_, _, args) if args.len() == 1 => args.first().cloned(),
             _ => None,
         };
 
@@ -709,6 +769,27 @@ fn infer_call_field(
             .map(|m| m.ret.clone())
             .unwrap_or(Ty::Unknown);
         (field.to_string(), ret)
+    } else if let Ty::GenericParam(param_name) = &to.ty {
+        // Generic param dispatch: look up which interface declares this method
+        // through the param's bounds, then return a projection type for any
+        // associated-type return values.
+        let ifaces = env.get_param_ifaces(param_name);
+        let mut found_ret = Ty::Unknown;
+        for iface_name in &ifaces {
+            if let Some(method) = registry.get_interface_method(iface_name, field) {
+                found_ret = project_return_ty(&method.ret, param_name, iface_name, registry);
+                break;
+            }
+        }
+        let method_fn = format!("{param_name}_{field}");
+        return mk(
+            TypedExprKind::StaticCall {
+                method_fn,
+                args: typed_args,
+            },
+            found_ret,
+            span,
+        );
     } else {
         (field.to_string(), Ty::Unknown)
     };
@@ -765,6 +846,11 @@ fn infer_call_ident(
                     found: format!("{} argument(s)", typed_args.len()),
                     span,
                 });
+            }
+            // Check each argument type against the declared parameter type.
+            // types_compatible allows int -> float coercion and GenericParam wildcards.
+            for ((_, param_ty), arg) in params.iter().zip(typed_args.iter()) {
+                check_assignable(param_ty, &arg.ty, &arg.span, errors);
             }
             let ret_ty = ret.clone();
             let callee_ty = Ty::Callable(
@@ -946,7 +1032,57 @@ fn find_best_overload<'a>(
             return Some(o);
         }
     }
+    // Coercion pass: allow numeric widening (int -> float) and other compatible types.
+    // This runs after exact and Unknown passes so exact matches always win.
+    for o in overloads {
+        if o.params.len() != args.len() {
+            continue;
+        }
+        let matches = o
+            .params
+            .iter()
+            .zip(args.iter())
+            .all(|((_, pt), arg)| types_compatible(pt, &arg.ty));
+        if matches {
+            return Some(o);
+        }
+    }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Generic-param method dispatch helpers
+// ---------------------------------------------------------------------------
+
+/// Rewrite an interface method return type so that any `GenericParam(name)` that
+/// is an associated type of `iface_name` becomes `Ty::Projection { base: param, assoc: name }`.
+/// Everything else (regular generic params, concrete types) passes through unchanged.
+fn project_return_ty(ty: &Ty, param: &str, iface_name: &str, registry: &TypeRegistry) -> Ty {
+    match ty {
+        Ty::GenericParam(name) if registry.is_assoc_type_of(name, iface_name) => Ty::Projection {
+            base: param.to_string(),
+            assoc: name.clone(),
+        },
+        Ty::Named(id, n, args) => Ty::Named(
+            id.clone(),
+            n.clone(),
+            args.iter()
+                .map(|a| project_return_ty(a, param, iface_name, registry))
+                .collect(),
+        ),
+        Ty::Tuple(ts) => Ty::Tuple(
+            ts.iter()
+                .map(|t| project_return_ty(t, param, iface_name, registry))
+                .collect(),
+        ),
+        Ty::Callable(ps, r) => Ty::Callable(
+            ps.iter()
+                .map(|p| project_return_ty(p, param, iface_name, registry))
+                .collect(),
+            Box::new(project_return_ty(r, param, iface_name, registry)),
+        ),
+        other => other.clone(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -958,11 +1094,41 @@ fn resolve_field_ty(obj_ty: &Ty, field: &str, registry: &TypeRegistry) -> Ty {
         Some(n) => n,
         None => return Ty::Unknown,
     };
-    registry
+    let raw_ty = registry
         .get_struct_fields(&tname)
         .and_then(|fields| fields.iter().find(|(n, _)| n == field))
         .map(|(_, ty)| ty.clone())
-        .unwrap_or(Ty::Unknown)
+        .unwrap_or(Ty::Unknown);
+    // Substitute concrete type args (e.g. ListNode[int].value: T -> int).
+    if let Ty::Named(_, _, concrete_args) = obj_ty {
+        if !concrete_args.is_empty() {
+            if let Some(param_names) = registry.get_generic_param_order(&tname) {
+                let subst: std::collections::HashMap<String, Ty> = param_names
+                    .iter()
+                    .zip(concrete_args.iter())
+                    .map(|(name, ty)| (name.clone(), ty.clone()))
+                    .collect();
+                return subst_generic_ty(&raw_ty, &subst);
+            }
+        }
+    }
+    raw_ty
+}
+
+pub fn subst_generic_ty(ty: &Ty, subst: &std::collections::HashMap<String, Ty>) -> Ty {
+    match ty {
+        Ty::GenericParam(p) => subst.get(p).cloned().unwrap_or_else(|| ty.clone()),
+        Ty::Named(id, name, args) => {
+            let new_args = args.iter().map(|a| subst_generic_ty(a, subst)).collect();
+            Ty::Named(id.clone(), name.clone(), new_args)
+        }
+        Ty::Callable(params, ret) => Ty::Callable(
+            params.iter().map(|p| subst_generic_ty(p, subst)).collect(),
+            Box::new(subst_generic_ty(ret, subst)),
+        ),
+        Ty::Tuple(ts) => Ty::Tuple(ts.iter().map(|t| subst_generic_ty(t, subst)).collect()),
+        other => other.clone(),
+    }
 }
 
 pub fn type_name_of(ty: &Ty) -> Option<String> {
@@ -979,7 +1145,9 @@ pub fn type_name_of(ty: &Ty) -> Option<String> {
         | Ty::Callable(_, _)
         | Ty::Ref(_, _)
         | Ty::Union(_)
-        | Ty::Interface(_, _) => None,
+        | Ty::Interface(_, _)
+        | Ty::Compound(_)
+        | Ty::Projection { .. } => None,
     }
 }
 
@@ -1206,6 +1374,7 @@ fn lower_stmt_shallow(
                 .map(|p| TypedParam {
                     name: p.name.clone(),
                     ty: resolve_type_expr(&p.ty, env, errors),
+                    mutable: p.mutable,
                     span: p.span,
                 })
                 .collect();
@@ -1349,22 +1518,47 @@ pub fn check_assignable(expected: &Ty, found: &Ty, span: &Span, errors: &mut Vec
     }
 }
 
+/// Like `check_assignable`, but normalizes both sides through the active projection
+/// pin table before comparing.  Call this whenever `env` is in scope and either
+/// side might contain `Ty::Projection` that has a concrete resolution.
+pub fn check_assignable_normalized(
+    expected: &Ty,
+    found: &Ty,
+    env: &crate::analyzer::env::Env,
+    span: &Span,
+    errors: &mut Vec<AnalysisError>,
+) {
+    let pins = env.get_active_pins();
+    let norm_expected = crate::analyzer::ty::normalize_ty(expected, &pins);
+    let norm_found = crate::analyzer::ty::normalize_ty(found, &pins);
+    if !types_compatible(&norm_expected, &norm_found) {
+        errors.push(AnalysisError::TypeMismatch {
+            expected: norm_expected.to_string(),
+            found: norm_found.to_string(),
+            span: *span,
+        });
+    }
+}
+
 pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
     if matches!(expected, Ty::Unknown) || matches!(found, Ty::Unknown) {
         return true;
     }
-    // GenericParam is a wildcard: Vec[T] is compatible with Vec[U].
-    if matches!(expected, Ty::GenericParam(_)) || matches!(found, Ty::GenericParam(_)) {
+    // GenericParam and Projection are wildcards; concrete type resolved later.
+    if matches!(expected, Ty::GenericParam(_) | Ty::Projection { .. })
+        || matches!(found, Ty::GenericParam(_) | Ty::Projection { .. })
+    {
         return true;
     }
     if *expected == Ty::Float && *found == Ty::Int {
         return true;
     }
     match (expected, found) {
-        // An interface type is a supertype of any concrete type; runtime dispatch
-        // checks actual conformance.
-        (Ty::Interface(_, _), _) => true,
-        (_, Ty::Interface(_, _)) => true,
+        // Interface and compound interface types are supertypes of any concrete type;
+        // runtime dispatch checks actual conformance. Specific conformance is
+        // verified separately by check.rs where the registry is available.
+        (Ty::Interface(_, _), _) | (Ty::Compound(_), _) => true,
+        (_, Ty::Interface(_, _)) | (_, Ty::Compound(_)) => true,
 
         (Ty::Named(_, en, ea), Ty::Named(_, fn_, fa)) if en == fn_ => ea
             .iter()

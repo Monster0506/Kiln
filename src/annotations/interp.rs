@@ -986,6 +986,13 @@ fn type_expr_to_value(ty: &TypeExpr) -> Value {
             fields.insert("name".into(), Value::Str("unknown".into()));
             fields.insert("generics".into(), Value::List(vec![]));
         }
+        TypeExpr::Compound(parts, _) => {
+            fields.insert("name".into(), Value::Str("compound".into()));
+            fields.insert(
+                "generics".into(),
+                Value::List(parts.iter().map(type_expr_to_value).collect()),
+            );
+        }
     }
     Value::Struct {
         ty: "Type".into(),
@@ -1430,16 +1437,19 @@ mod tests {
                 crate::parser::ast::Param {
                     name: "a".into(),
                     ty: int_ty(),
+                    mutable: false,
                     span: zero(),
                 },
                 crate::parser::ast::Param {
                     name: "b".into(),
                     ty: int_ty(),
+                    mutable: false,
                     span: zero(),
                 },
                 crate::parser::ast::Param {
                     name: "c".into(),
                     ty: int_ty(),
+                    mutable: false,
                     span: zero(),
                 },
             ],
@@ -1571,6 +1581,7 @@ mod tests {
                     bindings: vec![],
                     span: zero(),
                 },
+                mutable: false,
                 span: zero(),
             },
             return_type: None,
@@ -1615,6 +1626,7 @@ mod tests {
                     bindings: vec![],
                     span: zero(),
                 },
+                mutable: false,
                 span: zero(),
             },
             return_type: None,

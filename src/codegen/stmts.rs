@@ -635,9 +635,8 @@ fn lower_for_iterable(
     loops: &mut Vec<LoopCtx>,
     ctx: &mut LowerCtx,
 ) {
-    if !matches!(iterable.ty, Ty::Named(_, _, _)) {
-        return;
-    }
+    // iter_ty must be a named type (a user struct); primitives and unknown types can't be
+    // iterators. The iterable itself may be a primitive (e.g. int with extension impl Iterable).
     if !matches!(iter_ty, Ty::Named(_, _, _)) {
         return;
     }

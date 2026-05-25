@@ -229,5 +229,23 @@ impl VecMethods for Vec[T] {
         return self.len()
     }
 }
+impl Iterable for Range {
+    hook iter() -> RangeIter {
+        return RangeIter{current:self.start, limit: self.end}
+    }
+}
+
+impl Iterator for RangeIter {
+    type Item = int
+    hook next() -> Option[int] {
+        if self.current >= self.limit {
+            return Option:None
+        }
+        val: int = self.current
+        self.current = self.current + 1
+        return Option:Some { value: val }
+    }
+}
+
 
 export { * }

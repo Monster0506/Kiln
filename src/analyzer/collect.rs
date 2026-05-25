@@ -55,10 +55,27 @@ pub fn collect_top_level(
                 );
                 Symbol::Type { id, span }
             }
-            Item::Interface(_) => {
+            Item::Interface(iface) => {
                 let id = InterfaceId(next_iface_id);
                 next_iface_id += 1;
-                Symbol::Iface { id, span }
+                let assoc_types: Vec<String> = iface
+                    .items
+                    .iter()
+                    .filter_map(|it| {
+                        if let crate::parser::ast::InterfaceItemKind::AssocType { name, .. } =
+                            &it.kind
+                        {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Symbol::Iface {
+                    id,
+                    assoc_types,
+                    span,
+                }
             }
             Item::TypeAlias(t) => {
                 let id = registry.register(t.name.clone(), TypeKind::Alias(Ty::Unknown));

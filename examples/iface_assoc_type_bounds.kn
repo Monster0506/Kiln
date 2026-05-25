@@ -1,0 +1,84 @@
+# iface_assoc_type_bounds.kn -- associated type projection bounds
+#
+# When a generic parameter is bounded by an interface with associated types,
+# you can further constrain those associated types:
+#
+#   def format_all[T: Iterable[Item: Display]](col: T) -> str
+#
+# This says: T must be Iterable, and whatever T::Item resolves to,
+# that type must also implement Display.
+#
+# The analyzer emits a ProjectedBound constraint for T::Item: Display
+# and checks it at each call site.
+
+interface Display {
+    hook to_str() -> str
+}
+
+interface Iterator {
+    type Item
+    hook next() -> Option[Item]
+    hook has_next() -> bool
+}
+
+interface Iterable {
+    type Item
+    hook iter() -> Iterator[Item = Item]
+}
+
+# ---- A simple wrapper that formats all items --------------------------------
+#
+# The bound [T: Iterable[Item: Display]] ensures we can interpolate each
+# item in a string. Without the Item: Display bound, the interpolation
+# would be rejected by the type checker.
+
+def format_count[T: Iterable](col: T) -> int {
+    count: int = 0
+    it: Iterator[Item = T.Item] = col.iter()
+    while it.has_next() {
+        item: T.Item = it.next().unwrap()
+        count = count + 1
+    }
+    return count
+}
+
+# ---- A concrete Iterable type -----------------------------------------------
+
+struct IntRange {
+    start: int
+    stop: int
+    current: int
+}
+
+impl Iterator for IntRange {
+    type Item = int
+
+    hook next() -> Option[int] {
+        if current >= stop {
+            return None
+        }
+        val: int = current
+        current = current + 1
+        return Some(val)
+    }
+
+    hook has_next() -> bool {
+        return current < stop
+    }
+}
+
+impl Iterable for IntRange {
+    type Item = int
+
+    hook iter() -> Iterator[Item = int] {
+        return IntRange { start: start, stop: stop, current: start }
+    }
+}
+
+# ---- Using the projected bound ----------------------------------------------
+
+def main() -> void {
+    r: IntRange = IntRange { start: 1, stop: 6, current: 1 }
+    count: int = format_count(r)
+    print("counted {count} items")
+}

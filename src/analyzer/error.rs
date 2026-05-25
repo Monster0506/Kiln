@@ -118,6 +118,49 @@ pub enum AnalysisError {
 
     #[error("{span}: processor warning: {msg}")]
     ProcessorWarn { msg: String, span: Span },
+
+    #[error("{span}: interface `{iface}` has unbound associated types: {unbound}")]
+    UnpinnedAssocTypes {
+        iface: String,
+        /// Comma-joined list of unbound associated type names.
+        unbound: String,
+        span: Span,
+    },
+
+    #[error("{span}: type argument `{found}` is not compatible with `{expected}` (invariant position in `{container}`)")]
+    VarianceViolation {
+        container: String,
+        expected: String,
+        found: String,
+        span: Span,
+    },
+
+    #[error("{span}: `{base_ty}: {base_iface}` -- associated type `{assoc_name}` is `{assoc_ty}`, which does not implement `{required_iface}`")]
+    ProjectedBoundViolation {
+        base_ty: String,
+        base_iface: String,
+        assoc_name: String,
+        assoc_ty: String,
+        required_iface: String,
+        span: Span,
+    },
+
+    #[error("{span}: type `{ty}` does not implement `Iterable` and cannot be used in a for loop")]
+    NotIterable { ty: String, span: Span },
+
+    #[error("{span}: cyclic interface hierarchy: `{iface}` transitively extends itself ({cycle})")]
+    CyclicInterface {
+        iface: String,
+        cycle: String,
+        span: Span,
+    },
+
+    #[error("{span}: recursive type `{ty}` has infinite size -- field `{field}` refers back to the enclosing type; add `@indirect` to break the cycle")]
+    RecursiveTypeWithoutIndirect {
+        ty: String,
+        field: String,
+        span: Span,
+    },
 }
 
 impl AnalysisError {
@@ -151,6 +194,12 @@ impl AnalysisError {
             AnalysisError::ContradictoryCondition { .. } => "W003",
             AnalysisError::ProcessorFail { .. } => "E024",
             AnalysisError::ProcessorWarn { .. } => "W004",
+            AnalysisError::UnpinnedAssocTypes { .. } => "E025",
+            AnalysisError::VarianceViolation { .. } => "E026",
+            AnalysisError::ProjectedBoundViolation { .. } => "E027",
+            AnalysisError::NotIterable { .. } => "E028",
+            AnalysisError::CyclicInterface { .. } => "E029",
+            AnalysisError::RecursiveTypeWithoutIndirect { .. } => "E030",
         }
     }
 
@@ -184,6 +233,12 @@ impl AnalysisError {
             AnalysisError::ContradictoryCondition { .. } => "warning",
             AnalysisError::ProcessorFail { .. } => "processor error",
             AnalysisError::ProcessorWarn { .. } => "warning",
+            AnalysisError::UnpinnedAssocTypes { .. } => "type error",
+            AnalysisError::VarianceViolation { .. } => "type error",
+            AnalysisError::ProjectedBoundViolation { .. } => "type error",
+            AnalysisError::NotIterable { .. } => "type error",
+            AnalysisError::CyclicInterface { .. } => "interface error",
+            AnalysisError::RecursiveTypeWithoutIndirect { .. } => "type error",
         }
     }
 
@@ -267,6 +322,46 @@ impl AnalysisError {
             AnalysisError::ContradictoryCondition { .. } => "condition is always false".into(),
             AnalysisError::ProcessorFail { msg, .. } => msg.clone(),
             AnalysisError::ProcessorWarn { msg, .. } => msg.clone(),
+            AnalysisError::UnpinnedAssocTypes { iface, unbound, .. } => {
+                format!("interface `{iface}` has unbound associated types: {unbound}")
+            }
+            AnalysisError::VarianceViolation {
+                container,
+                expected,
+                found,
+                ..
+            } => {
+                format!(
+                    "type argument `{found}` is not compatible with `{expected}` (invariant position in `{container}`)"
+                )
+            }
+            AnalysisError::ProjectedBoundViolation {
+                base_ty,
+                base_iface,
+                assoc_name,
+                assoc_ty,
+                required_iface,
+                ..
+            } => {
+                format!(
+                    "`{base_ty}: {base_iface}` -- associated type `{assoc_name}` is `{assoc_ty}`, which does not implement `{required_iface}`"
+                )
+            }
+            AnalysisError::NotIterable { ty, .. } => {
+                format!(
+                    "type `{ty}` does not implement `Iterable` and cannot be used in a for loop"
+                )
+            }
+            AnalysisError::CyclicInterface { iface, cycle, .. } => {
+                format!(
+                    "cyclic interface hierarchy: `{iface}` transitively extends itself ({cycle})"
+                )
+            }
+            AnalysisError::RecursiveTypeWithoutIndirect { ty, field, .. } => {
+                format!(
+                    "recursive type `{ty}` has infinite size -- field `{field}` refers back to the enclosing type; add `@indirect` to break the cycle"
+                )
+            }
         }
     }
 
@@ -309,6 +404,12 @@ impl AnalysisError {
             AnalysisError::ContradictoryCondition { span } => *span,
             AnalysisError::ProcessorFail { span, .. } => *span,
             AnalysisError::ProcessorWarn { span, .. } => *span,
+            AnalysisError::UnpinnedAssocTypes { span, .. } => *span,
+            AnalysisError::VarianceViolation { span, .. } => *span,
+            AnalysisError::ProjectedBoundViolation { span, .. } => *span,
+            AnalysisError::NotIterable { span, .. } => *span,
+            AnalysisError::CyclicInterface { span, .. } => *span,
+            AnalysisError::RecursiveTypeWithoutIndirect { span, .. } => *span,
         }
     }
 }

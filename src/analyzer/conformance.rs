@@ -606,6 +606,7 @@ mod tests {
                 },
                 span: s(),
             }],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         }
@@ -691,6 +692,7 @@ mod tests {
             for_type: named("Point"),
             methods: vec![],
             hooks: vec![],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         };
@@ -738,6 +740,7 @@ mod tests {
             for_type: named("Point"),
             methods: vec![],
             hooks: vec![],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         };
@@ -767,6 +770,7 @@ mod tests {
             for_type: named("Point"),
             methods: vec![],
             hooks: vec![],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         };
@@ -801,6 +805,7 @@ mod tests {
                 span: s(),
             }],
             hooks: vec![],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         };
@@ -820,6 +825,7 @@ mod tests {
             for_type: named("Point"),
             methods: vec![],
             hooks: vec![],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         };
@@ -860,6 +866,7 @@ mod tests {
                         params: vec![Param {
                             name: "rhs".into(),
                             ty: named("Rhs"),
+                            mutable: false,
                             span: s(),
                         }],
                         return_type: Some(named("Output")),
@@ -890,6 +897,7 @@ mod tests {
                     params: vec![Param {
                         name: "rhs".into(),
                         ty: named("Self"),
+                        mutable: false,
                         span: s(),
                     }],
                     return_type: Some(named("Self")),
@@ -920,6 +928,7 @@ mod tests {
                 params: vec![Param {
                     name: "rhs".into(),
                     ty: named(for_ty),
+                    mutable: false,
                     span: s(),
                 }],
                 return_type: Some(named(ret)),
@@ -929,6 +938,7 @@ mod tests {
                 },
                 span: s(),
             }],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         }
@@ -947,6 +957,7 @@ mod tests {
                 params: vec![Param {
                     name: "rhs".into(),
                     ty: named(ty),
+                    mutable: false,
                     span: s(),
                 }],
                 return_type: Some(named(ty)),
@@ -956,6 +967,7 @@ mod tests {
                 },
                 span: s(),
             }],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         }
@@ -1027,6 +1039,7 @@ mod tests {
                 },
                 span: s(),
             }],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         }
@@ -1073,6 +1086,7 @@ mod tests {
             for_type: named("Foo"),
             methods: vec![],
             hooks: vec![],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         };
@@ -1096,6 +1110,7 @@ mod tests {
             for_type: named("Foo"),
             methods: vec![],
             hooks: vec![],
+            assoc_bindings: vec![],
             kind: ImplKind::Plain,
             span: s(),
         };

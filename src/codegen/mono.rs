@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::analyzer::infer::type_name_of;
-use crate::analyzer::ty::Ty;
+use crate::analyzer::ty::{Ty, TypeRegistry};
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedCatchHandler, TypedClosureBody, TypedExpr, TypedExprKind, TypedFile,
     TypedFnDef, TypedHookDef, TypedImplBlock, TypedItem, TypedMatchArm, TypedParam, TypedStmt,
@@ -17,7 +17,7 @@ type ImplHookReq = (String, String, Ty);
 // Entry point
 // ---------------------------------------------------------------------------
 
-pub fn monomorphize(file: TypedFile) -> TypedFile {
+pub fn monomorphize(file: TypedFile, registry: &TypeRegistry) -> TypedFile {
     let mut generic_fns: HashMap<String, TypedFnDef> = HashMap::new();
     for item in &file.items {
         if let TypedItem::Function(f) = item {
@@ -82,6 +82,7 @@ pub fn monomorphize(file: TypedFile) -> TypedFile {
         let specialized = specialize_fn(
             &generic_fn,
             &subst,
+            registry,
             &generic_fns,
             &generic_impl_hooks,
             &mut impl_reqs,
@@ -254,12 +255,14 @@ fn specialize_hook_as_fn(
     let mut params = vec![TypedParam {
         name: "__self".to_string(),
         ty: concrete_self_ty.clone(),
+        mutable: false,
         span: hook.span,
     }];
     for p in &hook.params {
         params.push(TypedParam {
             name: p.name.clone(),
             ty: subst_ty(&p.ty, subst),
+            mutable: p.mutable,
             span: p.span,
         });
     }
@@ -613,10 +616,15 @@ fn unify_ty(pat: &Ty, concrete: &Ty, subst: &mut HashMap<String, Ty>) {
 fn specialize_fn(
     f: &TypedFnDef,
     subst: &HashMap<String, Ty>,
+    registry: &TypeRegistry,
     generic_fns: &HashMap<String, TypedFnDef>,
     generic_impl_hooks: &HashMap<(String, String), (TypedHookDef, Ty)>,
     impl_reqs: &mut Vec<ImplHookReq>,
 ) -> TypedFnDef {
+    // Extend substitution with associated type bindings so that Ty::Projection
+    // values in the function body and return type resolve correctly.
+    let extended_subst = extend_with_assoc_bindings(subst, registry);
+    let subst = &extended_subst;
     let name = specialized_name(&f.name, subst);
     let params: Vec<TypedParam> = f
         .params
@@ -624,6 +632,7 @@ fn specialize_fn(
         .map(|p| TypedParam {
             name: p.name.clone(),
             ty: subst_ty(&p.ty, subst),
+            mutable: p.mutable,
             span: p.span,
         })
         .collect();
@@ -654,6 +663,17 @@ fn subst_ty(ty: &Ty, subst: &HashMap<String, Ty>) -> Ty {
             .get(name.as_str())
             .cloned()
             .unwrap_or_else(|| ty.clone()),
+        // Resolve projections: if base param is substituted, look up the assoc binding
+        // from the extended substitution (which includes assoc type bindings added by
+        // `extend_with_assoc_bindings`).
+        Ty::Projection { base, assoc } => {
+            let key = format!("{}::{}", base, assoc);
+            if let Some(resolved) = subst.get(&key) {
+                resolved.clone()
+            } else {
+                ty.clone()
+            }
+        }
         Ty::Named(id, name, args) => Ty::Named(
             id.clone(),
             name.clone(),
@@ -667,6 +687,32 @@ fn subst_ty(ty: &Ty, subst: &HashMap<String, Ty>) -> Ty {
         Ty::Tuple(ts) => Ty::Tuple(ts.iter().map(|t| subst_ty(t, subst)).collect()),
         other => other.clone(),
     }
+}
+
+/// Extend a generic-param substitution with associated type bindings from all
+/// conformance entries for each concrete type in the substitution.
+/// Keys for assoc bindings use the format `"ParamName::AssocName"` to avoid
+/// collisions with regular generic param names.
+fn extend_with_assoc_bindings(
+    subst: &HashMap<String, Ty>,
+    registry: &TypeRegistry,
+) -> HashMap<String, Ty> {
+    let mut result = subst.clone();
+    for (param_name, concrete_ty) in subst {
+        let type_name = match concrete_ty {
+            Ty::Named(_, name, _) => name.clone(),
+            Ty::Int => "int".to_string(),
+            Ty::Float => "float".to_string(),
+            Ty::Bool => "bool".to_string(),
+            Ty::Str => "str".to_string(),
+            _ => continue,
+        };
+        for (assoc_name, assoc_ty) in registry.all_assoc_bindings_for(&type_name) {
+            let key = format!("{}::{}", param_name, assoc_name);
+            result.entry(key).or_insert(assoc_ty);
+        }
+    }
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -824,6 +870,7 @@ fn subst_stmt(
                 .map(|p| TypedParam {
                     name: p.name.clone(),
                     ty: subst_ty(&p.ty, subst),
+                    mutable: p.mutable,
                     span: p.span,
                 })
                 .collect(),
@@ -990,6 +1037,7 @@ fn subst_expr(
                 .map(|p| TypedParam {
                     name: p.name.clone(),
                     ty: subst_ty(&p.ty, subst),
+                    mutable: p.mutable,
                     span: p.span,
                 })
                 .collect(),
@@ -1012,14 +1060,34 @@ fn subst_expr(
         TypedExprKind::Array(elems) => TypedExprKind::Array(elems.iter().map(|e| se!(e)).collect()),
         TypedExprKind::Gen { body } => TypedExprKind::Gen { body: sb!(body) },
         TypedExprKind::GenSplice(inner) => TypedExprKind::GenSplice(Box::new(se!(inner))),
-        TypedExprKind::Str(segs) => TypedExprKind::Str(
-            segs.iter()
+        TypedExprKind::Str(segs) => {
+            let new_segs: Vec<TypedStringSegment> = segs
+                .iter()
                 .map(|seg| match seg {
                     TypedStringSegment::Text(t) => TypedStringSegment::Text(t.clone()),
-                    TypedStringSegment::Interp(e) => TypedStringSegment::Interp(se!(e)),
+                    TypedStringSegment::Interp(e) => {
+                        let substed = se!(e);
+                        // If the interpolated value has a concrete Named type with
+                        // a registered to_str hook, emit an impl_req so the
+                        // monomorphized to_str function gets compiled.
+                        if let Ty::Named(_, base, args) = &substed.ty {
+                            if !args.is_empty()
+                                && generic_impl_hooks
+                                    .contains_key(&(base.clone(), "to_str".to_string()))
+                            {
+                                impl_reqs.push((
+                                    base.clone(),
+                                    "to_str".to_string(),
+                                    substed.ty.clone(),
+                                ));
+                            }
+                        }
+                        TypedStringSegment::Interp(substed)
+                    }
                 })
-                .collect(),
-        ),
+                .collect();
+            TypedExprKind::Str(new_segs)
+        }
         other => other.clone(),
     };
     TypedExpr {

@@ -46,6 +46,8 @@ pub enum TypeExpr {
     },
     /// `<<expr>>` type splice inside a gen block
     GenSplice(Box<Expr>, Span),
+    /// `Iface1+Iface2` -- compound interface type (value must satisfy all)
+    Compound(Vec<TypeExpr>, Span),
 }
 
 impl TypeExpr {
@@ -58,6 +60,7 @@ impl TypeExpr {
             TypeExpr::Ref { span, .. } => *span,
             TypeExpr::Projection { span, .. } => *span,
             TypeExpr::GenSplice(_, span) => *span,
+            TypeExpr::Compound(_, span) => *span,
         }
     }
 }
@@ -91,8 +94,8 @@ pub struct GenericParam {
     pub name: String,
     /// Variance annotation (`+T`, `-T`, or none for invariant).
     pub variance: Variance,
-    /// Bounds: `T: Ord, Addable` yields `["Ord", "Addable"]`; lifetime params have at most one.
-    pub bounds: Vec<String>,
+    /// Bounds: `T: Ord, Addable` yields type exprs; lifetime params have at most one.
+    pub bounds: Vec<TypeExpr>,
     pub span: Span,
 }
 
@@ -157,6 +160,7 @@ pub struct FnDef {
 pub struct Param {
     pub name: String,
     pub ty: TypeExpr,
+    pub mutable: bool,
     pub span: Span,
 }
 
@@ -266,6 +270,8 @@ pub struct ImplBlock {
     pub self_alias: Option<String>,
     pub methods: Vec<FnDef>,
     pub hooks: Vec<HookDef>,
+    /// Associated type bindings declared in the impl body: `type Item = int`
+    pub assoc_bindings: Vec<(String, TypeExpr)>,
     pub kind: ImplKind,
     pub span: Span,
 }

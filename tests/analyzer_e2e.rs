@@ -576,6 +576,83 @@ def process(x: Printable) -> void {}
     );
 }
 
+#[test]
+fn hook_with_self_param_is_not_erasable() {
+    let errs = run(r#"
+interface Addable {
+    hook +(other: Self) -> Self {}
+}
+
+def process(x: Addable) -> void {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "hook with Self parameter makes interface non-erasable: {errs:?}"
+    );
+}
+
+#[test]
+fn hook_with_self_return_is_not_erasable() {
+    let errs = run(r#"
+interface Builder {
+    hook build() -> Self {}
+}
+
+def process(x: Builder) -> void {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "hook returning Self makes interface non-erasable: {errs:?}"
+    );
+}
+
+#[test]
+fn generic_method_makes_interface_non_erasable() {
+    let errs = run(r#"
+interface Mapper {
+    def map[U](f: int) -> U {}
+}
+
+def process(x: Mapper) -> void {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "generic method makes interface non-erasable: {errs:?}"
+    );
+}
+
+#[test]
+fn non_erasable_interface_as_return_type_is_error() {
+    let errs = run(r#"
+interface Cloneable {
+    def clone() -> Self {}
+}
+
+def make_one() -> Cloneable {}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "non-erasable interface as function return type should be an error: {errs:?}"
+    );
+}
+
+#[test]
+fn non_erasable_interface_as_struct_field_is_error() {
+    let errs = run(r#"
+interface Cloneable {
+    def clone() -> Self {}
+}
+
+struct Container {
+    item: Cloneable,
+}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "non-erasable interface as struct field type should be an error: {errs:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Enum iteration: for x <- EnumType
 // ---------------------------------------------------------------------------
@@ -1371,5 +1448,416 @@ fn const_non_literal_initializer_is_error() {
         errs.iter()
             .any(|e| e.contains("E022") || e.contains("literal")),
         "expected NonLiteralConst error, got: {errs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Multi-bound types (Iface1+Iface2 in value position)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn compound_type_in_param_position_accepts_valid_impl() {
+    let errs = run(r#"
+interface Printable {
+    hook print_me() -> str
+}
+interface Traceable {
+    hook trace_me() -> str
+}
+struct FullImpl {}
+impl Printable for FullImpl {
+    hook print_me() -> str { return "ok" }
+}
+impl Traceable for FullImpl {
+    hook trace_me() -> str { return "ok" }
+}
+def use_it(x: Printable+Traceable) -> void {}
+def main() -> void {
+    v: Printable+Traceable = FullImpl{}
+    use_it(v)
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "compound type with full impl must analyze clean: {errs:?}"
+    );
+}
+
+#[test]
+fn compound_type_var_decl_checks_all_constituents() {
+    let errs = run(r#"
+interface Printable {
+    hook print_me() -> str
+}
+interface Traceable {
+    hook trace_me() -> str
+}
+struct PartialImpl {}
+impl Printable for PartialImpl {
+    hook print_me() -> str { return "ok" }
+}
+def main() -> void {
+    v: Printable+Traceable = PartialImpl{}
+}
+"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("TypeMismatch") || e.contains("E002") || e.contains("Traceable")),
+        "compound type missing constituent impl must error: {errs:?}"
+    );
+}
+
+#[test]
+fn compound_type_in_function_return_position_is_valid() {
+    let errs = run(r#"
+interface Exportable {
+    hook export_id() -> int
+}
+interface Serializable {
+    hook serialize() -> str
+}
+def make() -> Exportable+Serializable { return make() }
+"#);
+    assert!(
+        errs.is_empty(),
+        "compound return type must analyze clean: {errs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Associated type pinning at erasure site
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bare_interface_with_assoc_type_is_error_at_erasure_site() {
+    let errs = run(r#"
+interface MyIter {
+    type Item
+    hook next() -> int
+}
+@builtin
+def get_iter() -> MyIter
+def main() -> void {}
+"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E025") || e.contains("unbound") || e.contains("Item")),
+        "bare interface with unbound assoc type must error (E025): {errs:?}"
+    );
+}
+
+#[test]
+fn pinned_interface_with_assoc_type_is_valid() {
+    let errs = run(r#"
+interface MyIter {
+    type Item
+    hook next() -> int
+}
+@builtin
+def get_iter() -> MyIter[Item=int]
+def main() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "pinned interface must analyze clean: {errs:?}"
+    );
+}
+
+#[test]
+fn interface_without_assoc_types_needs_no_pinning() {
+    let errs = run(r#"
+interface Counter {
+    hook count() -> int
+}
+@builtin
+def get_counter() -> Counter
+def main() -> void {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "interface with no assoc types must not require pinning: {errs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Variance inference and enforcement
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mutex_is_invariant_in_type_arg() {
+    let errs = run(r#"
+interface AnimalIface {}
+interface DogIface {}
+@builtin
+def get_dog_mutex() -> Mutex[DogIface]
+def main() -> void {
+    m: Mutex[AnimalIface] = get_dog_mutex
+}
+"#);
+    assert!(
+        errs.iter().any(|e| e.contains("E026")
+            || e.contains("invariant")
+            || e.contains("VarianceViolation")),
+        "Mutex[DogIface] assigned to Mutex[AnimalIface] must be a variance violation: {errs:?}"
+    );
+}
+
+#[test]
+fn mutex_same_type_arg_is_valid() {
+    let errs = run(r#"
+interface AnimalIface {}
+@builtin
+def get_animal_mutex() -> Mutex[AnimalIface]
+def main() -> void {
+    m: Mutex[AnimalIface] = get_animal_mutex
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "Mutex[AnimalIface] assigned to Mutex[AnimalIface] must be valid: {errs:?}"
+    );
+}
+
+#[test]
+fn mutex_concrete_type_usage_is_valid() {
+    let errs = run(r#"
+struct Counter {
+    val: int
+}
+@builtin
+def get_counter_mutex() -> Mutex[Counter]
+def main() -> void {
+    m: Mutex[Counter] = get_counter_mutex
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "Mutex[Counter] assigned to Mutex[Counter] must be valid: {errs:?}"
+    );
+}
+
+#[test]
+fn for_loop_on_non_iterable_is_error() {
+    let errs = run(r#"
+def main() {
+    x: int = 42
+    for v <- x {
+        print("v")
+    }
+}
+"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E028") || e.contains("does not implement `Iterable`")),
+        "expected NotIterable error, got: {errs:?}"
+    );
+}
+
+#[test]
+fn for_loop_on_bool_is_error() {
+    let errs = run(r#"
+def main() {
+    b: bool = true
+    for v <- b {
+        print("v")
+    }
+}
+"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E028") || e.contains("does not implement `Iterable`")),
+        "expected NotIterable error for bool, got: {errs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// E029: CyclicInterface
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cyclic_interface_direct_self_extension_is_error() {
+    let errs = run(r#"
+interface Loop: Loop {
+    def go() -> void {}
+}
+def main() {}
+"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E029") || e.contains("cyclic")),
+        "expected E029 CyclicInterface for direct self-extension, got: {errs:?}"
+    );
+}
+
+#[test]
+fn cyclic_interface_two_hop_cycle_is_error() {
+    let errs = run(r#"
+interface A: B {
+    def a() -> void {}
+}
+interface B: A {
+    def b() -> void {}
+}
+def main() {}
+"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E029") || e.contains("cyclic")),
+        "expected E029 CyclicInterface for two-hop cycle A->B->A, got: {errs:?}"
+    );
+}
+
+#[test]
+fn cyclic_interface_three_hop_cycle_is_error() {
+    let errs = run(r#"
+interface X: Y {
+    def x() -> void {}
+}
+interface Y: Z {
+    def y() -> void {}
+}
+interface Z: X {
+    def z() -> void {}
+}
+def main() {}
+"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E029") || e.contains("cyclic")),
+        "expected E029 CyclicInterface for three-hop cycle X->Y->Z->X, got: {errs:?}"
+    );
+}
+
+#[test]
+fn cyclic_interface_linear_chain_is_ok() {
+    let errs = run(r#"
+interface Base {
+    def base() -> void {}
+}
+interface Mid: Base {
+    def mid() -> void {}
+}
+interface Top: Mid {
+    def top() -> void {}
+}
+def main() {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "linear interface chain should not produce errors, got: {errs:?}"
+    );
+}
+
+#[test]
+fn cyclic_interface_example_file_reports_errors() {
+    let errs = analyze_file("examples/check_cyclic_interface.kn");
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E029") || e.contains("cyclic")),
+        "expected E029 errors in check_cyclic_interface.kn, got: {errs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// E030: RecursiveTypeWithoutIndirect
+// ---------------------------------------------------------------------------
+
+#[test]
+fn recursive_struct_without_indirect_is_error() {
+    let errs = run(r#"
+struct Node {
+    value: int
+    next: Node
+}
+def main() {}
+"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E030") || e.contains("infinite size") || e.contains("indirect")),
+        "expected E030 RecursiveTypeWithoutIndirect, got: {errs:?}"
+    );
+}
+
+#[test]
+fn recursive_struct_with_indirect_is_ok() {
+    let errs = run(r#"
+struct Node {
+    value: int
+    @indirect next: Option[Node]
+}
+def main() {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "@indirect on recursive field should not error, got: {errs:?}"
+    );
+}
+
+#[test]
+fn recursive_struct_multiple_bad_fields_each_reported() {
+    let errs = run(r#"
+struct Tree {
+    value: int
+    left: Tree
+    right: Tree
+}
+def main() {}
+"#);
+    let cyclic_count = errs
+        .iter()
+        .filter(|e| e.contains("E030") || e.contains("infinite size"))
+        .count();
+    assert!(
+        cyclic_count >= 2,
+        "expected at least 2 E030 errors (one per bad field), got: {errs:?}"
+    );
+}
+
+#[test]
+fn recursive_struct_mixed_fields_only_bad_ones_reported() {
+    let errs = run(r#"
+struct Chain {
+    value: int
+    @indirect good: Option[Chain]
+    bad: Chain
+}
+def main() {}
+"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("bad") && (e.contains("E030") || e.contains("infinite size"))),
+        "expected E030 for field `bad`, got: {errs:?}"
+    );
+    assert!(
+        !errs.iter().any(|e| e.contains("good")),
+        "@indirect field `good` should not be reported, got: {errs:?}"
+    );
+}
+
+#[test]
+fn non_recursive_structs_are_ok() {
+    let errs = run(r#"
+struct Leaf {
+    value: int
+}
+struct Branch {
+    left: Leaf
+    right: Leaf
+}
+def main() {}
+"#);
+    assert!(
+        errs.is_empty(),
+        "non-recursive structs should not produce errors, got: {errs:?}"
+    );
+}
+
+#[test]
+fn recursive_type_example_file_reports_errors() {
+    let errs = analyze_file("examples/check_recursive_type.kn");
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("E030") || e.contains("infinite size")),
+        "expected E030 errors in check_recursive_type.kn, got: {errs:?}"
     );
 }

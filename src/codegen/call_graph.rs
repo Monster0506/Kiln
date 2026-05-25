@@ -250,11 +250,18 @@ fn collect_callees_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
         }
         TypedExprKind::Gen { body } => collect_callees_block(body, out),
         TypedExprKind::GenSplice(e) => collect_callees_expr(e, out),
+        TypedExprKind::Str(segments) => {
+            use crate::analyzer::typed_ast::TypedStringSegment;
+            for seg in segments {
+                if let TypedStringSegment::Interp(e) = seg {
+                    collect_callees_expr(e, out);
+                }
+            }
+        }
         // Leaf nodes - no sub-expressions
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)
-        | TypedExprKind::Str(_)
         | TypedExprKind::Ident(_)
         | TypedExprKind::EnumVariant { .. } => {}
     }
@@ -265,12 +272,26 @@ pub fn reachable_functions(file: &TypedFile, graph: &CallGraph) -> HashSet<Strin
     let mut reachable: HashSet<String> = HashSet::new();
     let mut worklist: VecDeque<String> = VecDeque::new();
 
-    // Seed with entry points: is_entry==true or name=="main"
+    let seed = |name: &str, worklist: &mut VecDeque<String>, reachable: &mut HashSet<String>| {
+        if reachable.insert(name.to_string()) {
+            worklist.push_back(name.to_string());
+        }
+    };
+
+    // Seed with explicit entry points: is_entry==true or name=="main"
     for item in &file.items {
         if let TypedItem::Function(f) = item {
-            if (f.is_entry || f.name == "main") && reachable.insert(f.name.clone()) {
-                worklist.push_back(f.name.clone());
+            if f.is_entry || f.name == "main" {
+                seed(&f.name, &mut worklist, &mut reachable);
             }
+        }
+    }
+
+    // Also seed from every always-reachable node in the graph (hooks, _to_str, etc.)
+    // so that functions they call are also pulled in by the BFS.
+    for name in graph.edges.keys() {
+        if is_always_reachable(name) {
+            seed(name, &mut worklist, &mut reachable);
         }
     }
 

@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use kiln_compiler::analyzer::analyze_with_base;
+use kiln_compiler::analyzer::{analyze_with_base, analyze_with_base_and_registry};
 use kiln_compiler::annotations::{default_registry, run_processors, run_user_processors};
 use kiln_compiler::codegen::{compile::compile, context::CodegenContext, emit};
 use kiln_compiler::diagnostics::timing::{BuildStats, ItemCounts, PhaseTimer};
@@ -258,7 +258,7 @@ fn run_build(
     }
 
     timer.start("analyze");
-    let typed_file = match analyze_with_base(&ast, &base_dir) {
+    let (typed_file, type_registry) = match analyze_with_base_and_registry(&ast, &base_dir) {
         Ok(t) => t,
         Err(errs) => {
             let msgs = errs
@@ -343,7 +343,13 @@ fn run_build(
     let mut cgx = CodegenContext::new(module_name);
 
     timer.start("codegen");
-    let fn_times = match compile(&typed_file, &mut cgx, verbose, opts.opt_level) {
+    let fn_times = match compile(
+        &typed_file,
+        &mut cgx,
+        verbose,
+        opts.opt_level,
+        &type_registry,
+    ) {
         Ok(t) => t,
         Err(e) => return BuildOutcome::Errors(vec![format!("codegen error: {e}")]),
     };
@@ -912,16 +918,24 @@ fn main() {
                 .parent()
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
-            let typed_file = analyze_with_base(&ast, &base_dir).unwrap_or_else(|errs| {
-                emit_analysis_errors(&errs, &map, &src, &path);
-                std::process::exit(1);
-            });
+            let (typed_file, type_registry) = analyze_with_base_and_registry(&ast, &base_dir)
+                .unwrap_or_else(|errs| {
+                    emit_analysis_errors(&errs, &map, &src, &path);
+                    std::process::exit(1);
+                });
             let module_name = file
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("module");
             let mut cgx = CodegenContext::new(module_name);
-            compile(&typed_file, &mut cgx, opts.verbose, opts.opt_level).unwrap_or_else(|e| {
+            compile(
+                &typed_file,
+                &mut cgx,
+                opts.verbose,
+                opts.opt_level,
+                &type_registry,
+            )
+            .unwrap_or_else(|e| {
                 eprintln!("codegen error: {e}");
                 std::process::exit(1);
             });

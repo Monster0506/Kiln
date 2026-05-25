@@ -1,0 +1,108 @@
+# iface_multi_bound_conformance.kn -- multi-bound conditional conformance
+#
+# Conditional conformance with multiple bounds on a single type parameter:
+#
+#   impl[T: Eq + Hash] Lookup for Table[T]
+#
+# The constraint solver's named-parameter matching ensures both bounds
+# are checked against the same argument, even when a type parameter
+# appears in multiple bound entries.
+#
+# Prior to the fix, the positional bound checker could silently skip
+# the second bound when args.get(index) returned None.
+
+interface Display {
+    hook to_str() -> str
+}
+
+interface PartialEq {
+    hook ==(other: Self) -> bool
+}
+
+interface Eq: PartialEq {}
+
+interface Hash {
+    hook hash_code() -> int
+}
+
+interface Hashable: Eq + Hash {}
+
+# ---- A type that implements both Eq and Hash --------------------------------
+
+struct Key {
+    id: int
+}
+
+impl Display for Key {
+    hook to_str() -> str {
+        return "Key({id})"
+    }
+}
+
+impl PartialEq for Key {
+    hook ==(other: Key) -> bool {
+        return id == other.id
+    }
+}
+
+impl Eq for Key {}
+
+impl Hash for Key {
+    hook hash_code() -> int {
+        return id * 2654435761
+    }
+}
+
+impl Hashable for Key {}
+
+# ---- A type that only implements Eq (not Hash) ------------------------------
+#
+# Using NoHash as a map key should be rejected by the constraint solver
+# when the container requires Hashable.
+
+struct Label {
+    name: str
+}
+
+impl Display for Label {
+    hook to_str() -> str {
+        return "Label({name})"
+    }
+}
+
+impl PartialEq for Label {
+    hook ==(other: Label) -> bool {
+        return name == other.name
+    }
+}
+
+impl Eq for Label {}
+
+# ---- Generic function requiring both bounds ---------------------------------
+
+def lookup_key[T: Hashable](keys: Vec[T], target: T) -> int {
+    i: int = 0
+    while i < keys.len() {
+        k: T = keys.get(i)
+        if k == target {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+# ---- Valid call: Key implements both Eq and Hash ----------------------------
+
+def main() -> void {
+    k1: Key = Key { id: 10 }
+    k2: Key = Key { id: 20 }
+    k3: Key = Key { id: 10 }
+
+    keys: Vec[Key] = Vec.new()
+    keys.push(k1)
+    keys.push(k2)
+
+    idx: int = lookup_key(keys, k3)
+    print("found at index {idx}")
+}

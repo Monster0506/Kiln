@@ -1,0 +1,55 @@
+# check_cyclic_interface.kn -- cyclic interface hierarchies (E029)
+#
+# An interface that transitively extends itself has infinite size and cannot
+# be implemented.  The analyzer must detect and reject these cycles.
+
+# ERROR: direct self-extension (A extends A)
+interface SelfExtend: SelfExtend {
+    def greet() -> void {}
+}
+
+# ERROR: two-hop cycle (Ping extends Pong, Pong extends Ping)
+interface Ping: Pong {
+    def ping() -> void {}
+}
+
+interface Pong: Ping {
+    def pong() -> void {}
+}
+
+# ERROR: three-hop cycle
+interface Alpha: Beta {
+    def a() -> void {}
+}
+
+interface Beta: Gamma {
+    def b() -> void {}
+}
+
+interface Gamma: Alpha {
+    def c() -> void {}
+}
+
+# OK: linear chain with no cycle
+interface Base {
+    def base() -> void {}
+}
+
+interface Middle: Base {
+    def middle() -> void {}
+}
+
+interface Top: Middle {
+    def top() -> void {}
+}
+
+struct Good: Top {
+    x: int
+
+    def base() -> void {}
+    def middle() -> void {}
+    def top() -> void {}
+}
+
+def main() -> void {
+}

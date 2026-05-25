@@ -5,6 +5,7 @@ use crate::analyzer::typed_ast::{
 };
 use crate::codegen::match_::lower_typed_match;
 use crate::codegen::memory::{emit_malloc, load_field, store_field};
+use crate::codegen::mono::type_mono_name;
 use crate::codegen::strings::emit_str_literal;
 use crate::codegen::structs::StructLayouts;
 use crate::parser::ast::{BinOp, UnOp};
@@ -441,7 +442,6 @@ fn lower_typed_expr_inner(
                                 .map(|((pname, _), arg)| (pname.clone(), arg.clone()))
                                 .collect();
                             let expanded = inline_subst(ret_expr.clone(), &subst);
-                            eprintln!("[kiln] inlining '{}' at call site", fn_name);
                             return lower_typed_expr(&expanded, builder, vars, ctx);
                         }
                     }
@@ -461,10 +461,12 @@ fn lower_typed_expr_inner(
                         && args[0].ty != Ty::Str
                     {
                         let raw = arg_vals[0];
-                        let to_str_fn = type_name_of(&args[0].ty)
-                            .map(|n| format!("{}_to_str", n))
-                            .filter(|fn_name| ctx.func_ids.contains_key(fn_name.as_str()))
-                            .unwrap_or_else(|| "__kiln_to_str_dispatch".to_string());
+                        let mono_name = format!("{}_to_str", type_mono_name(&args[0].ty));
+                        let to_str_fn = if ctx.func_ids.contains_key(mono_name.as_str()) {
+                            mono_name
+                        } else {
+                            "__kiln_to_str_dispatch".to_string()
+                        };
                         let str_val = call_fn_by_name(&to_str_fn, &[raw], builder, ctx);
                         // Call the C runtime directly so we don't re-enter the compiled
                         // generic println body (which would call to_str on the str again).
@@ -947,12 +949,10 @@ fn lower_str_seg(
             if e.ty == Ty::Str {
                 return v;
             }
-            // Dispatch to {typename}_to_str hook (e.g. int_to_str, float_to_str).
-            // call_fn_by_name already falls back to __kiln_to_str_dispatch for
-            // any *_to_str name that isn't registered, so this handles all types.
-            let fn_name = type_name_of(&e.ty)
-                .map(|n| format!("{}_to_str", n))
-                .unwrap_or_else(|| "__kiln_to_str_dispatch".to_string());
+            // Use the fully monomorphized name so generic types like LinkedList[int]
+            // dispatch to LinkedList_int_to_str rather than the unmonomorphized
+            // LinkedList_to_str (which still has GenericParam("T") in its body).
+            let fn_name = format!("{}_to_str", type_mono_name(&e.ty));
             call_fn_by_name(&fn_name, &[v], builder, ctx)
         }
     }

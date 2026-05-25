@@ -1,8 +1,10 @@
 use crate::analyzer::env::{Env, Symbol};
 use crate::analyzer::error::AnalysisError;
-use crate::analyzer::infer::{check_assignable, infer_typed_expr, substitute_t};
+use crate::analyzer::infer::{check_assignable, infer_typed_expr, subst_generic_ty, substitute_t};
 use crate::analyzer::resolve::resolve_type_expr;
-use crate::analyzer::ty::{Ty, TypeKind, TypeRegistry};
+use crate::analyzer::ty::{ComputedVariance, Ty, TypeKind, TypeRegistry};
+use crate::diagnostics::Span;
+
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedCatchHandler, TypedFnDef, TypedParam, TypedStmt,
 };
@@ -57,8 +59,31 @@ fn check_typed_stmt(
                         });
                     }
                 }
+            } else if let Ty::Compound(parts) = &declared {
+                // Verify the assigned type implements ALL constituent interfaces.
+                if let Some(type_name) = crate::analyzer::infer::type_name_of(&typed_val.ty) {
+                    for part in parts {
+                        if let Ty::Interface(_, iface_name) = part {
+                            if registry.get_conformances(&type_name, iface_name).is_empty() {
+                                errors.push(AnalysisError::TypeMismatch {
+                                    expected: iface_name.clone(),
+                                    found: type_name.clone(),
+                                    span: typed_val.span,
+                                });
+                            }
+                        }
+                    }
+                }
             } else {
                 check_assignable(&declared, &typed_val.ty, &typed_val.span, errors);
+                // Additional check: enforce invariant variance where declared.
+                check_variance_assignment(
+                    &declared,
+                    &typed_val.ty,
+                    registry,
+                    typed_val.span,
+                    errors,
+                );
             }
             env.define(
                 name,
@@ -301,8 +326,116 @@ fn check_typed_stmt(
                         }
                     }
                 }
-                _ => Ty::Unknown,
+                // Generic custom Iterable, e.g. LinkedList[int].
+                Ty::Named(_, name, args) => {
+                    if let Some(iter_method) = registry.find_method(name, "iter") {
+                        // Build substitution map: generic param names -> concrete type args.
+                        let subst: std::collections::HashMap<String, Ty> = registry
+                            .get_generic_param_order(name)
+                            .map(|params| {
+                                params
+                                    .iter()
+                                    .zip(args.iter())
+                                    .map(|(p, a)| (p.clone(), a.clone()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        // Apply substitution to the iter() return type to get concrete iterator type.
+                        let raw_iter_ret = iter_method.ret.clone();
+                        let concrete_iter_ty = if subst.is_empty() {
+                            raw_iter_ret
+                        } else {
+                            subst_generic_ty(&raw_iter_ret, &subst)
+                        };
+                        // Derive element type from Iterator::next() -> Option[Item] on the
+                        // concrete iterator type, applying its own generic substitution.
+                        let item_ty = if let Ty::Named(_, iter_name, iter_args) = &concrete_iter_ty
+                        {
+                            let iter_subst: std::collections::HashMap<String, Ty> = registry
+                                .get_generic_param_order(iter_name)
+                                .map(|params| {
+                                    params
+                                        .iter()
+                                        .zip(iter_args.iter())
+                                        .map(|(p, a)| (p.clone(), a.clone()))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            registry
+                                .find_method(iter_name, "next")
+                                .and_then(|m| {
+                                    let concrete_ret = if iter_subst.is_empty() {
+                                        m.ret.clone()
+                                    } else {
+                                        subst_generic_ty(&m.ret, &iter_subst)
+                                    };
+                                    if let Ty::Named(_, opt_name, opt_args) = &concrete_ret {
+                                        if opt_name == "Option" {
+                                            opt_args.first().cloned()
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(Ty::Unknown)
+                        } else {
+                            Ty::Unknown
+                        };
+                        iter_ty = Some(concrete_iter_ty);
+                        item_ty
+                    } else {
+                        Ty::Unknown
+                    }
+                }
+                // Primitive types (int, bool, float) are not Ty::Named, so the arms above
+                // don't see them. Check whether a user-defined extension impl registered
+                // an iter() method under the primitive's type name.
+                other => {
+                    let prim_name: &str = match other {
+                        Ty::Int => "int",
+                        Ty::Float => "float",
+                        Ty::Bool => "bool",
+                        _ => "",
+                    };
+                    if prim_name.is_empty() {
+                        Ty::Unknown
+                    } else if let Some(iter_method) = registry.find_method(prim_name, "iter") {
+                        let it = iter_method.ret.clone();
+                        let item_ty = if let Ty::Named(_, iter_name, _) = &it {
+                            registry
+                                .find_method(iter_name, "next")
+                                .and_then(|m| {
+                                    if let Ty::Named(_, opt_name, opt_args) = &m.ret {
+                                        if opt_name == "Option" {
+                                            opt_args.first().cloned()
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(Ty::Unknown)
+                        } else {
+                            Ty::Unknown
+                        };
+                        iter_ty = Some(it);
+                        item_ty
+                    } else {
+                        Ty::Unknown
+                    }
+                }
             };
+            // Emit a compile-time error if the iterable type doesn't implement Iterable.
+            // Guard on ti.ty != Unknown to avoid cascading errors from already-reported issues.
+            if elem_ty == Ty::Unknown && ti.ty != Ty::Unknown {
+                errors.push(AnalysisError::NotIterable {
+                    ty: ti.ty.to_string(),
+                    span: *span,
+                });
+            }
             let ann_ty = if let Some(ann) = binding_ty {
                 let at = resolve_type_expr(ann, env, errors);
                 check_assignable(&at, &elem_ty, span, errors);
@@ -397,30 +530,35 @@ pub fn check_fn_def(
         params.push(TypedParam {
             name: p.name.clone(),
             ty: resolve_type_expr(&p.ty, env, errors),
+            mutable: p.mutable,
             span: p.span,
         });
     }
 
+    let mut generic_bounds = Vec::new();
+    for g in &f.generic_params {
+        for b in &g.bounds {
+            if let crate::parser::ast::TypeExpr::Named {
+                name: iface_name, ..
+            } = b
+            {
+                generic_bounds.push(crate::analyzer::env::GenericBound {
+                    param: g.name.clone(),
+                    iface: iface_name.clone(),
+                    assoc_bindings: vec![],
+                    is_explicit: true,
+                    decl_span: Some(g.span),
+                    source_span: None,
+                    source_desc: String::new(),
+                });
+            }
+        }
+    }
     env.define(
         &f.name,
         Symbol::Fn {
             generic_params: f.generic_params.iter().map(|g| g.name.clone()).collect(),
-            generic_bounds: f
-                .generic_params
-                .iter()
-                .flat_map(|g| {
-                    g.bounds
-                        .iter()
-                        .map(move |b| crate::analyzer::env::GenericBound {
-                            param: g.name.clone(),
-                            iface: b.clone(),
-                            is_explicit: true,
-                            decl_span: Some(g.span),
-                            source_span: None,
-                            source_desc: String::new(),
-                        })
-                })
-                .collect(),
+            generic_bounds,
             inferred_bounds: vec![],
             params: params
                 .iter()
@@ -457,6 +595,38 @@ pub fn check_fn_def(
         is_entry: f.annotations.iter().any(|a| a.name == "entry"),
         is_impure: f.annotations.iter().any(|a| a.name == "impure"),
         span: f.span,
+    }
+}
+
+/// For `Ty::Named` types with invariant type parameters, verify that
+/// the assigned type's corresponding argument matches exactly.
+/// This catches cases like `let m: Mutex[Animal] = mutex_of_dog` when
+/// Mutex is invariant in its parameter.
+fn check_variance_assignment(
+    expected: &Ty,
+    found: &Ty,
+    registry: &TypeRegistry,
+    span: Span,
+    errors: &mut Vec<AnalysisError>,
+) {
+    if let (Ty::Named(_, en, ea), Ty::Named(_, fn_, fa)) = (expected, found) {
+        if en != fn_ || ea.len() != fa.len() {
+            return;
+        }
+        for (i, (exp_arg, found_arg)) in ea.iter().zip(fa.iter()).enumerate() {
+            if registry.get_type_variance(en, i) == ComputedVariance::Invariant
+                && exp_arg != found_arg
+                && !matches!(exp_arg, Ty::Unknown)
+                && !matches!(found_arg, Ty::Unknown)
+            {
+                errors.push(AnalysisError::VarianceViolation {
+                    container: en.clone(),
+                    expected: exp_arg.to_string(),
+                    found: found_arg.to_string(),
+                    span,
+                });
+            }
+        }
     }
 }
 

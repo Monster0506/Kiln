@@ -57,6 +57,7 @@ pub struct TypedFnDef {
 pub struct TypedParam {
     pub name: String,
     pub ty: Ty,
+    pub mutable: bool,
     pub span: Span,
 }
 

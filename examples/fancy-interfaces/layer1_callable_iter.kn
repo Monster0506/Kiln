@@ -16,12 +16,12 @@ interface Hashable {
 
 # ---- A simple range iterator -------------------------------------------------
 
-struct RangeIter {
+struct RangeIterator {
     current: int
     stop: int
 }
 
-impl Iterator for RangeIter {
+impl Iterator for RangeIterator {
     hook next() -> Option[int] {
         if self.current >= self.stop {
             return None
@@ -35,7 +35,7 @@ impl Iterator for RangeIter {
 # ---- A filter iterator wrapping another iterator ----------------------------
 
 struct Filtered {
-    inner: RangeIter
+    inner: RangeIterator
     threshold: int
 }
 

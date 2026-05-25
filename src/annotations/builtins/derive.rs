@@ -60,6 +60,7 @@ fn other_param(st: &StructDef) -> Param {
     Param {
         name: "other".into(),
         ty: named(&st.name),
+        mutable: false,
         span: s(),
     }
 }
@@ -68,6 +69,7 @@ fn other_param_named(type_name: &str) -> Param {
     Param {
         name: "other".into(),
         ty: named(type_name),
+        mutable: false,
         span: s(),
     }
 }
@@ -96,6 +98,7 @@ fn plain_impl(interface: &str, for_type: &str, hooks: Vec<HookDef>) -> Item {
         self_alias: None,
         methods: vec![],
         hooks,
+        assoc_bindings: vec![],
         kind: ImplKind::Plain,
         span: s(),
     })

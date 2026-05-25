@@ -26,7 +26,9 @@ pub fn clif_type(ty: &Ty) -> Option<Type> {
         | Ty::Named(_, _, _)
         | Ty::Interface(_, _)
         | Ty::Union(_)
+        | Ty::Compound(_)
         | Ty::GenericParam(_)
+        | Ty::Projection { .. }
         | Ty::Unknown => Some(types::I64),
     }
 }

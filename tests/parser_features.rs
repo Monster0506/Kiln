@@ -199,18 +199,27 @@ fn multi_bound_plus_and_paren_yield_same_bounds() {
     let tok_paren = Lexer::new(src_paren).tokenize().unwrap();
     let file_paren = Parser::new(tok_paren).parse_file().unwrap();
 
-    let bounds_of = |file: &kiln_compiler::parser::ast::SourceFile| {
+    let bound_names = |file: &kiln_compiler::parser::ast::SourceFile| -> Vec<String> {
         if let Item::Function(f) = &file.items[0] {
             let p = &f.generic_params[0];
             assert_eq!(p.kind, GenericParamKind::Type);
-            p.bounds.clone()
+            p.bounds
+                .iter()
+                .filter_map(|b| {
+                    if let kiln_compiler::parser::ast::TypeExpr::Named { name, .. } = b {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
         } else {
             panic!("expected fn def")
         }
     };
 
-    assert_eq!(bounds_of(&file_plus), bounds_of(&file_paren));
-    assert_eq!(bounds_of(&file_plus), vec!["Addable", "Zero"]);
+    assert_eq!(bound_names(&file_plus), bound_names(&file_paren));
+    assert_eq!(bound_names(&file_plus), vec!["Addable", "Zero"]);
 }
 
 #[test]

@@ -1,11 +1,42 @@
 use crate::analyzer::constrain::binop_required_iface;
 use crate::analyzer::env::GenericBound;
 use crate::analyzer::op_hierarchy::compound_assign_iface;
-use crate::analyzer::ty::{Ty, TypeRegistry};
+use crate::analyzer::ty::{InterfaceId, Ty, TypeRegistry};
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedClosureBody, TypedExpr, TypedExprKind, TypedStmt, TypedStringSegment,
 };
+use crate::diagnostics::Span;
 use crate::parser::ast::BinOp;
+
+/// Emit a projected inferred bound when a `Ty::Projection { base, assoc }` expression
+/// is used in a context that requires `required_iface`.
+/// Searches all interfaces that declare `assoc` and emits a bound for each.
+fn emit_projection_bound(
+    base: &str,
+    assoc: &str,
+    required_iface: &str,
+    params: &[String],
+    registry: &TypeRegistry,
+    span: Span,
+    desc: String,
+    out: &mut Vec<GenericBound>,
+) {
+    if !params.iter().any(|p| p == base) {
+        return;
+    }
+    for iface_name in registry.interfaces_declaring_assoc(assoc) {
+        let assoc_ty = Ty::Interface(InterfaceId(0), required_iface.to_string());
+        out.push(GenericBound {
+            param: base.to_string(),
+            iface: iface_name.clone(),
+            assoc_bindings: vec![(assoc.to_string(), assoc_ty)],
+            is_explicit: false,
+            decl_span: None,
+            source_span: Some(span),
+            source_desc: desc.clone(),
+        });
+    }
+}
 
 fn binop_symbol(op: &BinOp) -> &'static str {
     match op {
@@ -39,13 +70,36 @@ pub fn infer_bounds_from_body(
 ) -> Vec<GenericBound> {
     let mut bounds: Vec<GenericBound> = Vec::new();
     collect_block(body, generic_params, registry, &mut bounds);
-    dedup_bounds(bounds)
+    let deduped = dedup_bounds(bounds);
+    minimize_bounds(deduped, registry)
 }
 
 fn dedup_bounds(mut v: Vec<GenericBound>) -> Vec<GenericBound> {
     v.sort_by(|a, b| a.param.cmp(&b.param).then(a.iface.cmp(&b.iface)));
     v.dedup_by(|a, b| a.param == b.param && a.iface == b.iface);
     v
+}
+
+/// Reduce an inferred bound set to its antichain: drop any bound `T: A` for which
+/// there exists another bound `T: B` in the set where `B` implies `A` (B is more
+/// specific). Keeping only the antichain avoids redundant constraints at call sites.
+fn minimize_bounds(bounds: Vec<GenericBound>, registry: &TypeRegistry) -> Vec<GenericBound> {
+    let keep: Vec<bool> = bounds
+        .iter()
+        .map(|b| {
+            !bounds.iter().any(|other| {
+                other.param == b.param
+                    && other.iface != b.iface
+                    && registry.iface_implies(&other.iface, &b.iface)
+            })
+        })
+        .collect();
+    bounds
+        .into_iter()
+        .zip(keep)
+        .filter(|(_, k)| *k)
+        .map(|(b, _)| b)
+        .collect()
 }
 
 fn collect_block(
@@ -86,6 +140,7 @@ fn collect_stmt(
                         out.push(GenericBound {
                             param: p.clone(),
                             iface: iface.to_string(),
+                            assoc_bindings: vec![],
                             is_explicit: false,
                             decl_span: None,
                             source_span: Some(*span),
@@ -161,18 +216,32 @@ fn collect_expr(
             collect_expr(left, params, registry, out);
             collect_expr(right, params, registry, out);
             if let Some(iface) = binop_required_iface(op) {
-                if let Ty::GenericParam(p) = &left.ty {
-                    if params.iter().any(|x| x == p) {
-                        let sym = binop_symbol(op);
+                let sym = binop_symbol(op);
+                match &left.ty {
+                    Ty::GenericParam(p) if params.iter().any(|x| x == p) => {
                         out.push(GenericBound {
                             param: p.clone(),
                             iface: iface.to_string(),
+                            assoc_bindings: vec![],
                             is_explicit: false,
                             decl_span: None,
                             source_span: Some(expr.span),
                             source_desc: format!("use of `{sym}` on `{p}`"),
                         });
                     }
+                    Ty::Projection { base, assoc } => {
+                        emit_projection_bound(
+                            base,
+                            assoc,
+                            iface,
+                            params,
+                            registry,
+                            expr.span,
+                            format!("use of `{sym}` on `{base}.{assoc}`"),
+                            out,
+                        );
+                    }
+                    _ => {}
                 }
             }
         }
@@ -189,6 +258,7 @@ fn collect_expr(
                         out.push(GenericBound {
                             param: param.clone(),
                             iface,
+                            assoc_bindings: vec![],
                             is_explicit: false,
                             decl_span: None,
                             source_span: Some(expr.span),
@@ -265,6 +335,32 @@ fn collect_expr(
             for seg in segs {
                 if let TypedStringSegment::Interp(e) = seg {
                     collect_expr(e, params, registry, out);
+                    match &e.ty {
+                        Ty::GenericParam(p) if params.iter().any(|x| x == p) => {
+                            out.push(GenericBound {
+                                param: p.clone(),
+                                iface: "Display".to_string(),
+                                assoc_bindings: vec![],
+                                is_explicit: false,
+                                decl_span: None,
+                                source_span: Some(e.span),
+                                source_desc: format!("string interpolation of `{p}`"),
+                            });
+                        }
+                        Ty::Projection { base, assoc } => {
+                            emit_projection_bound(
+                                base,
+                                assoc,
+                                "Display",
+                                params,
+                                registry,
+                                e.span,
+                                format!("string interpolation of `{base}.{assoc}`"),
+                                out,
+                            );
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
@@ -405,6 +501,86 @@ mod tests {
                 .iter()
                 .any(|b| b.param == "T" && b.iface == "Addable"),
             "expected T: Addable, got {bounds:?}"
+        );
+    }
+
+    // Constraint minimization: T: Ord implies T: PartialOrd, so PartialOrd is dropped.
+    #[test]
+    fn minimize_drops_implied_bound() {
+        use crate::analyzer::env::GenericBound;
+        use crate::analyzer::ty::ConformanceEntry;
+        let mut reg = TypeRegistry::new();
+        reg.register_conformance(
+            "int",
+            "Ord",
+            ConformanceEntry {
+                bounds: vec![],
+                bindings: vec![],
+            },
+        );
+        reg.register_interface_supers("Ord", vec!["PartialOrd".to_string()]);
+        reg.precompute_transitive_closures();
+
+        let bounds = vec![
+            GenericBound {
+                param: "T".into(),
+                iface: "Ord".into(),
+                assoc_bindings: vec![],
+                is_explicit: false,
+                decl_span: None,
+                source_span: None,
+                source_desc: String::new(),
+            },
+            GenericBound {
+                param: "T".into(),
+                iface: "PartialOrd".into(),
+                assoc_bindings: vec![],
+                is_explicit: false,
+                decl_span: None,
+                source_span: None,
+                source_desc: String::new(),
+            },
+        ];
+        let minimized = minimize_bounds(bounds, &reg);
+        assert_eq!(
+            minimized.len(),
+            1,
+            "PartialOrd should be dropped: {minimized:?}"
+        );
+        assert_eq!(minimized[0].iface, "Ord");
+    }
+
+    // Minimization keeps unrelated bounds.
+    #[test]
+    fn minimize_keeps_unrelated_bounds() {
+        use crate::analyzer::env::GenericBound;
+        let reg = TypeRegistry::new();
+
+        let bounds = vec![
+            GenericBound {
+                param: "T".into(),
+                iface: "Addable".into(),
+                assoc_bindings: vec![],
+                is_explicit: false,
+                decl_span: None,
+                source_span: None,
+                source_desc: String::new(),
+            },
+            GenericBound {
+                param: "T".into(),
+                iface: "Display".into(),
+                assoc_bindings: vec![],
+                is_explicit: false,
+                decl_span: None,
+                source_span: None,
+                source_desc: String::new(),
+            },
+        ];
+        let minimized = minimize_bounds(bounds, &reg);
+        assert_eq!(
+            minimized.len(),
+            2,
+            "both unrelated bounds should be kept: {minimized:?}"
         );
     }
 }

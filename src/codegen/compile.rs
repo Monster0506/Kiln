@@ -49,6 +49,7 @@ mod tests {
         TypedParam {
             name: name.into(),
             ty: Ty::Int,
+            mutable: false,
             span: s(),
         }
     }
@@ -162,10 +163,11 @@ pub fn compile(
     cgx: &mut CodegenContext,
     verbose: bool,
     opt_level: u8,
+    registry: &crate::analyzer::ty::TypeRegistry,
 ) -> Result<Vec<(String, std::time::Duration)>, String> {
     crate::analyzer::opt_notes::set_verbose(verbose);
 
-    let mono_file = crate::codegen::mono::monomorphize(typed_file_in.clone());
+    let mono_file = crate::codegen::mono::monomorphize(typed_file_in.clone(), registry);
 
     // Run opt_level iterations of fold + propagation, with early exit when nothing changes.
     let mut current = mono_file;

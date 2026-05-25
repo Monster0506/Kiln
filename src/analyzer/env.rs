@@ -7,6 +7,9 @@ use std::collections::HashMap;
 pub struct GenericBound {
     pub param: String,
     pub iface: String,
+    /// Associated type bindings from this bound, e.g. `T: Iterator[Item=int]` stores
+    /// `[("Item", Ty::Int)]`. Interface RHS (e.g. `Item=Display`) stores `Ty::Interface`.
+    pub assoc_bindings: Vec<(String, Ty)>,
     /// `true` when the bound was written explicitly in the function signature (`[T: Addable]`).
     /// `false` when inferred from body usage.
     pub is_explicit: bool,
@@ -67,6 +70,8 @@ pub enum Symbol {
     },
     Iface {
         id: InterfaceId,
+        /// Names of associated types declared in this interface (e.g. `type Item`).
+        assoc_types: Vec<String>,
         span: Span,
     },
     /// A compile-time constant. Uses of the name are inlined as the literal value.
@@ -80,6 +85,12 @@ pub enum Symbol {
 #[derive(Debug, Default, Clone)]
 pub struct Env {
     scopes: Vec<HashMap<String, Symbol>>,
+    /// Projection pin table, scoped in parallel with symbol scopes.
+    /// Each layer maps (param_name, assoc_name) -> concrete Ty.
+    projection_pins: Vec<HashMap<(String, String), Ty>>,
+    /// Generic param -> [iface names] for each scope level.
+    /// Lets `infer_call_field` look up which interfaces a generic param is bound by.
+    generic_param_bounds: Vec<HashMap<String, Vec<String>>>,
 }
 
 impl Env {
@@ -89,10 +100,65 @@ impl Env {
 
     pub fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
+        self.projection_pins.push(HashMap::new());
+        self.generic_param_bounds.push(HashMap::new());
     }
 
     pub fn pop_scope(&mut self) {
         self.scopes.pop();
+        self.projection_pins.pop();
+        self.generic_param_bounds.pop();
+    }
+
+    /// Register a projection pin: `param.assoc = ty` in the innermost scope.
+    pub fn pin_projection(&mut self, param: &str, assoc: &str, ty: Ty) {
+        if let Some(layer) = self.projection_pins.last_mut() {
+            layer.insert((param.to_string(), assoc.to_string()), ty);
+        }
+    }
+
+    /// Look up a projection pin from innermost scope outward.
+    pub fn resolve_projection(&self, param: &str, assoc: &str) -> Option<&Ty> {
+        for layer in self.projection_pins.iter().rev() {
+            if let Some(ty) = layer.get(&(param.to_string(), assoc.to_string())) {
+                return Some(ty);
+            }
+        }
+        None
+    }
+
+    /// Flatten all active pin layers (outer-to-inner so inner overrides outer).
+    pub fn get_active_pins(&self) -> std::collections::HashMap<(String, String), Ty> {
+        let mut result = std::collections::HashMap::new();
+        for layer in self.projection_pins.iter() {
+            result.extend(layer.iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
+        result
+    }
+
+    /// Register that generic param `param` is bounded by `iface` in the current scope.
+    pub fn register_param_iface(&mut self, param: &str, iface: &str) {
+        if let Some(layer) = self.generic_param_bounds.last_mut() {
+            layer
+                .entry(param.to_string())
+                .or_default()
+                .push(iface.to_string());
+        }
+    }
+
+    /// Returns all interface names that `param` is bounded by (innermost scope wins, all layers merged).
+    pub fn get_param_ifaces(&self, param: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        for layer in self.generic_param_bounds.iter() {
+            if let Some(ifaces) = layer.get(param) {
+                for iface in ifaces {
+                    if !result.contains(iface) {
+                        result.push(iface.clone());
+                    }
+                }
+            }
+        }
+        result
     }
 
     /// Define a symbol in the innermost scope.

@@ -26,8 +26,8 @@ pub fn resolve_type_expr(
         TypeExpr::Named {
             name,
             generics,
+            bindings,
             span,
-            ..
         } => {
             let resolved_generics: Vec<Ty> = generics
                 .iter()
@@ -45,7 +45,24 @@ pub fn resolve_type_expr(
                 Some(Symbol::Type { id, .. }) => {
                     Ty::Named(id.clone(), name.to_string(), resolved_generics)
                 }
-                Some(Symbol::Iface { id, .. }) => Ty::Interface(id.clone(), name.to_string()),
+                Some(Symbol::Iface {
+                    id, assoc_types, ..
+                }) => {
+                    // Check that all required associated types are pinned via bindings.
+                    let unbound: Vec<&str> = assoc_types
+                        .iter()
+                        .filter(|at| !bindings.iter().any(|(b_name, _)| b_name == *at))
+                        .map(|s| s.as_str())
+                        .collect();
+                    if !unbound.is_empty() {
+                        errors.push(AnalysisError::UnpinnedAssocTypes {
+                            iface: name.clone(),
+                            unbound: unbound.join(", "),
+                            span: *span,
+                        });
+                    }
+                    Ty::Interface(id.clone(), name.to_string())
+                }
                 _ => {
                     errors.push(AnalysisError::UndefinedName {
                         name: name.to_string(),
@@ -79,15 +96,28 @@ pub fn resolve_type_expr(
             Ty::Ref(Box::new(resolve_type_expr(inner, env, errors)), *mutable)
         }
         TypeExpr::Projection { base, assoc, .. } => {
-            // `Base.Assoc` — treated as an opaque generic param for now.
-            // Full projection resolution requires type-level evaluation.
-            Ty::GenericParam(format!("{base}.{assoc}"))
+            // If a pin is in scope (e.g. T: Iterator[Item=int] on an enclosing function),
+            // return the pinned type. Otherwise emit Ty::Projection for deferred checking.
+            if let Some(pinned) = env.resolve_projection(base, assoc) {
+                pinned.clone()
+            } else {
+                Ty::Projection {
+                    base: base.clone(),
+                    assoc: assoc.clone(),
+                }
+            }
         }
         TypeExpr::GenSplice(_, _) => {
             // A <<expr>> in type position is intentional inside gen blocks;
             // the splice is evaluated at processor run time, not statically.
             Ty::Unknown
         }
+        TypeExpr::Compound(parts, _) => Ty::Compound(
+            parts
+                .iter()
+                .map(|p| resolve_type_expr(p, env, errors))
+                .collect(),
+        ),
     }
 }
 

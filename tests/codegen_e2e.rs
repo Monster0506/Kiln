@@ -1,5 +1,5 @@
 use kiln_compiler::{
-    analyzer::analyze,
+    analyzer::{analyze, TypeRegistry},
     codegen::{compile::compile, context::CodegenContext, emit::emit_object},
     lexer::Lexer,
     parser::Parser,
@@ -11,7 +11,8 @@ fn compile_source(src: &str) -> Vec<u8> {
     let ast = Parser::new(tokens).parse_file().expect("parse failed");
     let typed = analyze(&ast).expect("analyze failed");
     let mut cgx = CodegenContext::new("e2e_test");
-    compile(&typed, &mut cgx, false, 3).expect("compile failed");
+    let registry = TypeRegistry::new();
+    compile(&typed, &mut cgx, false, 3, &registry).expect("compile failed");
     emit_object(cgx).expect("emit failed")
 }
 

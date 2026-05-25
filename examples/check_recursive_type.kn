@@ -1,0 +1,43 @@
+# check_recursive_type.kn -- recursive struct types without @indirect (E030)
+#
+# A struct field whose type directly names the enclosing struct would produce
+# a type of infinite size.  The field must carry @indirect to heap-allocate it.
+
+# ERROR: Node { next: Node } is infinite size -- @indirect required
+struct BadNode {
+    value: int
+    next: BadNode
+}
+
+# ERROR: both fields self-referential, neither has @indirect
+struct BadTree {
+    value: int
+    left: BadTree
+    right: BadTree
+}
+
+# OK: @indirect on the self-referential field -- finite size, heap indirection
+struct GoodNode {
+    value: int
+    @indirect next: Option[GoodNode]
+}
+
+# OK: mutual recursion through a non-direct type (Option wraps it) -- fine with @indirect
+struct GoodTree {
+    value: int
+    @indirect left: Option[GoodTree]
+    @indirect right: Option[GoodTree]
+}
+
+# OK: field references a different struct entirely
+struct Leaf {
+    value: int
+}
+
+struct Branch {
+    left: Leaf
+    right: Leaf
+}
+
+def main() -> void {
+}

@@ -196,6 +196,58 @@ def main() -> void {
 }
 
 #[test]
+fn match_block_arms_execute_statements() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    x: int = 2
+    mut result: int = 0
+    match x {
+        1 => { result = 1 }
+        2 => {
+            result = 20
+            result = result + 5
+        }
+        3 => { result = 3 }
+    }
+    println(result)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "25", "got: {out}");
+}
+
+#[test]
+fn negative_index_accesses_from_end() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    v: Vec[int] = [10, 20, 30]
+    println(v[-1])
+    println(v[-2])
+    println(v[-3])
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["30", "20", "10"], "got: {out}");
+}
+
+#[test]
+fn negative_index_assignment_writes_from_end() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    mut v: Vec[int] = [1, 2, 3]
+    v[-1] = 99
+    println(v[2])
+}
+"#,
+    );
+    assert_eq!(out.trim(), "99", "got: {out}");
+}
+
+#[test]
 fn empty_array_literal_has_zero_length() {
     let out = kiln_run(
         r#"
@@ -512,4 +564,66 @@ def main() -> void {
 "#,
     );
     assert_eq!(out.trim(), "100", "got: {out}");
+}
+
+// ---- Forward function references -----------------------------------------------
+
+#[test]
+fn forward_reference_simple_call() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    println(add(3, 4))
+}
+
+def add(x: int, y: int) -> int {
+    return x + y
+}
+"#,
+    );
+    assert_eq!(out.trim(), "7", "got: {out}");
+}
+
+#[test]
+fn forward_reference_multiple_functions() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    println(add(10, 3))
+    println(sub(10, 3))
+}
+
+def add(x: int, y: int) -> int {
+    return x + y
+}
+
+def sub(x: int, y: int) -> int {
+    return x - y
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["13", "7"], "got: {out}");
+}
+
+#[test]
+fn forward_reference_mutual_recursion() {
+    let out = kiln_run(
+        r#"
+def main() -> void {
+    println(is_even(4))
+}
+
+def is_even(n: int) -> bool {
+    if n == 0 { return true }
+    return is_odd(n - 1)
+}
+
+def is_odd(n: int) -> bool {
+    if n == 0 { return false }
+    return is_even(n - 1)
+}
+"#,
+    );
+    assert_eq!(out.trim(), "true", "got: {out}");
 }

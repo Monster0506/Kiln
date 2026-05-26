@@ -383,6 +383,14 @@ fn lower_typed_expr_inner(
                             .map(|off| (n.clone(), off, info.is_indirect(n)))
                     })
                     .collect();
+                // Collect @indirect fields not present in the literal so we can
+                // allocate zero cells for them after writing the provided fields.
+                let uninit_indirect: Vec<(u32,)> = info
+                    .fields()
+                    .iter()
+                    .filter(|(n, _)| info.is_indirect(n) && !fields.iter().any(|(fn_, _)| fn_ == n))
+                    .map(|(_, fi)| (fi.offset,))
+                    .collect();
                 for (i, (_, expr)) in fields.iter().enumerate() {
                     let val = lower_typed_expr(expr, builder, vars, ctx);
                     let coerced = coerce_to_i64(val, builder);
@@ -396,6 +404,13 @@ fn lower_typed_expr_inner(
                             store_field(coerced, ptr, *offset, builder);
                         }
                     }
+                }
+                // Zero-initialize cells for @indirect fields omitted from the literal.
+                for (offset,) in uninit_indirect {
+                    let cell = emit_malloc(8, ctx.module, builder);
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    builder.ins().store(MemFlags::new(), zero, cell, 0);
+                    store_field(cell, ptr, offset, builder);
                 }
                 ptr
             } else if let Some((enum_info, variant_layout)) = ctx.layouts.get_enum_variant(ty_name)
@@ -526,7 +541,11 @@ fn lower_typed_expr_inner(
 
         TypedExprKind::Field { object, field } => {
             let ptr = lower_typed_expr(object, builder, vars, ctx);
-            let type_name = type_name_of(&object.ty);
+            let effective_ty = match &object.ty {
+                Ty::Ref(inner, _) => (**inner).clone(),
+                other => other.clone(),
+            };
+            let type_name = type_name_of(&effective_ty);
             let offset = if let Some(tn) = &type_name {
                 ctx.layouts
                     .field_offset_for_type(tn, field)
@@ -608,7 +627,12 @@ fn lower_typed_expr_inner(
             }
         }
 
-        TypedExprKind::Unwrap(inner) => lower_typed_expr(inner, builder, vars, ctx),
+        TypedExprKind::Unwrap(inner) => {
+            let ptr = lower_typed_expr(inner, builder, vars, ctx);
+            // The payload of a Try/Option value lives at payload_offset (8).
+            // See option_layout_none_discriminant_and_some_value_offset test.
+            builder.ins().load(types::I64, MemFlags::new(), ptr, 8)
+        }
 
         TypedExprKind::As {
             expr,
@@ -755,13 +779,20 @@ fn lower_typed_expr_inner(
 
         TypedExprKind::Ref { expr, .. } => {
             let val = lower_typed_expr(expr, builder, vars, ctx);
-            let slot = builder.create_sized_stack_slot(StackSlotData::new(
-                StackSlotKind::ExplicitSlot,
-                8,
-                0,
-            ));
-            builder.ins().stack_store(val, slot, 0);
-            builder.ins().stack_addr(types::I64, slot, 0)
+            // Struct types are already heap pointers; returning the pointer directly
+            // IS taking a reference -- no extra indirection needed.
+            match &expr.ty {
+                Ty::Named(_, _, _) => val,
+                _ => {
+                    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        8,
+                        0,
+                    ));
+                    builder.ins().stack_store(val, slot, 0);
+                    builder.ins().stack_addr(types::I64, slot, 0)
+                }
+            }
         }
 
         TypedExprKind::Gen { body } => {
@@ -795,6 +826,15 @@ fn lower_typed_expr_inner(
 
         TypedExprKind::EnumVariant { discriminant, .. } => {
             builder.ins().iconst(types::I64, *discriminant)
+        }
+
+        TypedExprKind::Block(stmts) => {
+            use crate::codegen::stmts::lower_typed_stmt_pub;
+            let mut loops = Vec::new();
+            for stmt in stmts {
+                lower_typed_stmt_pub(stmt, builder, vars, &mut loops, ctx);
+            }
+            builder.ins().iconst(types::I64, 0)
         }
     }
 }

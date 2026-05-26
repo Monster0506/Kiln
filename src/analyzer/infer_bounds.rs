@@ -369,6 +369,11 @@ fn collect_expr(
             TypedClosureBody::Block(b) => collect_block(b, params, registry, out),
         },
 
+        TypedExprKind::Block(stmts) => {
+            for s in stmts {
+                collect_stmt(s, params, registry, out);
+            }
+        }
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)

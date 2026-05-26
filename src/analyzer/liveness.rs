@@ -197,6 +197,7 @@ fn expr_uses(expr: &TypedExpr, uses: &mut HashSet<String>, defs: &HashSet<String
         }
         TypedExprKind::Closure { .. } | TypedExprKind::Gen { .. } => {}
         TypedExprKind::GenSplice(e) => expr_uses(e, uses, defs),
+        TypedExprKind::Block(_) => {}
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)

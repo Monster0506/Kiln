@@ -293,11 +293,15 @@ pub fn infer_typed_expr(
             span: fspan,
         } => {
             let to = infer_typed_expr(object, env, registry, errors);
-            let field_ty = resolve_field_ty(&to.ty, field, registry);
-            let is_annot_args = matches!(&to.ty, Ty::Named(_, n, _) if n == "AnnotArgs");
-            if field_ty == Ty::Unknown && to.ty != Ty::Unknown && !is_annot_args {
+            let effective_ty = match &to.ty {
+                Ty::Ref(inner, _) => (**inner).clone(),
+                other => other.clone(),
+            };
+            let field_ty = resolve_field_ty(&effective_ty, field, registry);
+            let is_annot_args = matches!(&effective_ty, Ty::Named(_, n, _) if n == "AnnotArgs");
+            if field_ty == Ty::Unknown && effective_ty != Ty::Unknown && !is_annot_args {
                 errors.push(AnalysisError::NoField {
-                    ty: to.ty.to_string(),
+                    ty: effective_ty.to_string(),
                     field: field.clone(),
                     span: *fspan,
                 });
@@ -642,12 +646,38 @@ pub fn infer_typed_expr(
             let ty = te.ty.clone();
             mk(TypedExprKind::GenSplice(Box::new(te)), ty, span)
         }
+
+        Expr::Block(stmts, _) => {
+            let typed_stmts = stmts
+                .iter()
+                .map(|s| lower_stmt_shallow(s, env, registry, errors))
+                .collect();
+            mk(TypedExprKind::Block(typed_stmts), Ty::Void, span)
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
 // Call resolution helpers
 // ---------------------------------------------------------------------------
+
+/// Resolve a single type-argument expression (in expression position) to a Ty.
+/// Used for `Type[TypeArg].method()` calls where the type arg is an identifier.
+fn resolve_expr_as_ty(expr: &Expr, env: &Env) -> Option<Ty> {
+    if let Expr::Ident(name, _) = expr {
+        return Some(match name.as_str() {
+            "int" => Ty::Int,
+            "float" => Ty::Float,
+            "bool" => Ty::Bool,
+            "str" => Ty::Str,
+            _ => match env.lookup(name) {
+                Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), name.clone(), vec![]),
+                _ => return None,
+            },
+        });
+    }
+    None
+}
 
 fn infer_call_field(
     object: &Expr,
@@ -658,6 +688,42 @@ fn infer_call_field(
     errors: &mut Vec<AnalysisError>,
     span: Span,
 ) -> TypedExpr {
+    // Type[TypeArg].method() -- type-qualified static call with explicit type argument.
+    // The parser sees this as Index(Ident(type_name), Ident(type_arg)).method(), so we
+    // intercept it here before falling through to the instance-call path.
+    if let Expr::Index {
+        object: type_obj,
+        index: type_arg_expr,
+        ..
+    } = object
+    {
+        if let Expr::Ident(type_name, _) = type_obj.as_ref() {
+            let is_type = !matches!(
+                env.lookup(type_name),
+                Some(Symbol::Var { .. }) | Some(Symbol::Fn { .. })
+            );
+            if is_type {
+                if let Some(type_arg_ty) = resolve_expr_as_ty(type_arg_expr, env) {
+                    let method_fn = format!("{}_{}", type_name, field);
+                    let raw_ret = registry
+                        .find_method(type_name, field)
+                        .map(|m| m.ret.clone())
+                        .unwrap_or(Ty::Unknown);
+                    // Substitute all GenericParams in the return type with the concrete arg.
+                    let concrete_ret = substitute_t(&raw_ret, &type_arg_ty);
+                    return mk(
+                        TypedExprKind::StaticCall {
+                            method_fn,
+                            args: typed_args,
+                        },
+                        concrete_ret,
+                        span,
+                    );
+                }
+            }
+        }
+    }
+
     // Determine whether object is a type-namespace identifier.
     if let Expr::Ident(type_name, _) = object {
         let is_static = match env.lookup(type_name) {
@@ -760,6 +826,26 @@ fn infer_call_field(
             .find_method(tname, field)
             .map(|m| m.ret.clone())
             .unwrap_or(Ty::Unknown);
+        // When the type name is a generic parameter (e.g. "T") and the registry has
+        // no entry for it, fall back to the interface-bound lookup so the return type
+        // is concrete (e.g. Str for to_str) rather than Unknown.
+        let r = if r == Ty::Unknown {
+            if let Ty::GenericParam(param_name) = &to.ty {
+                let ifaces = env.get_param_ifaces(param_name);
+                let mut found = Ty::Unknown;
+                for iface_name in &ifaces {
+                    if let Some(method) = registry.get_interface_method(iface_name, field) {
+                        found = project_return_ty(&method.ret, param_name, iface_name, registry);
+                        break;
+                    }
+                }
+                found
+            } else {
+                r
+            }
+        } else {
+            r
+        };
         (qfn, r)
     } else if let Ty::Interface(_, iface_name) = &to.ty {
         // Interface dispatch: method_fn is the unqualified name; codegen emits
@@ -1559,6 +1645,15 @@ pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
         // verified separately by check.rs where the registry is available.
         (Ty::Interface(_, _), _) | (Ty::Compound(_), _) => true,
         (_, Ty::Interface(_, _)) | (_, Ty::Compound(_)) => true,
+
+        // References are transparent: &T is compatible with &U iff T compatible with U,
+        // and T is assignable to &T (and vice versa) for struct-like heap types.
+        (Ty::Ref(ei, _), Ty::Ref(fi, _)) => types_compatible(ei, fi),
+        (Ty::Ref(inner, _), other) | (other, Ty::Ref(inner, _))
+            if !matches!(other, Ty::Ref(_, _)) =>
+        {
+            types_compatible(inner, other)
+        }
 
         (Ty::Named(_, en, ea), Ty::Named(_, fn_, fa)) if en == fn_ => ea
             .iter()

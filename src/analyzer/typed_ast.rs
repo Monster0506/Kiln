@@ -308,6 +308,7 @@ pub enum TypedExprKind {
         body: TypedBlock,
     },
     GenSplice(Box<TypedExpr>),
+    Block(Vec<TypedStmt>),
 }
 
 #[derive(Debug, Clone)]

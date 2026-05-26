@@ -191,7 +191,9 @@ pub fn monomorphize(file: TypedFile, registry: &TypeRegistry) -> TypedFile {
                 continue;
             }
             impl_done.insert(fn_name.clone());
-            if let Some((hook, for_type_ty)) = generic_impl_hooks.get(&(base, method_suffix)) {
+            if let Some((hook, for_type_ty)) =
+                generic_impl_hooks.get(&(base.clone(), method_suffix.clone()))
+            {
                 let inner_subst = derive_impl_subst(for_type_ty, &concrete_ty);
                 let fn_def = specialize_hook_as_fn(
                     &fn_name,
@@ -252,12 +254,16 @@ fn specialize_hook_as_fn(
     generic_impl_hooks: &HashMap<(String, String), (TypedHookDef, Ty)>,
     impl_reqs: &mut Vec<ImplHookReq>,
 ) -> TypedFnDef {
-    let mut params = vec![TypedParam {
-        name: "__self".to_string(),
-        ty: concrete_self_ty.clone(),
-        mutable: false,
-        span: hook.span,
-    }];
+    let mut params = if hook.is_static {
+        vec![]
+    } else {
+        vec![TypedParam {
+            name: "__self".to_string(),
+            ty: concrete_self_ty.clone(),
+            mutable: false,
+            span: hook.span,
+        }]
+    };
     for p in &hook.params {
         params.push(TypedParam {
             name: p.name.clone(),
@@ -299,6 +305,10 @@ fn is_generic_fn(f: &TypedFnDef) -> bool {
     f.params.iter().any(|p| contains_type_param(&p.ty))
 }
 
+pub fn contains_type_param_pub(ty: &Ty) -> bool {
+    contains_type_param(ty)
+}
+
 fn contains_type_param(ty: &Ty) -> bool {
     match ty {
         Ty::GenericParam(_) => true,
@@ -317,6 +327,7 @@ fn contains_type_param(ty: &Ty) -> bool {
 pub fn type_mono_name(ty: &Ty) -> String {
     match ty {
         Ty::Void => "void".into(),
+        Ty::Ref(inner, _) => type_mono_name(inner),
         Ty::Named(_, name, args) if args.is_empty() => name.clone(),
         Ty::Named(_, name, args) => {
             let arg_names: Vec<String> = args.iter().map(type_mono_name).collect();
@@ -564,6 +575,11 @@ fn seed_expr(
                 if let TypedStringSegment::Interp(e) = seg {
                     seed_expr(e, generic_fns, queue);
                 }
+            }
+        }
+        TypedExprKind::Block(stmts) => {
+            for s in stmts {
+                seed_stmt(s, generic_fns, queue);
             }
         }
         TypedExprKind::Int(_)
@@ -917,6 +933,25 @@ fn subst_expr(
             param_tys,
         } => {
             let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
+            // Emit to_str impl_reqs for println/print so concrete generic types
+            // (e.g. ListNode[int]) get their to_str hook compiled.
+            if let TypedExprKind::Ident(call_name) = &callee.kind {
+                if (call_name == "println" || call_name == "print") && new_args.len() == 1 {
+                    let arg_ty = &new_args[0].ty;
+                    let inner_ty = match arg_ty {
+                        Ty::Ref(inner, _) => inner.as_ref(),
+                        other => other,
+                    };
+                    if let Ty::Named(_, base, type_args) = inner_ty {
+                        if !type_args.is_empty()
+                            && generic_impl_hooks
+                                .contains_key(&(base.clone(), "to_str".to_string()))
+                        {
+                            impl_reqs.push((base.clone(), "to_str".to_string(), inner_ty.clone()));
+                        }
+                    }
+                }
+            }
             if !generic_params.is_empty() {
                 if let TypedExprKind::Ident(name) = &callee.kind {
                     if let Some(gf) = generic_fns.get(name.as_str()) {
@@ -964,18 +999,68 @@ fn subst_expr(
         } => {
             let new_obj = se!(object);
             let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
-            let new_method_fn = rewrite_method_fn(method_fn, subst, generic_impl_hooks, impl_reqs);
+            let rewritten = rewrite_method_fn(method_fn, subst, generic_impl_hooks, impl_reqs);
+            // When the receiver is a concrete parameterized type (e.g. ListNode[int])
+            // and the method targets a generic impl hook (e.g. ListNode_to_str),
+            // rewrite to the monomorphized name (ListNode_int_to_str) and emit an impl_req.
+            let final_method_fn = {
+                let inner_ty = match &new_obj.ty {
+                    Ty::Ref(inner, _) => inner.as_ref(),
+                    other => other,
+                };
+                if let Ty::Named(_, base, type_args) = inner_ty {
+                    if !type_args.is_empty() && !contains_type_param(inner_ty) {
+                        let prefix = format!("{}_", base);
+                        if let Some(suffix) = rewritten.strip_prefix(prefix.as_str()) {
+                            if generic_impl_hooks.contains_key(&(base.clone(), suffix.to_string()))
+                            {
+                                impl_reqs.push((
+                                    base.clone(),
+                                    suffix.to_string(),
+                                    inner_ty.clone(),
+                                ));
+                                format!("{}_{}", type_mono_name(inner_ty), suffix)
+                            } else {
+                                rewritten
+                            }
+                        } else {
+                            rewritten
+                        }
+                    } else {
+                        rewritten
+                    }
+                } else {
+                    rewritten
+                }
+            };
             TypedExprKind::MethodCall {
                 object: Box::new(new_obj),
-                method_fn: new_method_fn,
+                method_fn: final_method_fn,
                 args: new_args,
             }
         }
 
         TypedExprKind::StaticCall { method_fn, args } => {
             let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
+            let rewritten = rewrite_method_fn(method_fn, subst, generic_impl_hooks, impl_reqs);
+            // If no param substitution happened but the expression's return type is
+            // fully concrete, check whether the call targets a generic impl hook and
+            // emit the required specialization (e.g. ListNode[int].new()).
+            let final_fn = if rewritten == *method_fn && !contains_type_param(&ty) {
+                let mut specialized = None;
+                for ((base, suffix), _) in generic_impl_hooks.iter() {
+                    if *method_fn == format!("{}_{}", base, suffix) {
+                        impl_reqs.push((base.clone(), suffix.clone(), ty.clone()));
+                        specialized = Some(format!("{}_{}", type_mono_name(&ty), suffix));
+                        break;
+                    }
+                }
+                specialized.unwrap_or(rewritten)
+            } else {
+                rewritten
+            };
             TypedExprKind::StaticCall {
-                method_fn: rewrite_method_fn(method_fn, subst, generic_impl_hooks, impl_reqs),
+                method_fn: final_fn,
                 args: new_args,
             }
         }
@@ -1060,6 +1145,12 @@ fn subst_expr(
         TypedExprKind::Array(elems) => TypedExprKind::Array(elems.iter().map(|e| se!(e)).collect()),
         TypedExprKind::Gen { body } => TypedExprKind::Gen { body: sb!(body) },
         TypedExprKind::GenSplice(inner) => TypedExprKind::GenSplice(Box::new(se!(inner))),
+        TypedExprKind::Block(stmts) => TypedExprKind::Block(
+            stmts
+                .iter()
+                .map(|s| subst_stmt(s, subst, generic_fns, generic_impl_hooks, impl_reqs))
+                .collect(),
+        ),
         TypedExprKind::Str(segs) => {
             let new_segs: Vec<TypedStringSegment> = segs
                 .iter()

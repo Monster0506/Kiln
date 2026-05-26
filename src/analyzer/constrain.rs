@@ -347,6 +347,11 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
         }
         TypedExprKind::Gen { body } => collect_block(body, out),
         TypedExprKind::GenSplice(inner) => collect_expr(inner, out),
+        TypedExprKind::Block(stmts) => {
+            for s in stmts {
+                collect_stmt(s, out);
+            }
+        }
 
         // Leaves
         TypedExprKind::Int(_)

@@ -258,6 +258,11 @@ fn collect_callees_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
                 }
             }
         }
+        TypedExprKind::Block(stmts) => {
+            for s in stmts {
+                collect_callees_stmt(s, out);
+            }
+        }
         // Leaf nodes - no sub-expressions
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)

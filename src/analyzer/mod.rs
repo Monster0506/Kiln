@@ -1962,6 +1962,7 @@ fn analyze_inner(source: &SourceFile) -> Result<(TypedFile, ty::TypeRegistry), V
                             },
                         );
                     }
+                    register_projection_pins(&impl_block.generic_params, &mut env, &mut errors);
                 }
 
                 // Compute self_ty before pushing the Self scope so that `for_type`

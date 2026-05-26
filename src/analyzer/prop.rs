@@ -19,6 +19,22 @@ fn collect_assigned_in_block(block: &TypedBlock, names: &mut HashSet<String>) {
     }
 }
 
+fn collect_assigned_in_expr(expr: &TypedExpr, names: &mut HashSet<String>) {
+    match &expr.kind {
+        TypedExprKind::Block(stmts) => {
+            for stmt in stmts {
+                collect_assigned_in_stmt(stmt, names);
+            }
+        }
+        TypedExprKind::Match { arms, .. } => {
+            for arm in arms {
+                collect_assigned_in_expr(&arm.body, names);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn collect_assigned_in_stmt(stmt: &TypedStmt, names: &mut HashSet<String>) {
     match stmt {
         TypedStmt::Assign { target, .. } | TypedStmt::CompoundAssign { target, .. } => {
@@ -56,6 +72,9 @@ fn collect_assigned_in_stmt(stmt: &TypedStmt, names: &mut HashSet<String>) {
             if let Some(f) = finally {
                 collect_assigned_in_block(f, names);
             }
+        }
+        TypedStmt::Expr(e) => {
+            collect_assigned_in_expr(e, names);
         }
         _ => {}
     }
@@ -263,7 +282,18 @@ fn propagate_stmt(
             }
         }
         TypedStmt::FnDef(f) => TypedStmt::FnDef(propagate_fn(f, &HashMap::new())),
-        TypedStmt::Expr(e) => TypedStmt::Expr(fold_expr(propagate_expr(e, constants))),
+        TypedStmt::Expr(e) => {
+            let result = fold_expr(propagate_expr(e, constants));
+            // Evict variables assigned inside any Block or Match arms within the
+            // expression, since those can write to outer-scope variables and
+            // would otherwise leave stale constant entries in the propagation map.
+            let mut assigned = HashSet::new();
+            collect_assigned_in_expr(&result, &mut assigned);
+            for name in &assigned {
+                constants.remove(name);
+            }
+            TypedStmt::Expr(result)
+        }
         other => other,
     }
 }

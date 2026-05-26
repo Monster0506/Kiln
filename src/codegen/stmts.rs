@@ -5,7 +5,7 @@ use crate::codegen::exprs::{
     call_fn_by_name, coerce_to, coerce_to_i64, lower_binop, lower_typed_expr_loops, LowerCtx,
     VarEnv,
 };
-use crate::codegen::memory::store_field;
+use crate::codegen::memory::{load_field, store_field};
 use crate::codegen::mono::type_mono_name;
 use crate::codegen::names::binop_fn_suffix;
 use crate::codegen::types::clif_type;
@@ -98,9 +98,29 @@ fn lower_typed_stmt(
                 }
                 TypedExprKind::Field { object, field } => {
                     let ptr = lower_typed_expr_loops(object, builder, vars, loops, ctx);
-                    if let Some(off) = ctx.layouts.find_field_offset(field) {
+                    let obj_ty = match &object.ty {
+                        Ty::Ref(inner, _) => (**inner).clone(),
+                        other => other.clone(),
+                    };
+                    let type_name = type_name_of(&obj_ty);
+                    let offset = if let Some(tn) = &type_name {
+                        ctx.layouts
+                            .field_offset_for_type(tn, field)
+                            .or_else(|| ctx.layouts.find_field_offset(field))
+                    } else {
+                        ctx.layouts.find_field_offset(field)
+                    };
+                    if let Some(off) = offset {
                         let coerced = coerce_to_i64(val, builder);
-                        store_field(coerced, ptr, off, builder);
+                        let is_indirect = type_name
+                            .as_deref()
+                            .is_some_and(|tn| ctx.layouts.is_indirect_field(tn, field));
+                        if is_indirect {
+                            let cell_ptr = load_field(ptr, off, builder);
+                            builder.ins().store(MemFlags::new(), coerced, cell_ptr, 0);
+                        } else {
+                            store_field(coerced, ptr, off, builder);
+                        }
                     }
                 }
                 TypedExprKind::Index { object, index } => {
@@ -156,8 +176,28 @@ fn lower_typed_stmt(
                 }
                 TypedExprKind::Field { object, field } => {
                     let ptr = lower_typed_expr_loops(object, builder, vars, loops, ctx);
-                    if let Some(off) = ctx.layouts.find_field_offset(field) {
-                        let cur = crate::codegen::memory::load_field(ptr, off, builder);
+                    let obj_ty = match &object.ty {
+                        Ty::Ref(inner, _) => (**inner).clone(),
+                        other => other.clone(),
+                    };
+                    let field_type_name = type_name_of(&obj_ty);
+                    let offset = if let Some(tn) = &field_type_name {
+                        ctx.layouts
+                            .field_offset_for_type(tn, field)
+                            .or_else(|| ctx.layouts.find_field_offset(field))
+                    } else {
+                        ctx.layouts.find_field_offset(field)
+                    };
+                    if let Some(off) = offset {
+                        let is_indirect = field_type_name
+                            .as_deref()
+                            .is_some_and(|tn| ctx.layouts.is_indirect_field(tn, field));
+                        let cur = if is_indirect {
+                            let cell_ptr = load_field(ptr, off, builder);
+                            builder.ins().load(types::I64, MemFlags::new(), cell_ptr, 0)
+                        } else {
+                            load_field(ptr, off, builder)
+                        };
                         let result = if !use_native {
                             if let Some(type_name) = type_name_of(&target.ty) {
                                 if let Some(suffix) = binop_fn_suffix(op) {
@@ -173,7 +213,12 @@ fn lower_typed_stmt(
                             lower_binop(op, cur, rhs_val, builder, ctx.module)
                         };
                         let coerced = coerce_to_i64(result, builder);
-                        store_field(coerced, ptr, off, builder);
+                        if is_indirect {
+                            let cell_ptr = load_field(ptr, off, builder);
+                            builder.ins().store(MemFlags::new(), coerced, cell_ptr, 0);
+                        } else {
+                            store_field(coerced, ptr, off, builder);
+                        }
                     }
                 }
                 _ => {

@@ -493,6 +493,8 @@ pub enum Expr {
     },
     /// `<<expr>>` splice inside a gen block
     GenSplice(Box<Expr>, Span),
+    /// Block of statements used as a match arm body; always evaluates to void.
+    Block(Vec<Stmt>, Span),
 }
 
 impl Expr {
@@ -520,6 +522,7 @@ impl Expr {
             Expr::Ref { span, .. } => *span,
             Expr::Gen { span, .. } => *span,
             Expr::GenSplice(_, s) => *s,
+            Expr::Block(_, s) => *s,
         }
     }
 }

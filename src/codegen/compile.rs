@@ -461,6 +461,57 @@ pub fn compile(
             }
 
             TypedItem::ImplBlock(impl_block) => {
+                let is_generic =
+                    crate::codegen::mono::contains_type_param_pub(&impl_block.for_type_ty);
+                // Generic impls: hooks are emitted only as mono specializations (skip them).
+                // Methods whose params and return type are type-param-free can still be
+                // compiled directly (e.g. Vec_length on impl VecMethods for Vec[T]).
+                if is_generic {
+                    let type_name = &impl_block.for_type;
+                    let type_id = layouts.get_type_id(type_name).unwrap_or(0);
+                    for method in &impl_block.methods {
+                        let sig_has_param = method
+                            .params
+                            .iter()
+                            .any(|p| crate::codegen::mono::contains_type_param_pub(&p.ty))
+                            || crate::codegen::mono::contains_type_param_pub(&method.return_type);
+                        if sig_has_param {
+                            continue;
+                        }
+                        let qualified = format!("{}_{}", type_name, method.name);
+                        if !precomputed_reachable(&qualified)
+                            && !precomputed_reachable(&method.name)
+                        {
+                            continue;
+                        }
+                        let id = register_fn(
+                            &qualified,
+                            true,
+                            &method.params,
+                            &method.return_type,
+                            &mut cgx.module,
+                        );
+                        func_ids.insert(method.name.clone(), id);
+                        func_ids.insert(qualified.clone(), id);
+                        layouts.register_vtable_entry(&method.name, type_id, id);
+                        let params = method
+                            .params
+                            .iter()
+                            .map(|p| (p.name.clone(), p.ty.clone()))
+                            .collect();
+                        fn_jobs.push(FnJob {
+                            name: qualified,
+                            func_id: id,
+                            params,
+                            return_type: method.return_type.clone(),
+                            body: method.body.clone(),
+                            self_type: Some(type_name.clone()),
+                            is_entry: false,
+                            is_hook: false,
+                        });
+                    }
+                    continue;
+                }
                 let type_name = &impl_block.for_type;
                 let type_id = layouts.get_type_id(type_name).unwrap_or(0);
 

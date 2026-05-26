@@ -362,6 +362,11 @@ fn collect_reads_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
                 }
             }
         }
+        TypedExprKind::Block(stmts) => {
+            for s in stmts {
+                collect_reads_stmt(s, out);
+            }
+        }
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)
@@ -433,6 +438,7 @@ pub fn expr_has_side_effects_ctx(expr: &TypedExpr, impure: &HashSet<String>) -> 
                 TypedStringSegment::Text(_) => false,
             })
         }
+        TypedExprKind::Block(_) => true,
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)
@@ -474,6 +480,7 @@ pub fn expr_has_side_effects(expr: &TypedExpr) -> bool {
         TypedExprKind::Ref { expr, .. } => expr_has_side_effects(expr),
         TypedExprKind::Array(exprs) => exprs.iter().any(expr_has_side_effects),
         TypedExprKind::Gen { .. } | TypedExprKind::GenSplice(_) => false,
+        TypedExprKind::Block(_) => true,
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)
@@ -1216,6 +1223,7 @@ fn count_reads_in_expr(expr: &TypedExpr, name: &str) -> usize {
             }
         }
         TypedExprKind::Gen { body } => count_reads_in_stmts(&body.stmts, name),
+        TypedExprKind::Block(stmts) => count_reads_in_stmts(stmts, name),
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)

@@ -227,6 +227,7 @@ fn expr_touches_impure(
             }
         }
         TypedExprKind::Gen { body } => stmts_touch_impure(&body.stmts, impure),
+        TypedExprKind::Block(stmts) => stmts_touch_impure(stmts, impure),
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)

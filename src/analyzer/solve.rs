@@ -20,7 +20,10 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
         Ty::Compound(parts) => parts.iter().any(|p| satisfies(p, iface, registry)),
 
         // Structural types with no registered conformance.
-        Ty::Void | Ty::Tuple(_) | Ty::Callable(_, _) | Ty::Ref(_, _) | Ty::Union(_) => false,
+        Ty::Void | Ty::Tuple(_) | Ty::Callable(_, _) | Ty::Union(_) => false,
+
+        // References are transparent: &T satisfies whatever T satisfies.
+        Ty::Ref(inner, _) => satisfies(inner, iface, registry),
 
         // Named types (including generic containers like Vec, Option, Map).
         Ty::Named(_, name, args) => {

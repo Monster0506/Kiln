@@ -257,11 +257,13 @@ int64_t Vec_len(int64_t vec_ptr) {
 
 int64_t Vec_get(int64_t vec_ptr, int64_t index) {
     KilnVec* v = (KilnVec*)vec_ptr;
+    if (index < 0) index += v->len;
     return v->data[index];
 }
 
 void Vec_set(int64_t vec_ptr, int64_t index, int64_t item) {
     KilnVec* v = (KilnVec*)vec_ptr;
+    if (index < 0) index += v->len;
     v->data[index] = item;
 }
 

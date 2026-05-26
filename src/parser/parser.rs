@@ -2019,7 +2019,13 @@ impl Parser {
                 None
             };
             self.expect(TokenKind::FatArrow)?;
-            let body = self.parse_expr(0)?;
+            let body = if self.peek() == &TokenKind::LBrace {
+                let block = self.parse_block()?;
+                let span = block.span;
+                Expr::Block(block.stmts, span)
+            } else {
+                self.parse_expr(0)?
+            };
             let span = pattern.span();
             arms.push(MatchArm {
                 pattern,

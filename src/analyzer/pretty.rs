@@ -410,6 +410,10 @@ fn emit_expr_kind(kind: &TypedExprKind) -> String {
         }
         TypedExprKind::Gen { .. } => "<gen>".to_string(),
         TypedExprKind::GenSplice(inner) => format!("splice {}", emit_expr(inner)),
+        TypedExprKind::Block(stmts) => {
+            let body: String = stmts.iter().map(|s| emit_stmt(s, 1)).collect();
+            format!("{{\n{}}}", body)
+        }
     }
 }
 

@@ -101,6 +101,7 @@ pub enum TokenKind {
     Comma,
     Colon,
     Dot,
+    DotDot,
 
     // Special
     Eof,

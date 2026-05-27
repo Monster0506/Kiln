@@ -119,6 +119,7 @@ fn enum_discriminant_match(scrutinee: Expr, variants: &[EnumVariant]) -> Expr {
             pattern: Pattern::Struct {
                 variant: v.name.clone(),
                 fields: vec![],
+                has_rest: false,
                 span: s(),
             },
             guard: None,

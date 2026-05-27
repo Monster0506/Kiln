@@ -596,10 +596,11 @@ pub enum Pattern {
         name: String,
         span: Span,
     },
-    /// `Circle { radius: r }`
+    /// `Circle { radius: r, .. }`
     Struct {
         variant: String,
         fields: Vec<(String, String)>,
+        has_rest: bool,
         span: Span,
     },
     /// `(a, b, c)`

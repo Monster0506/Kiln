@@ -352,6 +352,7 @@ pub fn compile(
                 pattern: TypedPattern::Struct {
                     variant: v.clone(),
                     fields: vec![],
+                    has_rest: false,
                     span: s,
                 },
                 guard: None,

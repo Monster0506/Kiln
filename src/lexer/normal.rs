@@ -117,7 +117,13 @@ impl<'src> Lexer<'src> {
             Some(']') => Ok(Token::new(TokenKind::RBracket, start, self.pos)),
             Some(',') => Ok(Token::new(TokenKind::Comma, start, self.pos)),
             Some(':') => Ok(Token::new(TokenKind::Colon, start, self.pos)),
-            Some('.') => Ok(Token::new(TokenKind::Dot, start, self.pos)),
+            Some('.') => {
+                if self.eat('.') {
+                    Ok(Token::new(TokenKind::DotDot, start, self.pos))
+                } else {
+                    Ok(Token::new(TokenKind::Dot, start, self.pos))
+                }
+            }
             Some('+') => {
                 if self.eat('=') {
                     Ok(Token::new(TokenKind::PlusEq, start, self.pos))

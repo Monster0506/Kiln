@@ -141,6 +141,7 @@ mod tests {
                 pattern: Pattern::Struct {
                     variant: "North".into(),
                     fields: vec![],
+                    has_rest: false,
                     span: s(),
                 },
                 guard: None,
@@ -151,6 +152,7 @@ mod tests {
                 pattern: Pattern::Struct {
                     variant: "South".into(),
                     fields: vec![],
+                    has_rest: false,
                     span: s(),
                 },
                 guard: None,
@@ -172,6 +174,7 @@ mod tests {
             pattern: Pattern::Struct {
                 variant: "North".into(),
                 fields: vec![],
+                has_rest: false,
                 span: s(),
             },
             guard: None,
@@ -193,6 +196,7 @@ mod tests {
                 pattern: Pattern::Struct {
                     variant: "Some".into(),
                     fields: vec![],
+                    has_rest: false,
                     span: s(),
                 },
                 guard: None,
@@ -203,6 +207,7 @@ mod tests {
                 pattern: Pattern::Struct {
                     variant: "None".into(),
                     fields: vec![],
+                    has_rest: false,
                     span: s(),
                 },
                 guard: None,
@@ -230,6 +235,7 @@ mod tests {
                 pattern: Pattern::Struct {
                     variant: "Some".into(),
                     fields: vec![],
+                    has_rest: false,
                     span: s(),
                 },
                 guard: None,
@@ -264,6 +270,7 @@ mod tests {
             pattern: Pattern::Struct {
                 variant: "Some".into(),
                 fields: vec![],
+                has_rest: false,
                 span: s(),
             },
             guard: None,

@@ -345,6 +345,7 @@ pub enum TypedPattern {
     Struct {
         variant: String,
         fields: Vec<(String, String)>,
+        has_rest: bool,
         span: Span,
     },
     Tuple(Vec<TypedPattern>, Span),

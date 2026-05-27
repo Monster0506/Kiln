@@ -1258,6 +1258,7 @@ fn lower_pattern(
                 TypedPattern::Struct {
                     variant: name.clone(),
                     fields: vec![],
+                    has_rest: false,
                     span: *span,
                 }
             } else {
@@ -1280,10 +1281,12 @@ fn lower_pattern(
         Pattern::Struct {
             variant,
             fields,
+            has_rest,
             span,
         } => TypedPattern::Struct {
             variant: variant.clone(),
             fields: fields.clone(),
+            has_rest: *has_rest,
             span: *span,
         },
         Pattern::Tuple(pats, s) => TypedPattern::Tuple(

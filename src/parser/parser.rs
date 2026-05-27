@@ -2140,7 +2140,13 @@ impl Parser {
                 if self.peek() == &TokenKind::LBrace {
                     self.advance();
                     let mut fields = Vec::new();
+                    let mut has_rest = false;
                     while self.peek() != &TokenKind::RBrace {
+                        if self.eat(&TokenKind::DotDot) {
+                            has_rest = true;
+                            self.eat(&TokenKind::Comma);
+                            break;
+                        }
                         let fname = self.expect_ident()?;
                         self.expect(TokenKind::Colon)?;
                         let binding = self.expect_ident()?;
@@ -2152,6 +2158,7 @@ impl Parser {
                     return Ok(Pattern::Struct {
                         variant: name,
                         fields,
+                        has_rest,
                         span: Span::new(start.start, end.start),
                     });
                 }

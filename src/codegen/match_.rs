@@ -78,6 +78,7 @@ pub fn lower_typed_match(
                 if let Some(layout) = ctx.layouts.get_struct(variant) {
                     let bindings: Vec<(String, u32)> = fields
                         .iter()
+                        .filter(|(_, var_name)| var_name != "_")
                         .filter_map(|(field_name, var_name)| {
                             layout
                                 .field_offset(field_name)

@@ -125,6 +125,7 @@ fn check_typed_stmt(
                         errors.push(AnalysisError::UndefinedName {
                             name: name.clone(),
                             span: *ident_span,
+                            did_you_mean: None,
                         });
                     }
                     _ => {}
@@ -164,6 +165,7 @@ fn check_typed_stmt(
                         errors.push(AnalysisError::UndefinedName {
                             name: name.clone(),
                             span: *ident_span,
+                            did_you_mean: None,
                         });
                     }
                     _ => {}

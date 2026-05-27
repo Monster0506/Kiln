@@ -67,6 +67,7 @@ pub fn resolve_type_expr(
                     errors.push(AnalysisError::UndefinedName {
                         name: name.to_string(),
                         span: *span,
+                        did_you_mean: None,
                     });
                     Ty::Unknown
                 }

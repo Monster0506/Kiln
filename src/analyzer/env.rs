@@ -190,6 +190,42 @@ impl Env {
         self.scopes.last()?.get(name)
     }
 
+    /// Collect all visible names for did-you-mean suggestions.
+    /// Excludes `StructField` symbols (require `self.`) and names starting with `_`.
+    pub fn all_names(&self) -> Vec<&str> {
+        let mut seen = std::collections::HashSet::new();
+        let mut names = Vec::new();
+        for scope in self.scopes.iter().rev() {
+            for (name, sym) in scope {
+                if seen.contains(name.as_str()) {
+                    continue;
+                }
+                seen.insert(name.as_str());
+                if name.starts_with('_') {
+                    continue;
+                }
+                if matches!(sym, Symbol::StructField { .. }) {
+                    continue;
+                }
+                names.push(name.as_str());
+            }
+        }
+        names
+    }
+
+    /// Return the declaration span of a visible symbol, if it has one.
+    pub fn span_of(&self, name: &str) -> Option<Span> {
+        match self.lookup(name)? {
+            Symbol::Var { span, .. } => Some(*span),
+            Symbol::Fn { span, .. } => Some(*span),
+            Symbol::FnOverloadSet { overloads } => overloads.first().map(|o| o.span),
+            Symbol::Type { span, .. } => Some(*span),
+            Symbol::Iface { span, .. } => Some(*span),
+            Symbol::Const { span, .. } => Some(*span),
+            Symbol::TypeAlias(_) | Symbol::StructField { .. } => None,
+        }
+    }
+
     /// Mutable lookup — searches from innermost scope outward.
     pub fn lookup_mut(&mut self, name: &str) -> Option<&mut Symbol> {
         for scope in self.scopes.iter_mut().rev() {

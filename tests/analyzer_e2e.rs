@@ -1861,3 +1861,60 @@ fn recursive_type_example_file_reports_errors() {
         "expected E030 errors in check_recursive_type.kn, got: {errs:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Wildcard _ and .. in match field patterns
+// ---------------------------------------------------------------------------
+
+#[test]
+fn wildcard_field_binding_does_not_introduce_name() {
+    let errs = run(r#"
+enum Color { Red, Blue { value: int } }
+def f(c: Color) -> void {
+    match c {
+        Blue { value: _ } => {}
+        Red => {}
+    }
+}
+"#);
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn rest_pattern_skips_unmentioned_fields() {
+    let errs = run(r#"
+enum Shape { Circle { x: int, y: int, radius: int } }
+def f(s: Shape) -> void {
+    match s {
+        Circle { x: _px, .. } => {}
+    }
+}
+"#);
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn wildcard_and_named_bindings_in_same_pattern() {
+    let errs = run(r#"
+enum Point { P { x: int, y: int } }
+def f(p: Point) -> void {
+    match p {
+        P { x: _v, y: _ } => {}
+    }
+}
+"#);
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn rest_pattern_with_no_named_fields_matches_any_struct_variant() {
+    let errs = run(r#"
+enum Node { Leaf { value: int, tag: int, depth: int } }
+def f(n: Node) -> void {
+    match n {
+        Leaf { .. } => {}
+    }
+}
+"#);
+    assert!(errs.is_empty(), "{errs:?}");
+}

@@ -4,7 +4,12 @@ use thiserror::Error;
 #[derive(Debug, Error, Clone)]
 pub enum AnalysisError {
     #[error("{span}: undefined name `{name}`")]
-    UndefinedName { name: String, span: Span },
+    UndefinedName {
+        name: String,
+        span: Span,
+        /// Suggestion: (suggested_name, declaration_span).
+        did_you_mean: Option<(String, Option<Span>)>,
+    },
 
     #[error("{span}: type mismatch: expected `{expected}`, found `{found}`")]
     TypeMismatch {
@@ -249,9 +254,12 @@ impl AnalysisError {
 
     pub fn message(&self) -> String {
         match self {
-            AnalysisError::UndefinedName { name, .. } => {
-                format!("undefined name `{name}`")
-            }
+            AnalysisError::UndefinedName {
+                name, did_you_mean, ..
+            } => match did_you_mean {
+                Some((s, _)) => format!("undefined name `{name}` -- did you mean `{s}`?"),
+                None => format!("undefined name `{name}`"),
+            },
             AnalysisError::TypeMismatch {
                 expected, found, ..
             } => {
@@ -376,6 +384,13 @@ impl AnalysisError {
     /// Returns all `(note_text, note_span)` pairs for this error, in display order.
     pub fn note_info(&self) -> Vec<(String, Option<Span>)> {
         match self {
+            AnalysisError::UndefinedName { did_you_mean, .. } => {
+                if let Some((name, Some(decl_span))) = did_you_mean {
+                    vec![(format!("`{name}` declared here"), Some(*decl_span))]
+                } else {
+                    vec![]
+                }
+            }
             AnalysisError::BoundViolation { notes, .. } => notes.clone(),
             AnalysisError::ProcessorFail { .. } | AnalysisError::ProcessorWarn { .. } => vec![],
             _ => vec![],

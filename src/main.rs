@@ -265,13 +265,23 @@ fn run_build(
                 .iter()
                 .map(|e| {
                     let snippet = map.render_diagnostic(&src, e.span(), &path);
-                    format!(
+                    let mut msg = format!(
                         "error[{}]: {}: {}\n{}",
                         e.code(),
                         e.kind(),
                         e.message(),
                         snippet
-                    )
+                    );
+                    for (note, note_span) in e.note_info() {
+                        if let Some(ns) = note_span {
+                            let note_block = map.render_note(&src, ns, &path, &note);
+                            msg.push('\n');
+                            msg.push_str(&note_block);
+                        } else {
+                            msg.push_str(&format!("\nnote: {note}"));
+                        }
+                    }
+                    msg
                 })
                 .collect();
             return BuildOutcome::Errors(msgs);
@@ -536,13 +546,23 @@ fn run_check(file: &PathBuf) -> CheckOutcome {
                 .iter()
                 .map(|e| {
                     let snippet = map.render_diagnostic(&src, e.span(), &path);
-                    format!(
+                    let mut msg = format!(
                         "error[{}]: {}: {}\n{}",
                         e.code(),
                         e.kind(),
                         e.message(),
                         snippet
-                    )
+                    );
+                    for (note, note_span) in e.note_info() {
+                        if let Some(ns) = note_span {
+                            let note_block = map.render_note(&src, ns, &path, &note);
+                            msg.push('\n');
+                            msg.push_str(&note_block);
+                        } else {
+                            msg.push_str(&format!("\nnote: {note}"));
+                        }
+                    }
+                    msg
                 })
                 .collect();
             CheckOutcome::Errors(msgs)

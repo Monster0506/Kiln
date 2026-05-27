@@ -62,9 +62,18 @@ pub fn infer_typed_expr(
                     return mk(value, ty, span);
                 }
                 _ => {
+                    let did_you_mean = crate::diagnostics::suggest::closest_match(
+                        name,
+                        env.all_names().into_iter(),
+                    )
+                    .map(|s| {
+                        let decl_span = env.span_of(&s);
+                        (s, decl_span)
+                    });
                     errors.push(AnalysisError::UndefinedName {
                         name: name.clone(),
                         span,
+                        did_you_mean,
                     });
                     Ty::Unknown
                 }
@@ -89,6 +98,7 @@ pub fn infer_typed_expr(
                             errors.push(AnalysisError::UndefinedName {
                                 name: format!("{enum_name}:{variant}"),
                                 span: *espan,
+                                did_you_mean: None,
                             });
                             (Ty::Unknown, 0)
                         }
@@ -106,6 +116,7 @@ pub fn infer_typed_expr(
                     errors.push(AnalysisError::UndefinedName {
                         name: enum_name.clone(),
                         span: *espan,
+                        did_you_mean: None,
                     });
                     (Ty::Unknown, 0)
                 }
@@ -363,6 +374,7 @@ pub fn infer_typed_expr(
                         errors.push(AnalysisError::UndefinedName {
                             name: ty.clone(),
                             span: *s,
+                            did_you_mean: None,
                         });
                         (Ty::Unknown, ty.clone())
                     }

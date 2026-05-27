@@ -119,6 +119,7 @@ mod tests {
             fields: vec![],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         })
     }

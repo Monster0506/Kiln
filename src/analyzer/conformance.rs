@@ -584,6 +584,7 @@ mod tests {
             fields: vec![],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         }
     }
@@ -630,6 +631,7 @@ mod tests {
             }],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         };
         let mut errs = vec![];
@@ -648,6 +650,7 @@ mod tests {
             fields: vec![],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         };
         let mut errs = vec![];
@@ -1016,6 +1019,7 @@ mod tests {
             fields: vec![],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         }
     }

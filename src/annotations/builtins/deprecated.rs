@@ -62,6 +62,7 @@ mod tests {
             fields: vec![],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         };
         let result = process_deprecated(AnnotationTarget::Struct(&st), &[]);

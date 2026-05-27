@@ -512,6 +512,7 @@ mod tests {
             ],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         }
     }
@@ -597,6 +598,7 @@ mod tests {
             fields: vec![],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         };
         let result = process_derive(AnnotationTarget::Struct(&st), &derive_args(&["Eq"]));

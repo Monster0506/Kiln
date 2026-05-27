@@ -627,3 +627,97 @@ def is_odd(n: int) -> bool {
     );
     assert_eq!(out.trim(), "true", "got: {out}");
 }
+
+// ---- Inline hook syntax --------------------------------------------------------
+
+#[test]
+fn inline_hook_addable_dispatches() {
+    let out = kiln_run(
+        r#"
+struct Vec2 {
+    x: float
+    y: float
+
+    @implements[Addable]
+    hook +(rhs: Vec2) -> Vec2 {
+        return Vec2 { x: self.x + rhs.x, y: self.y + rhs.y }
+    }
+}
+
+def main() -> void {
+    a: Vec2 = Vec2 { x: 1.0, y: 2.0 }
+    b: Vec2 = Vec2 { x: 3.0, y: 4.0 }
+    c: Vec2 = a + b
+    println(c.x)
+    println(c.y)
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["4", "6"], "got: {out}");
+}
+
+#[test]
+fn inline_hook_multiple_interfaces() {
+    let out = kiln_run(
+        r#"
+struct Counter {
+    current: int
+    stop: int
+
+    @implements[Iterator]
+    hook next() -> Option[int] {
+        if self.current >= self.stop {
+            return Option:None
+        }
+        val: int = self.current
+        self.current = self.current + 1
+        return Option:Some { value: val }
+    }
+
+    @implements[Iterable]
+    hook iter() -> Counter {
+        return self
+    }
+}
+
+def main() -> void {
+    c: Counter = Counter { current: 0, stop: 3 }
+    for x <- c {
+        println(x)
+    }
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["0", "1", "2"], "got: {out}");
+}
+
+#[test]
+fn inline_hook_missing_implements_is_compile_error() {
+    let src = r#"
+struct Bad {
+    x: int
+    hook +(rhs: Bad) -> Bad {
+        return Bad { x: self.x + rhs.x }
+    }
+}
+def main() -> void {}
+"#;
+    let tokens = kiln_compiler::lexer::Lexer::new(src)
+        .tokenize()
+        .expect("lex failed");
+    let ast = kiln_compiler::parser::Parser::new(tokens)
+        .parse_file()
+        .expect("parse failed");
+    let result = kiln_compiler::analyzer::analyze(&ast);
+    assert!(
+        result.is_err(),
+        "expected compile error for bare hook in struct"
+    );
+    let errs = result.unwrap_err();
+    assert!(
+        errs.iter().any(|e| e.code() == "E031"),
+        "expected E031 MissingImplementsAnnotation, got: {errs:?}"
+    );
+}

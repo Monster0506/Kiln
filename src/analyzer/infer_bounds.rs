@@ -8,6 +8,11 @@ use crate::analyzer::typed_ast::{
 use crate::diagnostics::Span;
 use crate::parser::ast::BinOp;
 
+struct ProjectionCtx {
+    span: Span,
+    desc: String,
+}
+
 /// Emit a projected inferred bound when a `Ty::Projection { base, assoc }` expression
 /// is used in a context that requires `required_iface`.
 /// Searches all interfaces that declare `assoc` and emits a bound for each.
@@ -17,8 +22,7 @@ fn emit_projection_bound(
     required_iface: &str,
     params: &[String],
     registry: &TypeRegistry,
-    span: Span,
-    desc: String,
+    ctx: ProjectionCtx,
     out: &mut Vec<GenericBound>,
 ) {
     if !params.iter().any(|p| p == base) {
@@ -32,8 +36,8 @@ fn emit_projection_bound(
             assoc_bindings: vec![(assoc.to_string(), assoc_ty)],
             is_explicit: false,
             decl_span: None,
-            source_span: Some(span),
-            source_desc: desc.clone(),
+            source_span: Some(ctx.span),
+            source_desc: ctx.desc.clone(),
         });
     }
 }
@@ -236,8 +240,10 @@ fn collect_expr(
                             iface,
                             params,
                             registry,
-                            expr.span,
-                            format!("use of `{sym}` on `{base}.{assoc}`"),
+                            ProjectionCtx {
+                                span: expr.span,
+                                desc: format!("use of `{sym}` on `{base}.{assoc}`"),
+                            },
                             out,
                         );
                     }
@@ -354,8 +360,10 @@ fn collect_expr(
                                 "Display",
                                 params,
                                 registry,
-                                e.span,
-                                format!("string interpolation of `{base}.{assoc}`"),
+                                ProjectionCtx {
+                                    span: e.span,
+                                    desc: format!("string interpolation of `{base}.{assoc}`"),
+                                },
                                 out,
                             );
                         }

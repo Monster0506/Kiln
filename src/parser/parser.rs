@@ -235,6 +235,14 @@ impl Parser {
                     self.eat(&TokenKind::Comma);
                 }
                 self.expect(TokenKind::RParen)?;
+            } else if self.eat(&TokenKind::LBracket) {
+                while self.peek() != &TokenKind::RBracket {
+                    let ident = self.expect_ident()?;
+                    let span = self.peek_span();
+                    args.push((ident.clone(), Expr::Ident(ident, span)));
+                    self.eat(&TokenKind::Comma);
+                }
+                self.expect(TokenKind::RBracket)?;
             }
             let end = self.peek_span().start;
             anns.push(AnnotationUse {
@@ -726,6 +734,7 @@ impl Parser {
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         let mut decls = Vec::new();
+        let mut inline_hooks = Vec::new();
         while self.peek() != &TokenKind::RBrace && self.peek() != &TokenKind::Eof {
             if self.peek() == &TokenKind::Def || self.is_annotated_def() {
                 let anns = self.parse_annotation_uses()?;
@@ -734,6 +743,9 @@ impl Parser {
                 } else {
                     methods.push(self.parse_fn_def(anns)?);
                 }
+            } else if self.peek() == &TokenKind::Hook || self.is_annotated_hook() {
+                let anns = self.parse_annotation_uses()?;
+                inline_hooks.push(self.parse_hook_def_with_annotations(anns)?);
             } else {
                 fields.push(self.parse_field()?);
                 self.eat(&TokenKind::Comma);
@@ -750,6 +762,7 @@ impl Parser {
             fields,
             methods,
             decls,
+            inline_hooks,
             span: Span::new(start, end),
         })
     }
@@ -854,6 +867,45 @@ impl Parser {
                     }
                 }
                 TokenKind::Def => return true,
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    /// Returns true when the current position starts an annotated `hook` keyword,
+    /// skipping over `@name`, `@name[...]`, `@name(...)`, or `@name{...}` sequences.
+    fn is_annotated_hook(&self) -> bool {
+        let mut i = self.pos;
+        while i < self.tokens.len() {
+            match &self.tokens[i].kind {
+                TokenKind::At => {
+                    i += 1;
+                    if i >= self.tokens.len() {
+                        return false;
+                    }
+                    i += 1; // skip annotation name
+                            // skip optional argument list
+                    if i < self.tokens.len() {
+                        let (open, close) = match &self.tokens[i].kind {
+                            TokenKind::LBracket => (TokenKind::LBracket, TokenKind::RBracket),
+                            TokenKind::LParen => (TokenKind::LParen, TokenKind::RParen),
+                            TokenKind::LBrace => (TokenKind::LBrace, TokenKind::RBrace),
+                            _ => continue,
+                        };
+                        let mut depth = 1usize;
+                        i += 1;
+                        while i < self.tokens.len() && depth > 0 {
+                            if self.tokens[i].kind == open {
+                                depth += 1;
+                            } else if self.tokens[i].kind == close {
+                                depth -= 1;
+                            }
+                            i += 1;
+                        }
+                    }
+                }
+                TokenKind::Hook => return true,
                 _ => return false,
             }
         }

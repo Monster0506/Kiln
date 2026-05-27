@@ -384,6 +384,7 @@ mod tests {
             fields: vec![field("x", "float"), field("y", "float")],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         };
         let mut layouts = StructLayouts::new();
@@ -406,6 +407,7 @@ mod tests {
             fields: vec![field("a", "bool"), field("b", "int")],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         };
         let mut layouts = StructLayouts::new();
@@ -428,6 +430,7 @@ mod tests {
             fields: vec![],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         };
         let mut layouts = StructLayouts::new();

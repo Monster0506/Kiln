@@ -63,6 +63,7 @@ mod tests {
             fields: vec![],
             methods: vec![],
             decls: vec![],
+            inline_hooks: vec![],
             span: s(),
         };
         let result = process_inline(AnnotationTarget::Struct(&st), &[]);

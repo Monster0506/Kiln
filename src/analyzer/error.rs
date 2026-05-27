@@ -161,6 +161,9 @@ pub enum AnalysisError {
         field: String,
         span: Span,
     },
+
+    #[error("{span}: hook in struct body requires `@implements[InterfaceName]` annotation")]
+    MissingImplementsAnnotation { span: Span },
 }
 
 impl AnalysisError {
@@ -200,6 +203,7 @@ impl AnalysisError {
             AnalysisError::NotIterable { .. } => "E028",
             AnalysisError::CyclicInterface { .. } => "E029",
             AnalysisError::RecursiveTypeWithoutIndirect { .. } => "E030",
+            AnalysisError::MissingImplementsAnnotation { .. } => "E031",
         }
     }
 
@@ -239,6 +243,7 @@ impl AnalysisError {
             AnalysisError::NotIterable { .. } => "type error",
             AnalysisError::CyclicInterface { .. } => "interface error",
             AnalysisError::RecursiveTypeWithoutIndirect { .. } => "type error",
+            AnalysisError::MissingImplementsAnnotation { .. } => "annotation error",
         }
     }
 
@@ -362,6 +367,9 @@ impl AnalysisError {
                     "recursive type `{ty}` has infinite size -- field `{field}` refers back to the enclosing type; add `@indirect` to break the cycle"
                 )
             }
+            AnalysisError::MissingImplementsAnnotation { .. } => {
+                "hook in struct body requires `@implements[InterfaceName]` annotation".into()
+            }
         }
     }
 
@@ -410,6 +418,7 @@ impl AnalysisError {
             AnalysisError::NotIterable { span, .. } => *span,
             AnalysisError::CyclicInterface { span, .. } => *span,
             AnalysisError::RecursiveTypeWithoutIndirect { span, .. } => *span,
+            AnalysisError::MissingImplementsAnnotation { span } => *span,
         }
     }
 }

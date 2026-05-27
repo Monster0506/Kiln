@@ -231,8 +231,10 @@ pub fn analyze_with_base(
         .chain(ast_stdlib.items)
         .chain(user_items)
         .collect();
+    let (desugared_items, desugar_errors) = desugar_inline_hooks(combined_items);
+    import_errors.extend(desugar_errors);
     let combined = SourceFile {
-        items: combined_items,
+        items: desugared_items,
         span: source.span,
     };
 
@@ -281,8 +283,10 @@ pub fn analyze_with_base_and_registry(
         .chain(ast_stdlib.items)
         .chain(user_items)
         .collect();
+    let (desugared_items, desugar_errors) = desugar_inline_hooks(combined_items);
+    import_errors.extend(desugar_errors);
     let combined = SourceFile {
-        items: combined_items,
+        items: desugared_items,
         span: source.span,
     };
 
@@ -521,6 +525,109 @@ fn item_top_name(item: &Item) -> Option<&str> {
         Item::Global(g) => Some(&g.name),
         _ => None,
     }
+}
+
+/// Convert inline hooks in struct bodies into synthetic `ImplBlock` items.
+/// Each `@implements[Iface] hook` in a struct body becomes an `impl Iface for StructName { hook }`.
+/// Emits `MissingImplementsAnnotation` for any hook missing the annotation.
+fn desugar_inline_hooks(items: Vec<Item>) -> (Vec<Item>, Vec<error::AnalysisError>) {
+    use crate::parser::ast::{ImplBlock, ImplKind, TypeExpr};
+
+    let mut out: Vec<Item> = Vec::with_capacity(items.len());
+    let mut errors: Vec<error::AnalysisError> = Vec::new();
+
+    for item in items {
+        let has_inline = matches!(&item, Item::Struct(s) if !s.inline_hooks.is_empty());
+        if !has_inline {
+            out.push(item);
+            continue;
+        }
+
+        let Item::Struct(ref s) = item else {
+            unreachable!()
+        };
+
+        // Group valid hooks by interface name; emit errors for bare hooks.
+        let mut groups: std::collections::BTreeMap<String, Vec<crate::parser::ast::HookDef>> =
+            std::collections::BTreeMap::new();
+
+        for hook in &s.inline_hooks {
+            let iface_name = hook
+                .annotations
+                .iter()
+                .find(|a| a.name == "implements")
+                .and_then(|a| a.args.first())
+                .and_then(|(key, _)| {
+                    if key.is_empty() {
+                        None
+                    } else {
+                        Some(key.clone())
+                    }
+                });
+
+            match iface_name {
+                Some(name) => {
+                    groups.entry(name).or_default().push(hook.clone());
+                }
+                None => {
+                    errors.push(error::AnalysisError::MissingImplementsAnnotation {
+                        span: hook.span,
+                    });
+                }
+            }
+        }
+
+        // Build synthetic for_type, mirroring the struct's generic params.
+        let for_type = if s.generic_params.is_empty() {
+            TypeExpr::Named {
+                name: s.name.clone(),
+                generics: vec![],
+                bindings: vec![],
+                span: s.span,
+            }
+        } else {
+            TypeExpr::Named {
+                name: s.name.clone(),
+                generics: s
+                    .generic_params
+                    .iter()
+                    .map(|gp| TypeExpr::Named {
+                        name: gp.name.clone(),
+                        generics: vec![],
+                        bindings: vec![],
+                        span: gp.span,
+                    })
+                    .collect(),
+                bindings: vec![],
+                span: s.span,
+            }
+        };
+        let generic_params = s.generic_params.clone();
+        let struct_span = s.span;
+
+        out.push(item);
+
+        for (iface_name, hooks) in groups {
+            out.push(Item::ImplBlock(ImplBlock {
+                generic_params: generic_params.clone(),
+                interface: TypeExpr::Named {
+                    name: iface_name,
+                    generics: vec![],
+                    bindings: vec![],
+                    span: struct_span,
+                },
+                for_type: for_type.clone(),
+                self_alias: None,
+                methods: vec![],
+                hooks,
+                assoc_bindings: vec![],
+                kind: ImplKind::Plain,
+                span: struct_span,
+            }));
+        }
+    }
+
+    (out, errors)
 }
 
 fn analyze_inner(source: &SourceFile) -> Result<(TypedFile, ty::TypeRegistry), Vec<AnalysisError>> {

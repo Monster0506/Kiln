@@ -191,6 +191,9 @@ pub struct StructDef {
     pub fields: Vec<Field>,
     pub methods: Vec<FnDef>,
     pub decls: Vec<FnDecl>,
+    /// Hooks defined inline in the struct body with `@implements[Iface]` annotations.
+    /// Desugared into synthetic `ImplBlock` items before analysis.
+    pub inline_hooks: Vec<HookDef>,
     pub span: Span,
 }
 

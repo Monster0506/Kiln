@@ -169,6 +169,12 @@ pub enum AnalysisError {
 
     #[error("{span}: hook in struct body requires `@implements[InterfaceName]` annotation")]
     MissingImplementsAnnotation { span: Span },
+
+    #[error("{span}: variable `{name}` is declared but never used")]
+    UnusedVariable { name: String, span: Span },
+
+    #[error("{span}: variable `{name}` does not need to be mutable")]
+    NeedlessMut { name: String, span: Span },
 }
 
 impl AnalysisError {
@@ -209,6 +215,8 @@ impl AnalysisError {
             AnalysisError::CyclicInterface { .. } => "E029",
             AnalysisError::RecursiveTypeWithoutIndirect { .. } => "E030",
             AnalysisError::MissingImplementsAnnotation { .. } => "E031",
+            AnalysisError::UnusedVariable { .. } => "W005",
+            AnalysisError::NeedlessMut { .. } => "W006",
         }
     }
 
@@ -249,6 +257,8 @@ impl AnalysisError {
             AnalysisError::CyclicInterface { .. } => "interface error",
             AnalysisError::RecursiveTypeWithoutIndirect { .. } => "type error",
             AnalysisError::MissingImplementsAnnotation { .. } => "annotation error",
+            AnalysisError::UnusedVariable { .. } => "warning",
+            AnalysisError::NeedlessMut { .. } => "warning",
         }
     }
 
@@ -378,6 +388,12 @@ impl AnalysisError {
             AnalysisError::MissingImplementsAnnotation { .. } => {
                 "hook in struct body requires `@implements[InterfaceName]` annotation".into()
             }
+            AnalysisError::UnusedVariable { name, .. } => {
+                format!("variable `{name}` is declared but never used")
+            }
+            AnalysisError::NeedlessMut { name, .. } => {
+                format!("variable `{name}` does not need to be mutable")
+            }
         }
     }
 
@@ -434,6 +450,8 @@ impl AnalysisError {
             AnalysisError::CyclicInterface { span, .. } => *span,
             AnalysisError::RecursiveTypeWithoutIndirect { span, .. } => *span,
             AnalysisError::MissingImplementsAnnotation { span } => *span,
+            AnalysisError::UnusedVariable { span, .. } => *span,
+            AnalysisError::NeedlessMut { span, .. } => *span,
         }
     }
 }

@@ -6,7 +6,8 @@ use crate::analyzer::ty::{ComputedVariance, Ty, TypeKind, TypeRegistry};
 use crate::diagnostics::Span;
 
 use crate::analyzer::typed_ast::{
-    TypedBlock, TypedCatchHandler, TypedFnDef, TypedParam, TypedStmt,
+    TypedBlock, TypedCatchHandler, TypedClosureBody, TypedExprKind, TypedFnDef, TypedParam,
+    TypedStmt, TypedStringSegment,
 };
 use crate::parser::ast::{Block, Expr, FnDef, Stmt};
 
@@ -23,6 +24,7 @@ pub fn check_typed_block(
     for s in &block.stmts {
         stmts.push(check_typed_stmt(s, env, registry, return_ty, errors));
     }
+    emit_unused_var_warnings(env, &stmts, errors);
     env.pop_scope();
     TypedBlock {
         stmts,
@@ -632,6 +634,268 @@ fn check_variance_assignment(
     }
 }
 
+/// Emit W005/W006 warnings for variables in the current scope that are never read,
+/// or mutable variables that are never reassigned. Called before each scope pop.
+fn emit_unused_var_warnings(env: &Env, stmts: &[TypedStmt], errors: &mut Vec<AnalysisError>) {
+    let scope_vars = env.current_scope_vars();
+    if scope_vars.is_empty() {
+        return;
+    }
+    let reads = collect_ident_reads(stmts);
+    let writes = collect_reassigned_names(stmts);
+    for (name, is_mut, span) in scope_vars {
+        if !reads.contains(&name) {
+            errors.push(AnalysisError::UnusedVariable {
+                name: name.clone(),
+                span,
+            });
+        } else if is_mut && !writes.contains(&name) {
+            errors.push(AnalysisError::NeedlessMut { name, span });
+        }
+    }
+}
+
+/// Collect the set of identifier names that appear in "read" (value) position
+/// within `stmts` and all nested blocks/expressions. Assignment targets that are
+/// bare `Ident` nodes are excluded -- they are pure writes, not reads.
+fn collect_ident_reads(stmts: &[TypedStmt]) -> std::collections::HashSet<String> {
+    let mut reads = std::collections::HashSet::new();
+    for stmt in stmts {
+        read_stmt(stmt, &mut reads);
+    }
+    reads
+}
+
+fn collect_reassigned_names(stmts: &[TypedStmt]) -> std::collections::HashSet<String> {
+    let mut writes = std::collections::HashSet::new();
+    for stmt in stmts {
+        write_stmt(stmt, &mut writes);
+    }
+    writes
+}
+
+fn read_stmt(stmt: &TypedStmt, reads: &mut std::collections::HashSet<String>) {
+    match stmt {
+        TypedStmt::VarDecl { value, .. } => read_expr(&value.kind, reads),
+        TypedStmt::Assign { target, value, .. } => {
+            if !matches!(&target.kind, TypedExprKind::Ident(_)) {
+                read_expr(&target.kind, reads);
+            }
+            read_expr(&value.kind, reads);
+        }
+        TypedStmt::CompoundAssign { target, rhs, .. } => {
+            read_expr(&target.kind, reads);
+            read_expr(&rhs.kind, reads);
+        }
+        TypedStmt::Return { value, .. } => {
+            if let Some(v) = value {
+                read_expr(&v.kind, reads);
+            }
+        }
+        TypedStmt::Raise { value, .. } => {
+            if let Some(v) = value {
+                read_expr(&v.kind, reads);
+            }
+        }
+        TypedStmt::If {
+            branches,
+            else_branch,
+            ..
+        } => {
+            for (cond, body) in branches {
+                read_expr(&cond.kind, reads);
+                read_block(body, reads);
+            }
+            if let Some(eb) = else_branch {
+                read_block(eb, reads);
+            }
+        }
+        TypedStmt::While { cond, body, .. } => {
+            read_expr(&cond.kind, reads);
+            read_block(body, reads);
+        }
+        TypedStmt::DoWhile { body, cond, .. } => {
+            read_block(body, reads);
+            read_expr(&cond.kind, reads);
+        }
+        TypedStmt::For { iterable, body, .. } => {
+            read_expr(&iterable.kind, reads);
+            read_block(body, reads);
+        }
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            ..
+        } => {
+            read_block(body, reads);
+            for h in handlers {
+                read_block(&h.body, reads);
+            }
+            if let Some(f) = finally {
+                read_block(f, reads);
+            }
+        }
+        TypedStmt::FnDef(_) => {}
+        TypedStmt::Expr(e) => read_expr(&e.kind, reads),
+        TypedStmt::Break(_) | TypedStmt::Continue(_) => {}
+    }
+}
+
+fn read_block(block: &TypedBlock, reads: &mut std::collections::HashSet<String>) {
+    for stmt in &block.stmts {
+        read_stmt(stmt, reads);
+    }
+}
+
+fn read_expr(kind: &TypedExprKind, reads: &mut std::collections::HashSet<String>) {
+    match kind {
+        TypedExprKind::Ident(name) => {
+            reads.insert(name.clone());
+        }
+        TypedExprKind::Call { callee, args, .. } => {
+            read_expr(&callee.kind, reads);
+            for a in args {
+                read_expr(&a.kind, reads);
+            }
+        }
+        TypedExprKind::MethodCall { object, args, .. } => {
+            read_expr(&object.kind, reads);
+            for a in args {
+                read_expr(&a.kind, reads);
+            }
+        }
+        TypedExprKind::StaticCall { args, .. } => {
+            for a in args {
+                read_expr(&a.kind, reads);
+            }
+        }
+        TypedExprKind::IndirectCall { fat_ptr, args } => {
+            read_expr(&fat_ptr.kind, reads);
+            for a in args {
+                read_expr(&a.kind, reads);
+            }
+        }
+        TypedExprKind::Field { object, .. } => read_expr(&object.kind, reads),
+        TypedExprKind::Index { object, index } => {
+            read_expr(&object.kind, reads);
+            read_expr(&index.kind, reads);
+        }
+        TypedExprKind::BinOp { left, right, .. } => {
+            read_expr(&left.kind, reads);
+            read_expr(&right.kind, reads);
+        }
+        TypedExprKind::UnOp { operand, .. } => read_expr(&operand.kind, reads),
+        TypedExprKind::Unwrap(e) => read_expr(&e.kind, reads),
+        TypedExprKind::As { expr, .. } => read_expr(&expr.kind, reads),
+        TypedExprKind::Tuple(es) | TypedExprKind::Array(es) => {
+            for e in es {
+                read_expr(&e.kind, reads);
+            }
+        }
+        TypedExprKind::StructLiteral { fields, .. } => {
+            for (_, e) in fields {
+                read_expr(&e.kind, reads);
+            }
+        }
+        TypedExprKind::Match { scrutinee, arms } => {
+            read_expr(&scrutinee.kind, reads);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    read_expr(&guard.kind, reads);
+                }
+                read_expr(&arm.body.kind, reads);
+            }
+        }
+        TypedExprKind::Closure { body, .. } => match body {
+            TypedClosureBody::Expr(e) => read_expr(&e.kind, reads),
+            TypedClosureBody::Block(b) => read_block(b, reads),
+        },
+        TypedExprKind::Spawn(e) => read_expr(&e.kind, reads),
+        TypedExprKind::Ref { expr, .. } => read_expr(&expr.kind, reads),
+        TypedExprKind::Gen { body } => read_block(body, reads),
+        TypedExprKind::GenSplice(e) => read_expr(&e.kind, reads),
+        TypedExprKind::Block(stmts) => {
+            for stmt in stmts {
+                read_stmt(stmt, reads);
+            }
+        }
+        TypedExprKind::Str(segs) => {
+            for seg in segs {
+                if let TypedStringSegment::Interp(e) = seg {
+                    read_expr(&e.kind, reads);
+                }
+            }
+        }
+        TypedExprKind::Int(_)
+        | TypedExprKind::Float(_)
+        | TypedExprKind::Bool(_)
+        | TypedExprKind::EnumVariant { .. } => {}
+    }
+}
+
+fn write_stmt(stmt: &TypedStmt, writes: &mut std::collections::HashSet<String>) {
+    match stmt {
+        TypedStmt::Assign { target, .. } => {
+            if let TypedExprKind::Ident(name) = &target.kind {
+                writes.insert(name.clone());
+            }
+        }
+        TypedStmt::CompoundAssign { target, .. } => {
+            if let TypedExprKind::Ident(name) = &target.kind {
+                writes.insert(name.clone());
+            }
+        }
+        TypedStmt::If {
+            branches,
+            else_branch,
+            ..
+        } => {
+            for (_, body) in branches {
+                for s in &body.stmts {
+                    write_stmt(s, writes);
+                }
+            }
+            if let Some(eb) = else_branch {
+                for s in &eb.stmts {
+                    write_stmt(s, writes);
+                }
+            }
+        }
+        TypedStmt::While { body, .. } | TypedStmt::DoWhile { body, .. } => {
+            for s in &body.stmts {
+                write_stmt(s, writes);
+            }
+        }
+        TypedStmt::For { body, .. } => {
+            for s in &body.stmts {
+                write_stmt(s, writes);
+            }
+        }
+        TypedStmt::TryCatch {
+            body,
+            handlers,
+            finally,
+            ..
+        } => {
+            for s in &body.stmts {
+                write_stmt(s, writes);
+            }
+            for h in handlers {
+                for s in &h.body.stmts {
+                    write_stmt(s, writes);
+                }
+            }
+            if let Some(f) = finally {
+                for s in &f.stmts {
+                    write_stmt(s, writes);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -664,7 +928,7 @@ mod tests {
     fn var_decl_ok() {
         let block = Block {
             stmts: vec![Stmt::VarDecl {
-                name: "x".into(),
+                name: "_x".into(),
                 ty: int_ty(),
                 value: Expr::Int(42, s()),
                 mutable: false,
@@ -683,7 +947,7 @@ mod tests {
     fn var_decl_type_mismatch() {
         let block = Block {
             stmts: vec![Stmt::VarDecl {
-                name: "x".into(),
+                name: "_x".into(),
                 ty: bool_ty(),
                 value: Expr::Int(1, s()),
                 mutable: false,
@@ -695,7 +959,11 @@ mod tests {
         let reg = TypeRegistry::new();
         let mut errs = vec![];
         check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
-        assert_eq!(errs.len(), 1);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, AnalysisError::TypeMismatch { .. })),
+            "{errs:?}"
+        );
     }
 
     #[test]
@@ -721,8 +989,11 @@ mod tests {
         let reg = TypeRegistry::new();
         let mut errs = vec![];
         check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
-        assert_eq!(errs.len(), 1);
-        assert!(matches!(&errs[0], AnalysisError::AssignToImmutable { .. }));
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, AnalysisError::AssignToImmutable { .. })),
+            "{errs:?}"
+        );
     }
 
     #[test]
@@ -748,6 +1019,149 @@ mod tests {
         let reg = TypeRegistry::new();
         let mut errs = vec![];
         check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
-        assert!(errs.is_empty(), "{errs:?}");
+        assert!(
+            !errs
+                .iter()
+                .any(|e| matches!(e, AnalysisError::AssignToImmutable { .. })),
+            "{errs:?}"
+        );
+    }
+
+    // -- Unused-variable warnings (W005, W006) ----------------------------------
+
+    #[test]
+    fn unused_variable_produces_warning() {
+        let block = Block {
+            stmts: vec![Stmt::VarDecl {
+                name: "x".into(),
+                ty: int_ty(),
+                value: Expr::Int(1, s()),
+                mutable: false,
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, AnalysisError::UnusedVariable { name, .. } if name == "x")),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn used_variable_produces_no_warning() {
+        let block = Block {
+            stmts: vec![
+                Stmt::VarDecl {
+                    name: "x".into(),
+                    ty: int_ty(),
+                    value: Expr::Int(1, s()),
+                    mutable: false,
+                    span: s(),
+                },
+                Stmt::Return {
+                    value: Some(Expr::Ident("x".into(), s())),
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Int, &mut errs);
+        assert!(
+            !errs
+                .iter()
+                .any(|e| matches!(e, AnalysisError::UnusedVariable { .. })),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn underscore_prefix_suppresses_warning() {
+        let block = Block {
+            stmts: vec![Stmt::VarDecl {
+                name: "_unused".into(),
+                ty: int_ty(),
+                value: Expr::Int(1, s()),
+                mutable: false,
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            !errs
+                .iter()
+                .any(|e| matches!(e, AnalysisError::UnusedVariable { .. })),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn unused_mut_produces_needless_mut_warning() {
+        let block = Block {
+            stmts: vec![
+                Stmt::VarDecl {
+                    name: "x".into(),
+                    ty: int_ty(),
+                    value: Expr::Int(1, s()),
+                    mutable: true,
+                    span: s(),
+                },
+                Stmt::Return {
+                    value: Some(Expr::Ident("x".into(), s())),
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Int, &mut errs);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, AnalysisError::NeedlessMut { name, .. } if name == "x")),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn variable_used_only_in_assignment_lhs_is_unused() {
+        let block = Block {
+            stmts: vec![
+                Stmt::VarDecl {
+                    name: "x".into(),
+                    ty: int_ty(),
+                    value: Expr::Int(1, s()),
+                    mutable: true,
+                    span: s(),
+                },
+                Stmt::Assign {
+                    target: Expr::Ident("x".into(), s()),
+                    value: Expr::Int(2, s()),
+                    span: s(),
+                },
+            ],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, AnalysisError::UnusedVariable { name, .. } if name == "x")),
+            "{errs:?}"
+        );
     }
 }

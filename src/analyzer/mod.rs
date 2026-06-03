@@ -192,14 +192,17 @@ fn register_projection_pins(
 ///
 /// The stdlib prelude is always prepended before user items.
 pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
-    analyze_with_base(source, &std::path::PathBuf::from("."))
+    analyze_with_base(source, &std::path::PathBuf::from(".")).map(|(typed, _warnings)| typed)
 }
 
 /// Like `analyze`, but resolves `import` statements relative to `base_dir`.
+/// Like `analyze`, but resolves `import` statements relative to `base_dir`.
+/// Returns `Ok((TypedFile, warnings))` on success, `Err(errors)` on failure.
+/// Warnings are diagnostics that don't block compilation (W-codes).
 pub fn analyze_with_base(
     source: &SourceFile,
     base_dir: &std::path::Path,
-) -> Result<TypedFile, Vec<AnalysisError>> {
+) -> Result<(TypedFile, Vec<AnalysisError>), Vec<AnalysisError>> {
     let prelude_src = crate::stdlib::parse_prelude();
     let ast_stdlib = crate::stdlib::parse_ast_stdlib();
     let stdlib_vfs = crate::stdlib::stdlib_virtual_fs();
@@ -239,7 +242,7 @@ pub fn analyze_with_base(
     };
 
     match analyze_inner(&combined) {
-        Ok((typed, _registry)) if import_errors.is_empty() => Ok(typed),
+        Ok((typed, _registry, warnings)) if import_errors.is_empty() => Ok((typed, warnings)),
         Ok(_) => Err(import_errors),
         Err(mut errs) => {
             import_errors.append(&mut errs);
@@ -250,10 +253,12 @@ pub fn analyze_with_base(
 
 /// Like `analyze_with_base`, but also returns the `TypeRegistry` built during analysis.
 /// Used by codegen paths that need the registry for monomorphization.
+/// Like `analyze_with_base`, but also returns the `TypeRegistry`.
+/// Returns `Ok((TypedFile, TypeRegistry, warnings))` on success.
 pub fn analyze_with_base_and_registry(
     source: &SourceFile,
     base_dir: &std::path::Path,
-) -> Result<(TypedFile, ty::TypeRegistry), Vec<AnalysisError>> {
+) -> Result<(TypedFile, ty::TypeRegistry, Vec<AnalysisError>), Vec<AnalysisError>> {
     let prelude_src = crate::stdlib::parse_prelude();
     let ast_stdlib = crate::stdlib::parse_ast_stdlib();
     let stdlib_vfs = crate::stdlib::stdlib_virtual_fs();
@@ -291,7 +296,9 @@ pub fn analyze_with_base_and_registry(
     };
 
     match analyze_inner(&combined) {
-        Ok((typed, registry)) if import_errors.is_empty() => Ok((typed, registry)),
+        Ok((typed, registry, warnings)) if import_errors.is_empty() => {
+            Ok((typed, registry, warnings))
+        }
         Ok(_) => Err(import_errors),
         Err(mut errs) => {
             import_errors.append(&mut errs);
@@ -630,7 +637,9 @@ fn desugar_inline_hooks(items: Vec<Item>) -> (Vec<Item>, Vec<error::AnalysisErro
     (out, errors)
 }
 
-fn analyze_inner(source: &SourceFile) -> Result<(TypedFile, ty::TypeRegistry), Vec<AnalysisError>> {
+fn analyze_inner(
+    source: &SourceFile,
+) -> Result<(TypedFile, ty::TypeRegistry, Vec<AnalysisError>), Vec<AnalysisError>> {
     let mut errors: Vec<AnalysisError> = Vec::new();
     let mut env = Env::new();
     let mut registry = ty::TypeRegistry::new();
@@ -2485,10 +2494,14 @@ fn analyze_inner(source: &SourceFile) -> Result<(TypedFile, ty::TypeRegistry), V
         }
     }
 
-    if errors.is_empty() {
-        Ok((typed_file, registry))
+    let (warnings, hard_errors): (Vec<_>, Vec<_>) =
+        errors.into_iter().partition(|e| e.code().starts_with('W'));
+    if hard_errors.is_empty() {
+        Ok((typed_file, registry, warnings))
     } else {
-        Err(errors)
+        let mut all = hard_errors;
+        all.extend(warnings);
+        Err(all)
     }
 }
 

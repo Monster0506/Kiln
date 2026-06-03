@@ -9,7 +9,7 @@ def println[T: Display](item: T) -> void {
 }
 
 def range(start: int, stop: int, step: int) -> Vec[int] {
-    mut result: Vec[int] = Vec.new()
+    result: Vec[int] = Vec.new()
     mut i: int = start
     while i < stop {
         result.add(i)

@@ -258,35 +258,40 @@ fn run_build(
     }
 
     timer.start("analyze");
-    let (typed_file, type_registry) = match analyze_with_base_and_registry(&ast, &base_dir) {
-        Ok(t) => t,
-        Err(errs) => {
-            let msgs = errs
-                .iter()
-                .map(|e| {
-                    let snippet = map.render_diagnostic(&src, e.span(), &path);
-                    let mut msg = format!(
-                        "error[{}]: {}: {}\n{}",
-                        e.code(),
-                        e.kind(),
-                        e.message(),
-                        snippet
-                    );
-                    for (note, note_span) in e.note_info() {
-                        if let Some(ns) = note_span {
-                            let note_block = map.render_note(&src, ns, &path, &note);
-                            msg.push('\n');
-                            msg.push_str(&note_block);
-                        } else {
-                            msg.push_str(&format!("\nnote: {note}"));
+    let (typed_file, type_registry, build_warnings) =
+        match analyze_with_base_and_registry(&ast, &base_dir) {
+            Ok(t) => t,
+            Err(errs) => {
+                let msgs = errs
+                    .iter()
+                    .map(|e| {
+                        let snippet = map.render_diagnostic(&src, e.span(), &path);
+                        let mut msg = format!(
+                            "error[{}]: {}: {}\n{}",
+                            e.code(),
+                            e.kind(),
+                            e.message(),
+                            snippet
+                        );
+                        for (note, note_span) in e.note_info() {
+                            if let Some(ns) = note_span {
+                                let note_block = map.render_note(&src, ns, &path, &note);
+                                msg.push('\n');
+                                msg.push_str(&note_block);
+                            } else {
+                                msg.push_str(&format!("\nnote: {note}"));
+                            }
                         }
-                    }
-                    msg
-                })
-                .collect();
-            return BuildOutcome::Errors(msgs);
-        }
-    };
+                        msg
+                    })
+                    .collect();
+                return BuildOutcome::Errors(msgs);
+            }
+        };
+    for w in &build_warnings {
+        let snippet = map.render_diagnostic(&src, w.span(), &path);
+        emit_error(w.kind(), w.code(), &w.message(), &snippet);
+    }
     timer.stop();
 
     if opts.emit {
@@ -540,7 +545,13 @@ fn run_check(file: &PathBuf) -> CheckOutcome {
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
     match analyze_with_base(&ast, &base_dir) {
-        Ok(_) => CheckOutcome::Ok,
+        Ok((_, warnings)) => {
+            for w in &warnings {
+                let snippet = map.render_diagnostic(&src, w.span(), &path);
+                emit_error(w.kind(), w.code(), &w.message(), &snippet);
+            }
+            CheckOutcome::Ok
+        }
         Err(errs) => {
             let msgs = errs
                 .iter()
@@ -938,11 +949,12 @@ fn main() {
                 .parent()
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
-            let (typed_file, type_registry) = analyze_with_base_and_registry(&ast, &base_dir)
-                .unwrap_or_else(|errs| {
+            let (typed_file, type_registry, run_warnings) =
+                analyze_with_base_and_registry(&ast, &base_dir).unwrap_or_else(|errs| {
                     emit_analysis_errors(&errs, &map, &src, &path);
                     std::process::exit(1);
                 });
+            emit_analysis_errors(&run_warnings, &map, &src, &path);
             let module_name = file
                 .file_stem()
                 .and_then(|s| s.to_str())

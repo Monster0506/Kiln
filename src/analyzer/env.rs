@@ -213,6 +213,23 @@ impl Env {
         names
     }
 
+    /// Returns all (name, is_mutable, decl_span) for Symbol::Var entries in the innermost
+    /// scope whose names do not start with `_`. Used to emit unused-variable warnings.
+    pub fn current_scope_vars(&self) -> Vec<(String, bool, Span)> {
+        match self.scopes.last() {
+            Some(scope) => scope
+                .iter()
+                .filter_map(|(name, sym)| match sym {
+                    Symbol::Var { mutable, span, .. } if !name.starts_with('_') => {
+                        Some((name.clone(), *mutable, *span))
+                    }
+                    _ => None,
+                })
+                .collect(),
+            None => vec![],
+        }
+    }
+
     /// Return the declaration span of a visible symbol, if it has one.
     pub fn span_of(&self, name: &str) -> Option<Span> {
         match self.lookup(name)? {

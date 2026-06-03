@@ -3,6 +3,7 @@ use crate::analyzer::typed_ast::{
     TypedBlock, TypedExpr, TypedExprKind, TypedGlobalVar, TypedHookDef, TypedItem, TypedParam,
     TypedStmt,
 };
+use crate::analyzer::types::ParamList;
 use crate::analyzer::TypedFile;
 use crate::codegen::context::CodegenContext;
 use crate::codegen::exceptions::declare_exception_runtime;
@@ -149,7 +150,7 @@ fn register_fn(
 struct FnJob {
     name: String,
     func_id: FuncId,
-    params: Vec<(String, Ty)>,
+    params: ParamList,
     return_type: Ty,
     body: TypedBlock,
     self_type: Option<String>,
@@ -662,15 +663,12 @@ pub fn compile(
     } else {
         std::collections::HashSet::new()
     };
-    let inline_bodies: HashMap<
-        String,
-        (Vec<(String, Ty)>, crate::analyzer::typed_ast::TypedBlock),
-    > = {
+    let inline_bodies: HashMap<String, (ParamList, crate::analyzer::typed_ast::TypedBlock)> = {
         let mut map = HashMap::new();
         for item in &typed_file.items {
             if let TypedItem::Function(f) = item {
                 if (f.is_inline || auto_inline_names.contains(&f.name)) && !f.is_builtin {
-                    let params: Vec<(String, Ty)> = f
+                    let params: ParamList = f
                         .params
                         .iter()
                         .map(|p| (p.name.clone(), p.ty.clone()))

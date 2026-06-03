@@ -1,10 +1,11 @@
+use crate::analyzer::types::{ParamList, ProjectionPins};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 /// Substitute any `Ty::Projection { base, assoc }` whose `(base, assoc)` key
 /// appears in `pins` with its pinned concrete type, recursing into all
 /// compound type forms.  Leaves everything else unchanged.
-pub fn normalize_ty(ty: &Ty, pins: &HashMap<(String, String), Ty>) -> Ty {
+pub fn normalize_ty(ty: &Ty, pins: &ProjectionPins) -> Ty {
     match ty {
         Ty::Projection { base, assoc } => {
             let key = (base.clone(), assoc.clone());
@@ -72,7 +73,7 @@ pub struct ConformanceEntry {
     /// For concrete types: empty.
     pub bounds: Vec<(String, String)>,
     /// Associated type bindings declared in the impl block: `type Item = int` stores `[("Item", Ty::Int)]`.
-    pub bindings: Vec<(String, Ty)>,
+    pub bindings: ParamList,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -87,7 +88,7 @@ pub struct MethodEntry {
     pub method_name: String,
     /// Fully-qualified function name as registered in codegen's func_ids (e.g. "Vec_new").
     pub qualified_fn: String,
-    pub params: Vec<(String, Ty)>,
+    pub params: ParamList,
     pub ret: Ty,
 }
 
@@ -196,7 +197,7 @@ pub struct TypeRegistry {
     next_id: u32,
     entries: Vec<TypeEntry>,
     /// type_name -> ordered list of (field_name, Ty)
-    struct_fields: HashMap<String, Vec<(String, Ty)>>,
+    struct_fields: HashMap<String, ParamList>,
     /// type_name -> registered methods
     type_methods: HashMap<String, Vec<MethodEntry>>,
     /// (type_name, iface_name) -> list of conformance entries (any one suffices)
@@ -225,7 +226,7 @@ impl TypeRegistry {
         }
     }
 
-    pub fn register_struct_fields(&mut self, type_name: &str, fields: Vec<(String, Ty)>) {
+    pub fn register_struct_fields(&mut self, type_name: &str, fields: ParamList) {
         self.struct_fields.insert(type_name.to_string(), fields);
     }
 
@@ -522,7 +523,7 @@ impl TypeRegistry {
 
     /// All `(assoc_name, concrete_ty)` bindings from all conformance entries for `type_name`.
     /// Used during monomorphization to extend substitution maps with associated type resolutions.
-    pub fn all_assoc_bindings_for(&self, type_name: &str) -> Vec<(String, Ty)> {
+    pub fn all_assoc_bindings_for(&self, type_name: &str) -> ParamList {
         let mut result = Vec::new();
         for ((t, _), entries) in &self.conformances {
             if t == type_name {
@@ -577,6 +578,7 @@ impl TypeRegistry {
             conformances_total,
             interfaces_total,
             top_methods,
+            symbols: vec![],
         }
     }
 }

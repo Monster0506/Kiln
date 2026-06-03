@@ -24,7 +24,10 @@ pub mod returns;
 pub mod solve;
 pub mod ty;
 pub mod typed_ast;
+pub mod types;
 pub mod unroll;
+
+pub use types::{DiagNotes, ParamList, ProjectionPins, SymbolList};
 
 pub use error::AnalysisError;
 pub use ty::{Ty, TypeId, TypeRegistry};
@@ -325,6 +328,129 @@ pub fn analyze_with_base_and_registry(
             Ok((typed, registry, warnings))
         }
         Ok(_) => Err(import_errors),
+        Err(mut errs) => {
+            import_errors.append(&mut errs);
+            Err(import_errors)
+        }
+    }
+}
+
+type AnalysisWithSymbols = (
+    TypedFile,
+    ty::TypeRegistry,
+    SymbolList,
+    Vec<AnalysisError>,
+);
+
+/// Like `analyze_with_base_and_registry`, but also returns the flat symbol table from the
+/// combined (prelude + user) environment. Used by `--profile` to print the symbol table.
+pub fn analyze_with_base_and_symbols(
+    source: &SourceFile,
+    base_dir: &std::path::Path,
+) -> Result<AnalysisWithSymbols, Vec<AnalysisError>> {
+    let prelude_src = crate::stdlib::parse_prelude();
+    let ast_stdlib = crate::stdlib::parse_ast_stdlib();
+    let stdlib_vfs = crate::stdlib::stdlib_virtual_fs();
+
+    let mut import_errors: Vec<AnalysisError> = Vec::new();
+
+    let mut prelude_items: Vec<Item> = Vec::new();
+    resolve_imports_into(
+        &prelude_src,
+        base_dir,
+        &mut prelude_items,
+        &mut import_errors,
+        &stdlib_vfs,
+    );
+
+    let mut user_items: Vec<Item> = Vec::new();
+    resolve_imports_into(
+        source,
+        base_dir,
+        &mut user_items,
+        &mut import_errors,
+        &stdlib_vfs,
+    );
+
+    let prelude_combined: Vec<_> = prelude_items.into_iter().chain(ast_stdlib.items).collect();
+    let (desugared_prelude, desugar_errors1) = desugar_inline_hooks(prelude_combined);
+    import_errors.extend(desugar_errors1);
+
+    let (desugared_user, desugar_errors2) = desugar_inline_hooks(user_items);
+    import_errors.extend(desugar_errors2);
+
+    let prelude_interface_list: Vec<crate::parser::ast::InterfaceDef> = desugared_prelude
+        .iter()
+        .filter_map(|i| {
+            if let Item::Interface(iface) = i {
+                Some(iface.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    let prelude_impl_list: Vec<crate::parser::ast::ImplBlock> = desugared_prelude
+        .iter()
+        .filter_map(|i| {
+            if let Item::ImplBlock(b) = i {
+                Some(b.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let cached_ctx = prelude_cache::load().map(|cached| PreludeAnalysisContext {
+        typed_items: cached.typed_items,
+        registry: cached.registry,
+        env_symbols: cached.env_symbols,
+        interfaces: prelude_interface_list.clone(),
+        impls: prelude_impl_list.clone(),
+    });
+
+    let ctx = if let Some(ctx) = cached_ctx {
+        ctx
+    } else {
+        let prelude_source = SourceFile {
+            items: desugared_prelude,
+            span: source.span,
+        };
+        match analyze_inner(&prelude_source, None) {
+            Ok((prelude_typed, prelude_registry, prelude_env, prelude_warnings)) => {
+                let env_symbols = prelude_env.get_global_scope_symbols();
+                prelude_cache::save(&prelude_cache::PreludeCache {
+                    version: prelude_cache::CACHE_VERSION,
+                    source_hash: prelude_cache::compute_source_hash(),
+                    typed_items: prelude_typed.items.clone(),
+                    registry: prelude_registry.clone(),
+                    env_symbols: env_symbols.clone(),
+                });
+                let _ = prelude_warnings;
+                PreludeAnalysisContext {
+                    typed_items: prelude_typed.items,
+                    registry: prelude_registry,
+                    env_symbols,
+                    interfaces: prelude_interface_list,
+                    impls: prelude_impl_list,
+                }
+            }
+            Err(mut errs) => {
+                import_errors.append(&mut errs);
+                return Err(import_errors);
+            }
+        }
+    };
+
+    let user_source = SourceFile {
+        items: desugared_user,
+        span: source.span,
+    };
+    match analyze_inner(&user_source, Some(ctx)) {
+        Ok((typed, registry, env, warnings)) if import_errors.is_empty() => {
+            let symbols = env.get_global_scope_symbols();
+            Ok((typed, registry, symbols, warnings))
+        }
+        Ok((_, _, _, _)) => Err(import_errors),
         Err(mut errs) => {
             import_errors.append(&mut errs);
             Err(import_errors)
@@ -669,7 +795,7 @@ pub struct PreludeAnalysisContext {
     /// Fully-built type registry from the prelude analysis.
     pub registry: ty::TypeRegistry,
     /// Global-scope symbols from the prelude env (functions, types, interfaces).
-    pub env_symbols: Vec<(String, crate::analyzer::env::Symbol)>,
+    pub env_symbols: SymbolList,
     /// Untyped interface definitions from the prelude, needed for conformance checks.
     pub interfaces: Vec<crate::parser::ast::InterfaceDef>,
     /// Untyped impl blocks from the prelude, needed for conformance checks.

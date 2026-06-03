@@ -2,7 +2,7 @@ use crate::analyzer::constrain::{Constraint, ConstraintKind};
 use crate::analyzer::error::AnalysisError;
 use crate::analyzer::infer::type_name_of;
 use crate::analyzer::ty::{Ty, TypeRegistry};
-use crate::diagnostics::Span;
+use crate::analyzer::types::DiagNotes;
 
 /// Returns `true` if `ty` satisfies `iface` according to the registry.
 ///
@@ -125,7 +125,7 @@ pub fn solve(constraints: &[Constraint], registry: &TypeRegistry) -> Vec<Analysi
             ConstraintKind::Bound { ty, iface } => {
                 if !satisfies(ty, iface, registry) {
                     let context = c.reason.context_string();
-                    let mut notes: Vec<(String, Option<Span>)> = match &c.reason {
+                    let mut notes: DiagNotes = match &c.reason {
                         crate::analyzer::constrain::ConstraintReason::GenericBoundCheck {
                             fn_name,
                             is_explicit,

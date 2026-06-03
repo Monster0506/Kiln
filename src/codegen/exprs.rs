@@ -3,6 +3,7 @@ use crate::analyzer::ty::Ty;
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedClosureBody, TypedExpr, TypedExprKind, TypedStmt, TypedStringSegment,
 };
+use crate::analyzer::types::ParamList;
 use crate::codegen::match_::lower_typed_match;
 use crate::codegen::memory::{emit_malloc, load_field, store_field};
 use crate::codegen::mono::type_mono_name;
@@ -33,8 +34,7 @@ pub struct LowerCtx<'a> {
     pub return_clif_type: Option<Type>,
     pub defined_thunks: &'a mut HashSet<String>,
     /// Bodies of @inline functions available for expansion at call sites.
-    #[allow(clippy::type_complexity)]
-    pub inline_bodies: &'a HashMap<String, (Vec<(String, Ty)>, TypedBlock)>,
+    pub inline_bodies: &'a HashMap<String, (ParamList, TypedBlock)>,
 }
 
 /// Substitute Ident nodes in a TypedExpr based on a parameter->argument map.
@@ -1365,7 +1365,7 @@ mod tests {
         let func_ids = HashMap::new();
         let global_vars = HashMap::new();
         let mut thunks = HashSet::new();
-        let empty_inline: HashMap<String, (Vec<(String, Ty)>, TypedBlock)> = HashMap::new();
+        let empty_inline: HashMap<String, (ParamList, TypedBlock)> = HashMap::new();
         let empty_inline_globals: HashMap<String, TypedExpr> = HashMap::new();
         let mut lctx = LowerCtx {
             module: &mut cgx.module,

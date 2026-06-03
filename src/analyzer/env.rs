@@ -1,4 +1,5 @@
 use crate::analyzer::ty::{InterfaceId, Ty, TypeId};
+use crate::analyzer::types::{ParamList, ProjectionPins, SymbolList};
 use crate::diagnostics::Span;
 use std::collections::HashMap;
 
@@ -9,7 +10,7 @@ pub struct GenericBound {
     pub iface: String,
     /// Associated type bindings from this bound, e.g. `T: Iterator[Item=int]` stores
     /// `[("Item", Ty::Int)]`. Interface RHS (e.g. `Item=Display`) stores `Ty::Interface`.
-    pub assoc_bindings: Vec<(String, Ty)>,
+    pub assoc_bindings: ParamList,
     /// `true` when the bound was written explicitly in the function signature (`[T: Addable]`).
     /// `false` when inferred from body usage.
     pub is_explicit: bool,
@@ -30,7 +31,7 @@ pub struct FnOverload {
     pub generic_bounds: Vec<GenericBound>,
     /// Bounds inferred from how generic params are used in the function body.
     pub inferred_bounds: Vec<GenericBound>,
-    pub params: Vec<(String, Ty)>,
+    pub params: ParamList,
     pub ret: Ty,
     /// The symbol name used in codegen, e.g. "foo__0" for the first overload of "foo".
     pub mangled_name: String,
@@ -49,7 +50,7 @@ pub enum Symbol {
         generic_bounds: Vec<GenericBound>,
         /// Bounds inferred from how generic params are used in the function body.
         inferred_bounds: Vec<GenericBound>,
-        params: Vec<(String, Ty)>,
+        params: ParamList,
         ret: Ty,
         span: Span,
     },
@@ -87,7 +88,7 @@ pub struct Env {
     scopes: Vec<HashMap<String, Symbol>>,
     /// Projection pin table, scoped in parallel with symbol scopes.
     /// Each layer maps (param_name, assoc_name) -> concrete Ty.
-    projection_pins: Vec<HashMap<(String, String), Ty>>,
+    projection_pins: Vec<ProjectionPins>,
     /// Generic param -> [iface names] for each scope level.
     /// Lets `infer_call_field` look up which interfaces a generic param is bound by.
     generic_param_bounds: Vec<HashMap<String, Vec<String>>>,
@@ -128,8 +129,8 @@ impl Env {
     }
 
     /// Flatten all active pin layers (outer-to-inner so inner overrides outer).
-    pub fn get_active_pins(&self) -> std::collections::HashMap<(String, String), Ty> {
-        let mut result = std::collections::HashMap::new();
+    pub fn get_active_pins(&self) -> ProjectionPins {
+        let mut result = ProjectionPins::new();
         for layer in self.projection_pins.iter() {
             result.extend(layer.iter().map(|(k, v)| (k.clone(), v.clone())));
         }
@@ -246,7 +247,7 @@ impl Env {
     /// Returns all (name, symbol) pairs visible across all active scopes.
     /// Innermost scope takes precedence (like lookup). Used to snapshot prelude
     /// symbols for the cache.
-    pub fn get_global_scope_symbols(&self) -> Vec<(String, Symbol)> {
+    pub fn get_global_scope_symbols(&self) -> SymbolList {
         let mut seen = std::collections::HashSet::new();
         let mut result = Vec::new();
         for scope in self.scopes.iter().rev() {

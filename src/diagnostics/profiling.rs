@@ -10,6 +10,10 @@ pub struct RegistryStats {
     pub interfaces_total: usize,
     /// Top method names by count of types that define them (capped at 20).
     pub top_methods: Vec<(String, usize)>,
+    /// All symbols visible after analysis: (name, kind_label, count).
+    /// count > 1 only for FnOverloadSet (number of overloads).
+    /// Sorted by count desc, then name asc.
+    pub symbols: Vec<(String, String, usize)>,
 }
 
 impl RegistryStats {
@@ -93,6 +97,55 @@ impl RegistryStats {
                 writeln!(out, "    {:<w$}  {}", name, count, w = name_w).unwrap();
             }
         }
+
+        if !self.symbols.is_empty() {
+            writeln!(out).unwrap();
+            writeln!(out, "  symbol table ({} total)", self.symbols.len()).unwrap();
+            let name_w = self
+                .symbols
+                .iter()
+                .map(|(n, _, _)| n.len())
+                .max()
+                .unwrap_or(6)
+                .max(6);
+            let kind_w = self
+                .symbols
+                .iter()
+                .map(|(_, k, _)| k.len())
+                .max()
+                .unwrap_or(4)
+                .max(4);
+            writeln!(
+                out,
+                "    {:<nw$}  {:<kw$}  Count",
+                "Symbol",
+                "Kind",
+                nw = name_w,
+                kw = kind_w
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "    {:-<nw$}  {:-<kw$}  -----",
+                "",
+                "",
+                nw = name_w,
+                kw = kind_w
+            )
+            .unwrap();
+            for (name, kind, count) in &self.symbols {
+                writeln!(
+                    out,
+                    "    {:<nw$}  {:<kw$}  {}",
+                    name,
+                    kind,
+                    count,
+                    nw = name_w,
+                    kw = kind_w
+                )
+                .unwrap();
+            }
+        }
     }
 }
 
@@ -113,6 +166,10 @@ mod tests {
                 ("add".to_string(), 6),
                 ("to_str".to_string(), 4),
                 ("eq".to_string(), 3),
+            ],
+            symbols: vec![
+                ("add".to_string(), "Fn".to_string(), 3),
+                ("Point".to_string(), "Type".to_string(), 1),
             ],
         }
     }

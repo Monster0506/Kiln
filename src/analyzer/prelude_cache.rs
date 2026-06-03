@@ -1,6 +1,6 @@
-use crate::analyzer::env::Symbol;
 use crate::analyzer::ty::TypeRegistry;
 use crate::analyzer::typed_ast::TypedItem;
+use crate::analyzer::types::SymbolList;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -12,7 +12,7 @@ pub struct PreludeCache {
     pub source_hash: u64,
     pub typed_items: Vec<TypedItem>,
     pub registry: TypeRegistry,
-    pub env_symbols: Vec<(String, Symbol)>,
+    pub env_symbols: SymbolList,
 }
 
 pub fn compute_source_hash() -> u64 {

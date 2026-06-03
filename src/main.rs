@@ -3,7 +3,9 @@
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 use clap::{Parser, Subcommand};
-use kiln_compiler::analyzer::{analyze_with_base, analyze_with_base_and_registry};
+use kiln_compiler::analyzer::{
+    analyze_with_base, analyze_with_base_and_registry, analyze_with_base_and_symbols, SymbolList,
+};
 use kiln_compiler::annotations::{default_registry, run_processors, run_user_processors};
 use kiln_compiler::codegen::{compile::compile, context::CodegenContext, emit};
 use kiln_compiler::diagnostics::timing::{BuildStats, ItemCounts, PhaseTimer};
@@ -148,6 +150,28 @@ fn count_item_kinds(ast: &kiln_compiler::parser::ast::SourceFile) -> ItemCounts 
     c
 }
 
+fn build_symbol_rows(syms: &SymbolList) -> Vec<(String, String, usize)> {
+    use kiln_compiler::analyzer::env::Symbol;
+    let mut rows: Vec<(String, String, usize)> = syms
+        .iter()
+        .filter_map(|(name, sym)| {
+            let (kind, count) = match sym {
+                Symbol::Fn { .. } => ("Fn", 1usize),
+                Symbol::FnOverloadSet { overloads } => ("Fn", overloads.len()),
+                Symbol::Var { .. } => ("Var", 1),
+                Symbol::Type { .. } => ("Type", 1),
+                Symbol::TypeAlias(_) => ("Alias", 1),
+                Symbol::Iface { .. } => ("Iface", 1),
+                Symbol::Const { .. } => ("Const", 1),
+                Symbol::StructField { .. } => return None,
+            };
+            Some((name.clone(), kind.to_string(), count))
+        })
+        .collect();
+    rows.sort_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(&b.0)));
+    rows
+}
+
 fn emit_error(kind: &str, code: &str, msg: &str, snippet: &str) {
     eprintln!("error[{code}]: {kind}: {msg}");
     eprintln!("{snippet}");
@@ -272,36 +296,41 @@ fn run_build(
     }
 
     timer.start("analyze");
-    let (typed_file, type_registry, build_warnings) =
-        match analyze_with_base_and_registry(&ast, &base_dir) {
-            Ok(t) => t,
-            Err(errs) => {
-                let msgs = errs
-                    .iter()
-                    .map(|e| {
-                        let snippet = map.render_diagnostic(&src, e.span(), &path);
-                        let mut msg = format!(
-                            "error[{}]: {}: {}\n{}",
-                            e.code(),
-                            e.kind(),
-                            e.message(),
-                            snippet
-                        );
-                        for (note, note_span) in e.note_info() {
-                            if let Some(ns) = note_span {
-                                let note_block = map.render_note(&src, ns, &path, &note);
-                                msg.push('\n');
-                                msg.push_str(&note_block);
-                            } else {
-                                msg.push_str(&format!("\nnote: {note}"));
-                            }
+    let analyze_result = if opts.profile {
+        analyze_with_base_and_symbols(&ast, &base_dir)
+            .map(|(tf, reg, syms, warns)| (tf, reg, Some(syms), warns))
+    } else {
+        analyze_with_base_and_registry(&ast, &base_dir).map(|(tf, reg, warns)| (tf, reg, None, warns))
+    };
+    let (typed_file, type_registry, env_symbols, build_warnings) = match analyze_result {
+        Ok(t) => t,
+        Err(errs) => {
+            let msgs = errs
+                .iter()
+                .map(|e| {
+                    let snippet = map.render_diagnostic(&src, e.span(), &path);
+                    let mut msg = format!(
+                        "error[{}]: {}: {}\n{}",
+                        e.code(),
+                        e.kind(),
+                        e.message(),
+                        snippet
+                    );
+                    for (note, note_span) in e.note_info() {
+                        if let Some(ns) = note_span {
+                            let note_block = map.render_note(&src, ns, &path, &note);
+                            msg.push('\n');
+                            msg.push_str(&note_block);
+                        } else {
+                            msg.push_str(&format!("\nnote: {note}"));
                         }
-                        msg
-                    })
-                    .collect();
-                return BuildOutcome::Errors(msgs);
-            }
-        };
+                    }
+                    msg
+                })
+                .collect();
+            return BuildOutcome::Errors(msgs);
+        }
+    };
     for w in &build_warnings {
         let snippet = map.render_diagnostic(&src, w.span(), &path);
         emit_error(w.kind(), w.code(), &w.message(), &snippet);
@@ -430,7 +459,11 @@ fn run_build(
     }
 
     if opts.profile {
-        type_registry.profile_stats().report(&mut std::io::stderr());
+        let mut stats = type_registry.profile_stats();
+        if let Some(syms) = env_symbols {
+            stats.symbols = build_symbol_rows(&syms);
+        }
+        stats.report(&mut std::io::stderr());
     }
 
     BuildOutcome::Ok(out_path)
@@ -563,13 +596,15 @@ fn run_check(file: &PathBuf, profile: bool) -> CheckOutcome {
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
     if profile {
-        match analyze_with_base_and_registry(&ast, &base_dir) {
-            Ok((_, type_registry, warnings)) => {
+        match analyze_with_base_and_symbols(&ast, &base_dir) {
+            Ok((_, type_registry, syms, warnings)) => {
                 for w in &warnings {
                     let snippet = map.render_diagnostic(&src, w.span(), &path);
                     emit_error(w.kind(), w.code(), &w.message(), &snippet);
                 }
-                type_registry.profile_stats().report(&mut std::io::stderr());
+                let mut stats = type_registry.profile_stats();
+                stats.symbols = build_symbol_rows(&syms);
+                stats.report(&mut std::io::stderr());
                 CheckOutcome::Ok
             }
             Err(errs) => CheckOutcome::Errors(format_analysis_errors(&errs, &map, &src, &path)),

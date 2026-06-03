@@ -1,3 +1,4 @@
+use crate::analyzer::types::DiagNotes;
 use crate::diagnostics::Span;
 use thiserror::Error;
 
@@ -45,7 +46,7 @@ pub enum AnalysisError {
         context: String,
         span: Span,
         /// Notes to display after the error, in order. Each is (text, optional source span).
-        notes: Vec<(String, Option<Span>)>,
+        notes: DiagNotes,
     },
 
     #[error("{span}: field `{field}` is private")]
@@ -398,7 +399,7 @@ impl AnalysisError {
     }
 
     /// Returns all `(note_text, note_span)` pairs for this error, in display order.
-    pub fn note_info(&self) -> Vec<(String, Option<Span>)> {
+    pub fn note_info(&self) -> DiagNotes {
         match self {
             AnalysisError::UndefinedName { did_you_mean, .. } => {
                 if let Some((name, Some(decl_span))) = did_you_mean {

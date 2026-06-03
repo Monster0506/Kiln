@@ -11,8 +11,12 @@ path = "src/main.rs"
 name = "kiln_compiler"
 path = "src/lib.rs"
 
+[features]
+profiling = ["dep:dhat"]
+
 [dependencies]
 clap = { version = "4.5.6", features = ["derive"] }
+dhat = { version = "0.3", optional = true }
 cranelift-codegen = "0.131.1"
 cranelift-frontend = "0.131.1"
 cranelift-module = "0.131.1"

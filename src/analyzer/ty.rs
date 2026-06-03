@@ -537,6 +537,48 @@ impl TypeRegistry {
         }
         result
     }
+
+    pub fn profile_stats(&self) -> crate::diagnostics::profiling::RegistryStats {
+        let types_struct = self
+            .entries
+            .iter()
+            .filter(|e| matches!(e.kind, TypeKind::Struct))
+            .count();
+        let types_enum = self
+            .entries
+            .iter()
+            .filter(|e| matches!(e.kind, TypeKind::Enum { .. }))
+            .count();
+        let types_alias = self
+            .entries
+            .iter()
+            .filter(|e| matches!(e.kind, TypeKind::Alias(_)))
+            .count();
+        let methods_total: usize = self.type_methods.values().map(|v| v.len()).sum();
+        let conformances_total: usize = self.conformances.values().map(|v| v.len()).sum();
+        let interfaces_total = self.interface_methods.len();
+
+        let mut method_counts: HashMap<String, usize> = HashMap::new();
+        for methods in self.type_methods.values() {
+            for m in methods {
+                *method_counts.entry(m.method_name.clone()).or_insert(0) += 1;
+            }
+        }
+        let mut top_methods: Vec<(String, usize)> = method_counts.into_iter().collect();
+        top_methods.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        top_methods.truncate(20);
+
+        crate::diagnostics::profiling::RegistryStats {
+            types_total: self.entries.len(),
+            types_struct,
+            types_enum,
+            types_alias,
+            methods_total,
+            conformances_total,
+            interfaces_total,
+            top_methods,
+        }
+    }
 }
 
 #[cfg(test)]

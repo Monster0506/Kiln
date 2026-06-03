@@ -1,3 +1,7 @@
+#[cfg(feature = "profiling")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 use clap::{Parser, Subcommand};
 use kiln_compiler::analyzer::{analyze_with_base, analyze_with_base_and_registry};
 use kiln_compiler::annotations::{default_registry, run_processors, run_user_processors};
@@ -37,6 +41,9 @@ enum Command {
         /// Re-run check on every file change
         #[arg(long)]
         watch: bool,
+        /// Print profile stats (type registry, method frequency) to stderr
+        #[arg(long)]
+        profile: bool,
     },
     /// Compile a source file to a native executable (or object with --no-link)
     Build {
@@ -63,6 +70,9 @@ enum Command {
         /// Write the optimizer-transformed source to <file>.opt.kn
         #[arg(long)]
         emit: bool,
+        /// Print profile stats (type registry, method frequency) to stderr
+        #[arg(long)]
+        profile: bool,
     },
     /// Compile and run a source file
     Run {
@@ -80,6 +90,9 @@ enum Command {
         /// Write the optimizer-transformed source to <file>.opt.kn
         #[arg(long)]
         emit: bool,
+        /// Print profile stats (type registry, method frequency) to stderr
+        #[arg(long)]
+        profile: bool,
     },
     /// Run @test-annotated functions in a source file
     Test {
@@ -102,6 +115,7 @@ struct BuildOptions {
     verbose: bool,
     opt_level: u8,
     emit: bool,
+    profile: bool,
 }
 
 fn build_exe(file: &PathBuf, output: Option<PathBuf>, opts: &BuildOptions) -> PathBuf {
@@ -415,6 +429,10 @@ fn run_build(
         timer.report(&stats, verbose, &mut std::io::stderr());
     }
 
+    if opts.profile {
+        type_registry.profile_stats().report(&mut std::io::stderr());
+    }
+
     BuildOutcome::Ok(out_path)
 }
 
@@ -492,7 +510,7 @@ pub enum CheckOutcome {
     Errors(Vec<String>),
 }
 
-fn run_check(file: &PathBuf) -> CheckOutcome {
+fn run_check(file: &PathBuf, profile: bool) -> CheckOutcome {
     let path = file.to_string_lossy().to_string();
     let src = match fs::read_to_string(file) {
         Ok(s) => s,
@@ -544,41 +562,60 @@ fn run_check(file: &PathBuf) -> CheckOutcome {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-    match analyze_with_base(&ast, &base_dir) {
-        Ok((_, warnings)) => {
-            for w in &warnings {
-                let snippet = map.render_diagnostic(&src, w.span(), &path);
-                emit_error(w.kind(), w.code(), &w.message(), &snippet);
+    if profile {
+        match analyze_with_base_and_registry(&ast, &base_dir) {
+            Ok((_, type_registry, warnings)) => {
+                for w in &warnings {
+                    let snippet = map.render_diagnostic(&src, w.span(), &path);
+                    emit_error(w.kind(), w.code(), &w.message(), &snippet);
+                }
+                type_registry.profile_stats().report(&mut std::io::stderr());
+                CheckOutcome::Ok
             }
-            CheckOutcome::Ok
+            Err(errs) => CheckOutcome::Errors(format_analysis_errors(&errs, &map, &src, &path)),
         }
-        Err(errs) => {
-            let msgs = errs
-                .iter()
-                .map(|e| {
-                    let snippet = map.render_diagnostic(&src, e.span(), &path);
-                    let mut msg = format!(
-                        "error[{}]: {}: {}\n{}",
-                        e.code(),
-                        e.kind(),
-                        e.message(),
-                        snippet
-                    );
-                    for (note, note_span) in e.note_info() {
-                        if let Some(ns) = note_span {
-                            let note_block = map.render_note(&src, ns, &path, &note);
-                            msg.push('\n');
-                            msg.push_str(&note_block);
-                        } else {
-                            msg.push_str(&format!("\nnote: {note}"));
-                        }
-                    }
-                    msg
-                })
-                .collect();
-            CheckOutcome::Errors(msgs)
+    } else {
+        match analyze_with_base(&ast, &base_dir) {
+            Ok((_, warnings)) => {
+                for w in &warnings {
+                    let snippet = map.render_diagnostic(&src, w.span(), &path);
+                    emit_error(w.kind(), w.code(), &w.message(), &snippet);
+                }
+                CheckOutcome::Ok
+            }
+            Err(errs) => CheckOutcome::Errors(format_analysis_errors(&errs, &map, &src, &path)),
         }
     }
+}
+
+fn format_analysis_errors(
+    errs: &[kiln_compiler::analyzer::AnalysisError],
+    map: &SourceMap,
+    src: &str,
+    path: &str,
+) -> Vec<String> {
+    errs.iter()
+        .map(|e| {
+            let snippet = map.render_diagnostic(src, e.span(), path);
+            let mut msg = format!(
+                "error[{}]: {}: {}\n{}",
+                e.code(),
+                e.kind(),
+                e.message(),
+                snippet
+            );
+            for (note, note_span) in e.note_info() {
+                if let Some(ns) = note_span {
+                    let note_block = map.render_note(src, ns, path, &note);
+                    msg.push('\n');
+                    msg.push_str(&note_block);
+                } else {
+                    msg.push_str(&format!("\nnote: {note}"));
+                }
+            }
+            msg
+        })
+        .collect()
 }
 
 fn format_watch_result(outcome: &CheckOutcome, time: &str) -> String {
@@ -646,7 +683,7 @@ fn run_watch(file: &PathBuf) {
     let path = file.to_string_lossy().to_string();
     println!("watching {path}");
 
-    let outcome = run_check(file);
+    let outcome = run_check(file, false);
     println!("{}", format_watch_result(&outcome, &current_time_str()));
     if let CheckOutcome::Errors(ref errs) = outcome {
         for e in errs {
@@ -685,7 +722,7 @@ fn run_watch(file: &PathBuf) {
             }
         }
 
-        let outcome = run_check(file);
+        let outcome = run_check(file, false);
         println!("{}", format_watch_result(&outcome, &current_time_str()));
         if let CheckOutcome::Errors(ref errs) = outcome {
             for e in errs {
@@ -727,6 +764,7 @@ mod tests {
             verbose: false,
             opt_level: 3,
             emit: false,
+            profile: false,
         };
         let result = run_build(&file, None, true, &opts);
         assert!(
@@ -745,6 +783,7 @@ mod tests {
             verbose: false,
             opt_level: 3,
             emit: false,
+            profile: false,
         };
         let result = run_build(&file, None, true, &opts);
         assert!(
@@ -773,7 +812,7 @@ mod tests {
 
     #[test]
     fn run_check_valid_file_returns_ok() {
-        let result = run_check(&PathBuf::from("examples/check_valid.kn"));
+        let result = run_check(&PathBuf::from("examples/check_valid.kn"), false);
         assert!(
             matches!(result, CheckOutcome::Ok),
             "expected ok for valid file"
@@ -782,7 +821,7 @@ mod tests {
 
     #[test]
     fn run_check_undefined_name_returns_errors() {
-        let result = run_check(&PathBuf::from("examples/check_undefined.kn"));
+        let result = run_check(&PathBuf::from("examples/check_undefined.kn"), false);
         assert!(
             matches!(result, CheckOutcome::Errors(_)),
             "expected errors for file with undefined names"
@@ -811,6 +850,9 @@ mod tests {
 }
 
 fn main() {
+    #[cfg(feature = "profiling")]
+    let _profiler = dhat::Profiler::new_heap();
+
     let cli = Cli::parse();
     match cli.command {
         Command::Lex { file } => {
@@ -835,11 +877,15 @@ fn main() {
             }
         }
 
-        Command::Check { file, watch } => {
+        Command::Check {
+            file,
+            watch,
+            profile,
+        } => {
             if watch {
                 run_watch(&file);
             } else {
-                match run_check(&file) {
+                match run_check(&file, profile) {
                     CheckOutcome::Ok => println!("ok"),
                     CheckOutcome::Errors(errs) => {
                         for e in &errs {
@@ -860,12 +906,14 @@ fn main() {
             verbose,
             opt_level,
             emit,
+            profile,
         } => {
             let opts = BuildOptions {
                 timing,
                 verbose,
                 opt_level,
                 emit,
+                profile,
             };
             if watch {
                 run_build_watch(&file, output, no_link, &opts);
@@ -888,12 +936,14 @@ fn main() {
             verbose,
             opt_level,
             emit,
+            profile,
         } => {
             let opts = BuildOptions {
                 timing,
                 verbose,
                 opt_level,
                 emit,
+                profile,
             };
             let exe_path = build_exe(&file, None, &opts);
             let status = std::process::Command::new(&exe_path)
@@ -916,6 +966,7 @@ fn main() {
                 verbose,
                 opt_level,
                 emit: false,
+                profile: false,
             };
             let path = file.to_string_lossy().to_string();
             let src = fs::read_to_string(&file).unwrap_or_else(|e| {

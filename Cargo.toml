@@ -24,5 +24,7 @@ cranelift-native = "0.131.1"
 cranelift-object = "0.131.1"
 notify = "8.2.0"
 thiserror = "2.0.18"
+serde = { version = "1.0.228", features = ["derive"] }
+bincode = { version = "2", features = ["serde"] }
 
 [dev-dependencies]

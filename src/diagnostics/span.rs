@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// A half-open byte range [start, end) into the source string.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Span {
     pub start: usize,
     pub end: usize,

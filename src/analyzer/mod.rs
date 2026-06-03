@@ -15,6 +15,7 @@ pub mod infer_bounds;
 pub mod liveness;
 pub mod op_hierarchy;
 pub mod opt_notes;
+pub mod prelude_cache;
 pub mod pretty;
 pub mod prop;
 pub mod purity;
@@ -196,64 +197,18 @@ pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
 }
 
 /// Like `analyze`, but resolves `import` statements relative to `base_dir`.
-/// Like `analyze`, but resolves `import` statements relative to `base_dir`.
 /// Returns `Ok((TypedFile, warnings))` on success, `Err(errors)` on failure.
 /// Warnings are diagnostics that don't block compilation (W-codes).
 pub fn analyze_with_base(
     source: &SourceFile,
     base_dir: &std::path::Path,
 ) -> Result<(TypedFile, Vec<AnalysisError>), Vec<AnalysisError>> {
-    let prelude_src = crate::stdlib::parse_prelude();
-    let ast_stdlib = crate::stdlib::parse_ast_stdlib();
-    let stdlib_vfs = crate::stdlib::stdlib_virtual_fs();
-
-    let mut import_errors: Vec<AnalysisError> = Vec::new();
-
-    // Resolve prelude imports using the embedded stdlib virtual filesystem.
-    let mut prelude_items: Vec<Item> = Vec::new();
-    resolve_imports_into(
-        &prelude_src,
-        base_dir,
-        &mut prelude_items,
-        &mut import_errors,
-        &stdlib_vfs,
-    );
-
-    // Resolve user imports from disk (vfs is also passed for any stdlib re-imports).
-    let mut user_items: Vec<Item> = Vec::new();
-    resolve_imports_into(
-        source,
-        base_dir,
-        &mut user_items,
-        &mut import_errors,
-        &stdlib_vfs,
-    );
-
-    let combined_items: Vec<_> = prelude_items
-        .into_iter()
-        .chain(ast_stdlib.items)
-        .chain(user_items)
-        .collect();
-    let (desugared_items, desugar_errors) = desugar_inline_hooks(combined_items);
-    import_errors.extend(desugar_errors);
-    let combined = SourceFile {
-        items: desugared_items,
-        span: source.span,
-    };
-
-    match analyze_inner(&combined) {
-        Ok((typed, _registry, warnings)) if import_errors.is_empty() => Ok((typed, warnings)),
-        Ok(_) => Err(import_errors),
-        Err(mut errs) => {
-            import_errors.append(&mut errs);
-            Err(import_errors)
-        }
-    }
+    analyze_with_base_and_registry(source, base_dir)
+        .map(|(typed, _registry, warnings)| (typed, warnings))
 }
 
 /// Like `analyze_with_base`, but also returns the `TypeRegistry` built during analysis.
 /// Used by codegen paths that need the registry for monomorphization.
-/// Like `analyze_with_base`, but also returns the `TypeRegistry`.
 /// Returns `Ok((TypedFile, TypeRegistry, warnings))` on success.
 pub fn analyze_with_base_and_registry(
     source: &SourceFile,
@@ -265,6 +220,7 @@ pub fn analyze_with_base_and_registry(
 
     let mut import_errors: Vec<AnalysisError> = Vec::new();
 
+    // Resolve prelude imports (VFS only -- no disk I/O).
     let mut prelude_items: Vec<Item> = Vec::new();
     resolve_imports_into(
         &prelude_src,
@@ -274,6 +230,7 @@ pub fn analyze_with_base_and_registry(
         &stdlib_vfs,
     );
 
+    // Resolve user imports from disk.
     let mut user_items: Vec<Item> = Vec::new();
     resolve_imports_into(
         source,
@@ -283,20 +240,88 @@ pub fn analyze_with_base_and_registry(
         &stdlib_vfs,
     );
 
-    let combined_items: Vec<_> = prelude_items
-        .into_iter()
-        .chain(ast_stdlib.items)
-        .chain(user_items)
+    // Desugar prelude (inline hooks -> ImplBlocks).
+    let prelude_combined: Vec<_> = prelude_items.into_iter().chain(ast_stdlib.items).collect();
+    let (desugared_prelude, desugar_errors1) = desugar_inline_hooks(prelude_combined);
+    import_errors.extend(desugar_errors1);
+
+    // Desugar user items.
+    let (desugared_user, desugar_errors2) = desugar_inline_hooks(user_items);
+    import_errors.extend(desugar_errors2);
+
+    // Extract interface and impl lists from desugared prelude for conformance checks.
+    let prelude_interface_list: Vec<crate::parser::ast::InterfaceDef> = desugared_prelude
+        .iter()
+        .filter_map(|i| {
+            if let Item::Interface(iface) = i {
+                Some(iface.clone())
+            } else {
+                None
+            }
+        })
         .collect();
-    let (desugared_items, desugar_errors) = desugar_inline_hooks(combined_items);
-    import_errors.extend(desugar_errors);
-    let combined = SourceFile {
-        items: desugared_items,
-        span: source.span,
+    let prelude_impl_list: Vec<crate::parser::ast::ImplBlock> = desugared_prelude
+        .iter()
+        .filter_map(|i| {
+            if let Item::ImplBlock(b) = i {
+                Some(b.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Try to load a valid prelude cache.
+    let cached_ctx = prelude_cache::load().map(|cached| PreludeAnalysisContext {
+        typed_items: cached.typed_items,
+        registry: cached.registry,
+        env_symbols: cached.env_symbols,
+        interfaces: prelude_interface_list.clone(),
+        impls: prelude_impl_list.clone(),
+    });
+
+    let ctx = if let Some(ctx) = cached_ctx {
+        ctx
+    } else {
+        // Cache miss: analyze prelude only to populate cache.
+        let prelude_source = SourceFile {
+            items: desugared_prelude,
+            span: source.span,
+        };
+        match analyze_inner(&prelude_source, None) {
+            Ok((prelude_typed, prelude_registry, prelude_env, prelude_warnings)) => {
+                let env_symbols = prelude_env.get_global_scope_symbols();
+                prelude_cache::save(&prelude_cache::PreludeCache {
+                    version: prelude_cache::CACHE_VERSION,
+                    source_hash: prelude_cache::compute_source_hash(),
+                    typed_items: prelude_typed.items.clone(),
+                    registry: prelude_registry.clone(),
+                    env_symbols: env_symbols.clone(),
+                });
+                // Treat prelude warnings as non-fatal (they go to stderr in release builds).
+                let _ = prelude_warnings;
+                PreludeAnalysisContext {
+                    typed_items: prelude_typed.items,
+                    registry: prelude_registry,
+                    env_symbols,
+                    interfaces: prelude_interface_list,
+                    impls: prelude_impl_list,
+                }
+            }
+            Err(mut errs) => {
+                import_errors.append(&mut errs);
+                return Err(import_errors);
+            }
+        }
     };
 
-    match analyze_inner(&combined) {
-        Ok((typed, registry, warnings)) if import_errors.is_empty() => {
+    // Analyze user items with the pre-built prelude context.
+    let user_source = SourceFile {
+        items: desugared_user,
+        span: source.span,
+    };
+    match analyze_inner(&user_source, Some(ctx)) {
+        Ok((typed, registry, _env, warnings)) if import_errors.is_empty() => {
             Ok((typed, registry, warnings))
         }
         Ok(_) => Err(import_errors),
@@ -637,15 +662,40 @@ fn desugar_inline_hooks(items: Vec<Item>) -> (Vec<Item>, Vec<error::AnalysisErro
     (out, errors)
 }
 
+/// Pre-built prelude state for the cache-hit analysis path.
+pub struct PreludeAnalysisContext {
+    /// Typed items produced by analyzing the prelude.
+    pub typed_items: Vec<crate::analyzer::typed_ast::TypedItem>,
+    /// Fully-built type registry from the prelude analysis.
+    pub registry: ty::TypeRegistry,
+    /// Global-scope symbols from the prelude env (functions, types, interfaces).
+    pub env_symbols: Vec<(String, crate::analyzer::env::Symbol)>,
+    /// Untyped interface definitions from the prelude, needed for conformance checks.
+    pub interfaces: Vec<crate::parser::ast::InterfaceDef>,
+    /// Untyped impl blocks from the prelude, needed for conformance checks.
+    pub impls: Vec<crate::parser::ast::ImplBlock>,
+}
+
 fn analyze_inner(
     source: &SourceFile,
-) -> Result<(TypedFile, ty::TypeRegistry, Vec<AnalysisError>), Vec<AnalysisError>> {
+    prelude_ctx: Option<PreludeAnalysisContext>,
+) -> Result<(TypedFile, ty::TypeRegistry, Env, Vec<AnalysisError>), Vec<AnalysisError>> {
     let mut errors: Vec<AnalysisError> = Vec::new();
     let mut env = Env::new();
     let mut registry = ty::TypeRegistry::new();
 
-    env.push_scope();
-    register_builtins(&mut env, &mut registry);
+    let (prelude_typed_items, prelude_interfaces, prelude_impls) = if let Some(ctx) = prelude_ctx {
+        env.push_scope();
+        for (name, sym) in ctx.env_symbols {
+            env.define(&name, sym);
+        }
+        registry = ctx.registry;
+        (ctx.typed_items, ctx.interfaces, ctx.impls)
+    } else {
+        env.push_scope();
+        register_builtins(&mut env, &mut registry);
+        (vec![], vec![], vec![])
+    };
 
     // Pass 1: collect top-level names.
     errors.extend(collect::collect_top_level(source, &mut env, &mut registry));
@@ -1359,28 +1409,26 @@ fn analyze_inner(
         }
     }
 
-    let interfaces: Vec<_> = source
-        .items
-        .iter()
-        .filter_map(|i| {
+    let interfaces: Vec<_> = prelude_interfaces
+        .into_iter()
+        .chain(source.items.iter().filter_map(|i| {
             if let Item::Interface(iface) = i {
                 Some(iface.clone())
             } else {
                 None
             }
-        })
+        }))
         .collect();
 
-    let all_impls: Vec<_> = source
-        .items
-        .iter()
-        .filter_map(|i| {
+    let all_impls: Vec<_> = prelude_impls
+        .into_iter()
+        .chain(source.items.iter().filter_map(|i| {
             if let Item::ImplBlock(b) = i {
                 Some(b.clone())
             } else {
                 None
             }
-        })
+        }))
         .collect();
 
     // Pass 1d2: auto-register Display conformance for all enums.
@@ -2405,8 +2453,10 @@ fn analyze_inner(
         }
     }
 
+    let mut all_typed_items = prelude_typed_items;
+    all_typed_items.extend(typed_items);
     let typed_file = TypedFile {
-        items: typed_items,
+        items: all_typed_items,
         span: source.span,
     };
 
@@ -2497,7 +2547,7 @@ fn analyze_inner(
     let (warnings, hard_errors): (Vec<_>, Vec<_>) =
         errors.into_iter().partition(|e| e.code().starts_with('W'));
     if hard_errors.is_empty() {
-        Ok((typed_file, registry, warnings))
+        Ok((typed_file, registry, env, warnings))
     } else {
         let mut all = hard_errors;
         all.extend(warnings);

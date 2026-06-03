@@ -4,13 +4,13 @@ use crate::parser::ast::{BinOp, HookName, ImplKind, UnOp};
 
 // -- Top-level ---------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedFile {
     pub items: Vec<TypedItem>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TypedItem {
     Function(TypedFnDef),
     Struct(TypedStructDef),
@@ -21,7 +21,7 @@ pub enum TypedItem {
     Const(TypedConstDef),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedConstDef {
     pub name: String,
     pub ty: Ty,
@@ -29,7 +29,7 @@ pub struct TypedConstDef {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedGlobalVar {
     pub name: String,
     pub ty: Ty,
@@ -38,7 +38,7 @@ pub struct TypedGlobalVar {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedFnDef {
     pub name: String,
     pub params: Vec<TypedParam>,
@@ -53,7 +53,7 @@ pub struct TypedFnDef {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedParam {
     pub name: String,
     pub ty: Ty,
@@ -61,7 +61,7 @@ pub struct TypedParam {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedStructDef {
     pub name: String,
     pub is_builtin: bool,
@@ -69,7 +69,7 @@ pub struct TypedStructDef {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedField {
     pub name: String,
     pub ty: Ty,
@@ -78,14 +78,14 @@ pub struct TypedField {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedEnumDef {
     pub name: String,
     pub variants: Vec<TypedEnumVariant>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedEnumVariant {
     pub name: String,
     pub fields: Vec<TypedField>,
@@ -93,7 +93,7 @@ pub struct TypedEnumVariant {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedImplBlock {
     pub interface: String,
     pub for_type: String,
@@ -106,14 +106,14 @@ pub struct TypedImplBlock {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedInterfaceDef {
     pub name: String,
     pub methods: Vec<TypedInterfaceMethod>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedInterfaceMethod {
     pub name: String,
     pub params: Vec<TypedParam>,
@@ -121,7 +121,7 @@ pub struct TypedInterfaceMethod {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedHookDef {
     pub is_static: bool,
     pub is_impure: bool,
@@ -134,13 +134,13 @@ pub struct TypedHookDef {
 
 // -- Statements --------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedBlock {
     pub stmts: Vec<TypedStmt>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TypedStmt {
     VarDecl {
         name: String,
@@ -204,7 +204,7 @@ pub enum TypedStmt {
     Expr(TypedExpr),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedCatchHandler {
     pub ty: Ty,
     pub binding: String,
@@ -214,14 +214,14 @@ pub struct TypedCatchHandler {
 
 // -- Expressions -------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedExpr {
     pub kind: TypedExprKind,
     pub ty: Ty,
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TypedExprKind {
     Int(i64),
     Float(f64),
@@ -311,13 +311,13 @@ pub enum TypedExprKind {
     Block(Vec<TypedStmt>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TypedStringSegment {
     Text(String),
     Interp(TypedExpr),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypedMatchArm {
     pub pattern: TypedPattern,
     pub guard: Option<TypedExpr>,
@@ -328,7 +328,7 @@ pub struct TypedMatchArm {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TypedPattern {
     Wildcard(Span),
     Literal(TypedExpr),
@@ -351,7 +351,7 @@ pub enum TypedPattern {
     Tuple(Vec<TypedPattern>, Span),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TypedClosureBody {
     Expr(Box<TypedExpr>),
     Block(TypedBlock),

@@ -32,7 +32,7 @@ pub fn normalize_ty(ty: &Ty, pins: &HashMap<(String, String), Ty>) -> Ty {
 }
 
 /// Computed variance for a type parameter position, inferred from method signatures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ComputedVariance {
     /// Appears only in output/return positions.
     Covariant,
@@ -65,7 +65,7 @@ impl ComputedVariance {
 /// One way a type can satisfy an interface.
 /// All bounds must hold for this entry to count.
 /// An empty `bounds` vec means unconditional conformance.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ConformanceEntry {
     /// Each element is `(param_name, interface_name)`.
     /// For generic containers: e.g. `Vec[T]: Display` stores `[("T", "Display")]`.
@@ -75,14 +75,14 @@ pub struct ConformanceEntry {
     pub bindings: Vec<(String, Ty)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TypeId(pub u32);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct InterfaceId(pub u32);
 
 /// A method registered for a named type via an impl block.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MethodEntry {
     pub method_name: String,
     /// Fully-qualified function name as registered in codegen's func_ids (e.g. "Vec_new").
@@ -91,7 +91,7 @@ pub struct MethodEntry {
     pub ret: Ty,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Ty {
     Int,
     Float,
@@ -177,21 +177,21 @@ impl fmt::Display for Ty {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TypeKind {
     Struct,
     Enum { variant_names: Vec<String> },
     Alias(Ty),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypeEntry {
     pub id: TypeId,
     pub name: String,
     pub kind: TypeKind,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypeRegistry {
     next_id: u32,
     entries: Vec<TypeEntry>,

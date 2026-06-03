@@ -3,7 +3,7 @@ use crate::diagnostics::Span;
 use std::collections::HashMap;
 
 /// A single interface bound on a generic parameter, e.g. `T: Addable`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GenericBound {
     pub param: String,
     pub iface: String,
@@ -24,7 +24,7 @@ pub struct GenericBound {
     pub source_desc: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FnOverload {
     pub generic_params: Vec<String>,
     pub generic_bounds: Vec<GenericBound>,
@@ -37,7 +37,7 @@ pub struct FnOverload {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Symbol {
     Var {
         ty: Ty,
@@ -241,6 +241,22 @@ impl Env {
             Symbol::Const { span, .. } => Some(*span),
             Symbol::TypeAlias(_) | Symbol::StructField { .. } => None,
         }
+    }
+
+    /// Returns all (name, symbol) pairs visible across all active scopes.
+    /// Innermost scope takes precedence (like lookup). Used to snapshot prelude
+    /// symbols for the cache.
+    pub fn get_global_scope_symbols(&self) -> Vec<(String, Symbol)> {
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for scope in self.scopes.iter().rev() {
+            for (k, v) in scope {
+                if seen.insert(k.clone()) {
+                    result.push((k.clone(), v.clone()));
+                }
+            }
+        }
+        result
     }
 
     /// Mutable lookup — searches from innermost scope outward.

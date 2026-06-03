@@ -241,7 +241,7 @@ pub enum InterfaceItemKind {
 }
 
 /// The name of a hook, either a symbol or an identifier.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum HookName {
     Op(String),    // "+", "-", "==", "<=>", "[]", etc.
     Named(String), // "iter", "to_str", "drop", "next"
@@ -256,7 +256,7 @@ pub struct InterfaceDef {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ImplKind {
     Plain,
     Specialized,
@@ -542,7 +542,7 @@ pub enum StringSegment {
     Interp(Expr),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum BinOp {
     Add,
     Sub,
@@ -561,7 +561,7 @@ pub enum BinOp {
     Pipe,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UnOp {
     Neg,
     Not,

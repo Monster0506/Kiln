@@ -2,12 +2,12 @@ use crate::lexer::Lexer;
 use crate::parser::{ast::SourceFile, Parser};
 use std::sync::OnceLock;
 
-const PRELUDE_SRC: &str = include_str!("prelude.kn");
-const AST_SRC: &str = include_str!("ast.kn");
-const BUILTINS_SRC: &str = include_str!("builtins.kn");
-const INTERFACES_SRC: &str = include_str!("interfaces.kn");
-const IMPLS_SRC: &str = include_str!("impls.kn");
-const FUNCTIONS_SRC: &str = include_str!("functions.kn");
+pub const PRELUDE_SRC: &str = include_str!("prelude.kn");
+pub const AST_SRC: &str = include_str!("ast.kn");
+pub const BUILTINS_SRC: &str = include_str!("builtins.kn");
+pub const INTERFACES_SRC: &str = include_str!("interfaces.kn");
+pub const IMPLS_SRC: &str = include_str!("impls.kn");
+pub const FUNCTIONS_SRC: &str = include_str!("functions.kn");
 
 fn parse_src(src: &str, label: &str) -> SourceFile {
     let tokens = Lexer::new(src).tokenize().unwrap_or_else(|e| {

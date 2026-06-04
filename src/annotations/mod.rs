@@ -4,7 +4,7 @@ pub mod interp;
 
 use crate::analyzer::AnalysisError;
 use crate::annotations::api::{AnnotationArgs, AnnotationTarget};
-use crate::annotations::interp::ProcessorOutcome;
+use crate::annotations::interp::{ProcessorOutcome, Replacement};
 use crate::diagnostics::timing::ProcessorRun;
 use crate::parser::ast::{AnnotationDef, ImplBlock, Item, ProcessorDef, SourceFile, TypeExpr};
 use std::collections::{HashMap, HashSet};
@@ -125,6 +125,7 @@ pub fn run_user_processors(
         .collect();
 
     let mut new_items: Vec<Item> = vec![];
+    let mut removed_indices: HashSet<usize> = HashSet::new();
     // Track (item_count, total_duration) per processor name, in insertion order.
     let mut proc_order: Vec<String> = vec![];
     let mut proc_stats: HashMap<String, (usize, std::time::Duration)> = HashMap::new();
@@ -180,11 +181,24 @@ pub fn run_user_processors(
             let outcome = interp::Interpreter::run_processor(&fn_def, &proc, &resolved_args);
             let elapsed = t0.elapsed();
 
+            fn apply_replacement(
+                replacement: Replacement,
+                idx: usize,
+                items: &mut [Item],
+                removed: &mut HashSet<usize>,
+            ) {
+                match replacement {
+                    Replacement::Keep => {}
+                    Replacement::Replace(rep) => items[idx] = *rep,
+                    Replacement::Remove => {
+                        removed.insert(idx);
+                    }
+                }
+            }
+
             match outcome {
                 ProcessorOutcome::Ok(replacement, extras) => {
-                    if let Some(rep) = replacement {
-                        source.items[idx] = rep;
-                    }
+                    apply_replacement(replacement, idx, &mut source.items, &mut removed_indices);
                     new_items.extend(extras);
                 }
                 ProcessorOutcome::Fail(msg) => {
@@ -200,9 +214,7 @@ pub fn run_user_processors(
                             span: ann.span,
                         });
                     }
-                    if let Some(rep) = replacement {
-                        source.items[idx] = rep;
-                    }
+                    apply_replacement(replacement, idx, &mut source.items, &mut removed_indices);
                     new_items.extend(extras);
                 }
             }
@@ -213,6 +225,15 @@ pub fn run_user_processors(
             });
             entry.0 += 1;
             entry.1 += elapsed;
+        }
+    }
+
+    // Remove items marked for deletion (in reverse order to preserve indices).
+    if !removed_indices.is_empty() {
+        let mut idx_vec: Vec<usize> = removed_indices.into_iter().collect();
+        idx_vec.sort_unstable_by(|a, b| b.cmp(a));
+        for idx in idx_vec {
+            source.items.remove(idx);
         }
     }
 

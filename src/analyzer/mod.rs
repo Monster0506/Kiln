@@ -335,12 +335,7 @@ pub fn analyze_with_base_and_registry(
     }
 }
 
-type AnalysisWithSymbols = (
-    TypedFile,
-    ty::TypeRegistry,
-    SymbolList,
-    Vec<AnalysisError>,
-);
+type AnalysisWithSymbols = (TypedFile, ty::TypeRegistry, SymbolList, Vec<AnalysisError>);
 
 /// Like `analyze_with_base_and_registry`, but also returns the flat symbol table from the
 /// combined (prelude + user) environment. Used by `--profile` to print the symbol table.

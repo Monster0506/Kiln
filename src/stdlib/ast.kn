@@ -80,4 +80,7 @@ enum Decl {
     Enum { decl: EnumDecl }
 }
 
-export { Type, Param, StructField, AnnotArgs, Stmt, Expr, Block, FnDecl, StructDecl, EnumDecl, Decl }
+@builtin
+struct Remove { }
+
+export { Type, Param, StructField, AnnotArgs, Stmt, Expr, Block, FnDecl, StructDecl, EnumDecl, Decl, Remove }

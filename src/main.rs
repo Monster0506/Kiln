@@ -300,7 +300,8 @@ fn run_build(
         analyze_with_base_and_symbols(&ast, &base_dir)
             .map(|(tf, reg, syms, warns)| (tf, reg, Some(syms), warns))
     } else {
-        analyze_with_base_and_registry(&ast, &base_dir).map(|(tf, reg, warns)| (tf, reg, None, warns))
+        analyze_with_base_and_registry(&ast, &base_dir)
+            .map(|(tf, reg, warns)| (tf, reg, None, warns))
     };
     let (typed_file, type_registry, env_symbols, build_warnings) = match analyze_result {
         Ok(t) => t,

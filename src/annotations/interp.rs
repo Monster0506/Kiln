@@ -33,15 +33,26 @@ pub enum Value {
 // Interpreter
 // ---------------------------------------------------------------------------
 
+/// What to do with the original item after a processor runs.
+#[derive(Debug)]
+pub enum Replacement {
+    /// Leave the original item unchanged.
+    Keep,
+    /// Replace the original item with the given item.
+    Replace(Box<Item>),
+    /// Remove the original item from the AST entirely.
+    Remove,
+}
+
 /// Outcome returned by `run_processor` after a processor body executes.
 #[derive(Debug)]
 pub enum ProcessorOutcome {
-    /// Normal completion; replacement item and any extra items.
-    Ok(Option<Item>, Vec<Item>),
+    /// Normal completion; what to do with the original and any extra items.
+    Ok(Replacement, Vec<Item>),
     /// `Diag.fail(msg)` was called; transformation aborted.
     Fail(String),
     /// One or more `Diag.warn(msg)` calls fired; transformation still applied.
-    Warn(Vec<String>, Option<Item>, Vec<Item>),
+    Warn(Vec<String>, Replacement, Vec<Item>),
 }
 
 pub struct Interpreter {
@@ -141,11 +152,11 @@ impl Interpreter {
                 if let Some(msg) = interp.fail_msg {
                     return ProcessorOutcome::Fail(msg);
                 }
-                ProcessorOutcome::Ok(None, vec![])
+                ProcessorOutcome::Ok(Replacement::Keep, vec![])
             }
             Ok(result) => {
                 let (replacement, extras) =
-                    decode_processor_result(result).unwrap_or((None, vec![]));
+                    decode_processor_result(result).unwrap_or((Replacement::Keep, vec![]));
                 if interp.warnings.is_empty() {
                     ProcessorOutcome::Ok(replacement, extras)
                 } else {
@@ -297,6 +308,16 @@ impl Interpreter {
             Expr::StructLiteral { ty, fields, .. } if ty == "Some" => {
                 let (_, val_expr) = fields.iter().find(|(n, _)| n == "value").ok_or(())?;
                 Ok(Value::Some(Box::new(self.eval_expr(val_expr)?)))
+            }
+            Expr::StructLiteral { ty, fields, .. } => {
+                let mut map = HashMap::new();
+                for (name, expr) in fields {
+                    map.insert(name.clone(), self.eval_expr(expr)?);
+                }
+                Ok(Value::Struct {
+                    ty: ty.clone(),
+                    fields: map,
+                })
             }
             Expr::Field { object, field, .. } => {
                 let obj = self.eval_expr(object)?;
@@ -1113,38 +1134,49 @@ fn display_value(v: &Value) -> String {
     }
 }
 
-fn decode_processor_result(val: Value) -> Option<(Option<Item>, Vec<Item>)> {
-    if let Value::Tuple(parts) = val {
-        if parts.len() != 2 {
-            return None;
-        }
-        let opt_item = match &parts[0] {
-            Value::None => None,
-            Value::Some(inner) => {
-                if let Value::Decl(item) = inner.as_ref() {
+fn decl_list_from_value(val: &Value) -> Vec<Item> {
+    match val {
+        Value::List(items) => items
+            .iter()
+            .filter_map(|v| {
+                if let Value::Decl(item) = v {
                     Some(item.clone())
                 } else {
                     None
                 }
-            }
-            _ => None,
-        };
-        let extras: Vec<Item> = match &parts[1] {
-            Value::List(items) => items
-                .iter()
-                .filter_map(|v| {
-                    if let Value::Decl(item) = v {
-                        Some(item.clone())
+            })
+            .collect(),
+        _ => vec![],
+    }
+}
+
+fn decode_processor_result(val: Value) -> Option<(Replacement, Vec<Item>)> {
+    match val {
+        // Legacy form: (Option[Decl], Vec[Decl])
+        Value::Tuple(ref parts) if parts.len() == 2 => {
+            let replacement = match &parts[0] {
+                Value::None => Replacement::Keep,
+                Value::Some(inner) => {
+                    if let Value::Decl(item) = inner.as_ref() {
+                        Replacement::Replace(Box::new(item.clone()))
                     } else {
-                        None
+                        Replacement::Keep
                     }
-                })
-                .collect(),
-            _ => vec![],
-        };
-        Some((opt_item, extras))
-    } else {
-        None
+                }
+                _ => Replacement::Keep,
+            };
+            let extras = decl_list_from_value(&parts[1]);
+            Some((replacement, extras))
+        }
+        // -> Decl: replace the original item
+        Value::Decl(item) => Some((Replacement::Replace(Box::new(item)), vec![])),
+        // -> Vec[Decl]: keep original, emit extras
+        Value::List(_) => Some((Replacement::Keep, decl_list_from_value(&val))),
+        // -> void / no return: no-op
+        Value::Void => Some((Replacement::Keep, vec![])),
+        // -> Remove {}: delete the original item
+        Value::Struct { ref ty, .. } if ty == "Remove" => Some((Replacement::Remove, vec![])),
+        _ => None,
     }
 }
 
@@ -1595,10 +1627,14 @@ mod tests {
             ProcessorOutcome::Fail(msg) => panic!("processor failed: {msg}"),
         };
         assert!(extras.is_empty());
-        if let Some(Item::Function(new_fn)) = replacement {
-            assert_eq!(new_fn.body.stmts.len(), 3, "one stmt per param");
+        if let Replacement::Replace(boxed) = replacement {
+            if let Item::Function(new_fn) = *boxed {
+                assert_eq!(new_fn.body.stmts.len(), 3, "one stmt per param");
+            } else {
+                panic!("expected Replace(Function)");
+            }
         } else {
-            panic!("expected Some(Function)");
+            panic!("expected Replace(Function)");
         }
     }
 
@@ -1698,7 +1734,7 @@ mod tests {
         let outcome = run_proc_body(vec![diag_call("warn", "note"), return_stmt]);
         if let ProcessorOutcome::Warn(msgs, replacement, _) = outcome {
             assert_eq!(msgs, vec!["note"]);
-            assert!(replacement.is_some());
+            assert!(matches!(replacement, Replacement::Replace(_)));
         } else {
             panic!("expected Warn");
         }
@@ -1727,6 +1763,110 @@ mod tests {
         assert!(
             matches!(outcome, ProcessorOutcome::Fail(ref m) if m == "fatal"),
             "fail after warn must produce Fail, got {:?}",
+            outcome,
+        );
+    }
+
+    fn with_body_expr() -> Expr {
+        Expr::Call {
+            callee: Box::new(Expr::Field {
+                object: Box::new(Expr::Ident("target".into(), zero())),
+                field: "with_body".into(),
+                span: zero(),
+            }),
+            args: vec![Expr::Gen {
+                body: Block {
+                    stmts: vec![],
+                    span: zero(),
+                },
+                span: zero(),
+            }],
+            span: zero(),
+        }
+    }
+
+    #[test]
+    fn returning_decl_directly_replaces_original() {
+        let outcome = run_proc_body(vec![Stmt::Return {
+            value: Some(with_body_expr()),
+            span: zero(),
+        }]);
+        assert!(
+            matches!(outcome, ProcessorOutcome::Ok(Replacement::Replace(_), _)),
+            "expected Ok(Replace(_), _), got {:?}",
+            outcome,
+        );
+    }
+
+    #[test]
+    fn returning_void_is_a_noop() {
+        let outcome = run_proc_body(vec![]);
+        assert!(
+            matches!(outcome, ProcessorOutcome::Ok(Replacement::Keep, _)),
+            "expected Ok(Keep, _), got {:?}",
+            outcome,
+        );
+    }
+
+    #[test]
+    fn returning_remove_signals_deletion() {
+        let outcome = run_proc_body(vec![Stmt::Return {
+            value: Some(Expr::StructLiteral {
+                ty: "Remove".into(),
+                fields: vec![],
+                span: zero(),
+            }),
+            span: zero(),
+        }]);
+        assert!(
+            matches!(outcome, ProcessorOutcome::Ok(Replacement::Remove, _)),
+            "expected Ok(Remove, _), got {:?}",
+            outcome,
+        );
+    }
+
+    #[test]
+    fn returning_list_of_decls_emits_extras_keeps_original() {
+        let outcome = run_proc_body(vec![Stmt::Return {
+            value: Some(Expr::Array(vec![with_body_expr()], zero())),
+            span: zero(),
+        }]);
+        if let ProcessorOutcome::Ok(Replacement::Keep, extras) = outcome {
+            assert_eq!(extras.len(), 1, "expected one extra item");
+        } else {
+            panic!("expected Ok(Keep, [one item])");
+        }
+    }
+
+    #[test]
+    fn old_style_tuple_return_still_works() {
+        let vec_new = Expr::Call {
+            callee: Box::new(Expr::Field {
+                object: Box::new(Expr::Ident("Vec".into(), zero())),
+                field: "new".into(),
+                span: zero(),
+            }),
+            args: vec![],
+            span: zero(),
+        };
+        let return_stmt = Stmt::Return {
+            value: Some(Expr::Tuple(
+                vec![
+                    Expr::StructLiteral {
+                        ty: "Some".into(),
+                        fields: vec![("value".into(), with_body_expr())],
+                        span: zero(),
+                    },
+                    vec_new,
+                ],
+                zero(),
+            )),
+            span: zero(),
+        };
+        let outcome = run_proc_body(vec![return_stmt]);
+        assert!(
+            matches!(outcome, ProcessorOutcome::Ok(Replacement::Replace(_), _)),
+            "expected Ok(Replace(_), _), got {:?}",
             outcome,
         );
     }

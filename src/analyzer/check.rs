@@ -1,6 +1,9 @@
 use crate::analyzer::env::{Env, Symbol};
 use crate::analyzer::error::AnalysisError;
-use crate::analyzer::infer::{check_assignable, infer_typed_expr, subst_generic_ty, substitute_t};
+use crate::analyzer::infer::{
+    check_assignable, check_assignable_with_decl_span, infer_typed_expr, subst_generic_ty,
+    substitute_t,
+};
 use crate::analyzer::resolve::resolve_type_expr;
 use crate::analyzer::ty::{ComputedVariance, Ty, TypeKind, TypeRegistry};
 use crate::diagnostics::Span;
@@ -21,14 +24,74 @@ pub fn check_typed_block(
 ) -> TypedBlock {
     env.push_scope();
     let mut stmts: Vec<TypedStmt> = Vec::new();
+    let mut terminator_span: Option<Span> = None;
+
     for s in &block.stmts {
-        stmts.push(check_typed_stmt(s, env, registry, return_ty, errors));
+        if let Some(term_span) = terminator_span {
+            errors.push(AnalysisError::UnreachableCode {
+                span: ast_stmt_span(s),
+                terminator_span: term_span,
+            });
+            break;
+        }
+        let typed = check_typed_stmt(s, env, registry, return_ty, errors);
+        if is_definite_terminator(&typed) {
+            terminator_span = Some(typed_stmt_span(&typed));
+        }
+        stmts.push(typed);
     }
+
     emit_unused_var_warnings(env, &stmts, errors);
     env.pop_scope();
     TypedBlock {
         stmts,
         span: block.span,
+    }
+}
+
+fn is_definite_terminator(ts: &TypedStmt) -> bool {
+    matches!(
+        ts,
+        TypedStmt::Return { .. }
+            | TypedStmt::Break(_)
+            | TypedStmt::Continue(_)
+            | TypedStmt::Raise { .. }
+    )
+}
+
+fn typed_stmt_span(ts: &TypedStmt) -> Span {
+    match ts {
+        TypedStmt::VarDecl { span, .. }
+        | TypedStmt::Assign { span, .. }
+        | TypedStmt::CompoundAssign { span, .. }
+        | TypedStmt::Return { span, .. }
+        | TypedStmt::Raise { span, .. }
+        | TypedStmt::If { span, .. }
+        | TypedStmt::While { span, .. }
+        | TypedStmt::DoWhile { span, .. }
+        | TypedStmt::For { span, .. }
+        | TypedStmt::TryCatch { span, .. } => *span,
+        TypedStmt::Break(s) | TypedStmt::Continue(s) => *s,
+        TypedStmt::FnDef(f) => f.span,
+        TypedStmt::Expr(e) => e.span,
+    }
+}
+
+fn ast_stmt_span(s: &Stmt) -> Span {
+    match s {
+        Stmt::VarDecl { span, .. }
+        | Stmt::Assign { span, .. }
+        | Stmt::CompoundAssign { span, .. }
+        | Stmt::Return { span, .. }
+        | Stmt::Raise { span, .. }
+        | Stmt::If { span, .. }
+        | Stmt::While { span, .. }
+        | Stmt::DoWhile { span, .. }
+        | Stmt::For { span, .. }
+        | Stmt::TryCatch { span, .. } => *span,
+        Stmt::Break(s) | Stmt::Continue(s) => *s,
+        Stmt::FnDef(f) => f.span,
+        Stmt::Expr(e) => e.span(),
     }
 }
 
@@ -58,6 +121,7 @@ fn check_typed_stmt(
                             expected: iface_name.clone(),
                             found: type_name,
                             span: typed_val.span,
+                            decl_span: Some(*span),
                         });
                     }
                 }
@@ -71,13 +135,20 @@ fn check_typed_stmt(
                                     expected: iface_name.clone(),
                                     found: type_name.clone(),
                                     span: typed_val.span,
+                                    decl_span: Some(*span),
                                 });
                             }
                         }
                     }
                 }
             } else {
-                check_assignable(&declared, &typed_val.ty, &typed_val.span, errors);
+                check_assignable_with_decl_span(
+                    &declared,
+                    &typed_val.ty,
+                    &typed_val.span,
+                    Some(*span),
+                    errors,
+                );
                 // Additional check: enforce invariant variance where declared.
                 check_variance_assignment(
                     &declared,
@@ -111,10 +182,15 @@ fn check_typed_stmt(
         } => {
             if let Expr::Ident(name, ident_span) = target {
                 match env.lookup(name) {
-                    Some(Symbol::Var { mutable: false, .. }) => {
+                    Some(Symbol::Var {
+                        mutable: false,
+                        span: decl_span,
+                        ..
+                    }) => {
                         errors.push(AnalysisError::AssignToImmutable {
                             name: name.clone(),
                             span: *ident_span,
+                            decl_span: Some(*decl_span),
                         });
                     }
                     Some(Symbol::Const { .. }) => {
@@ -151,10 +227,15 @@ fn check_typed_stmt(
         } => {
             if let Expr::Ident(name, ident_span) = target {
                 match env.lookup(name) {
-                    Some(Symbol::Var { mutable: false, .. }) => {
+                    Some(Symbol::Var {
+                        mutable: false,
+                        span: decl_span,
+                        ..
+                    }) => {
                         errors.push(AnalysisError::AssignToImmutable {
                             name: name.clone(),
                             span: *ident_span,
+                            decl_span: Some(*decl_span),
                         });
                     }
                     Some(Symbol::Const { .. }) => {
@@ -223,6 +304,7 @@ fn check_typed_stmt(
                         expected: "bool".into(),
                         found: tc.ty.to_string(),
                         span: cond.span(),
+                        decl_span: None,
                     });
                 }
                 let tb = check_typed_block(block, env, registry, return_ty, errors);
@@ -245,6 +327,7 @@ fn check_typed_stmt(
                     expected: "bool".into(),
                     found: tc.ty.to_string(),
                     span: *span,
+                    decl_span: None,
                 });
             }
             let tb = check_typed_block(body, env, registry, return_ty, errors);
@@ -263,6 +346,7 @@ fn check_typed_stmt(
                     expected: "bool".into(),
                     found: tc.ty.to_string(),
                     span: *span,
+                    decl_span: None,
                 });
             }
             TypedStmt::DoWhile {
@@ -1162,6 +1246,339 @@ mod tests {
             errs.iter()
                 .any(|e| matches!(e, AnalysisError::UnusedVariable { name, .. } if name == "x")),
             "{errs:?}"
+        );
+    }
+
+    // ----- multi-span diagnostic tests (item 25) ----
+
+    /// TypeMismatch with a decl_span produces non-empty note_info().
+    #[test]
+    fn type_mismatch_with_decl_span_produces_note() {
+        use crate::analyzer::error::AnalysisError;
+        let decl = Span { start: 1, end: 5 };
+        let err = AnalysisError::TypeMismatch {
+            expected: "int".into(),
+            found: "str".into(),
+            span: Span { start: 10, end: 15 },
+            decl_span: Some(decl),
+        };
+        let notes = err.note_info();
+        assert!(
+            !notes.is_empty(),
+            "expected notes for TypeMismatch with decl_span"
+        );
+        assert_eq!(notes[0].0, "expected type declared here");
+        assert_eq!(notes[0].1, Some(decl));
+    }
+
+    /// TypeMismatch without a decl_span produces empty note_info().
+    #[test]
+    fn type_mismatch_without_decl_span_produces_no_note() {
+        use crate::analyzer::error::AnalysisError;
+        let err = AnalysisError::TypeMismatch {
+            expected: "int".into(),
+            found: "str".into(),
+            span: Span { start: 10, end: 15 },
+            decl_span: None,
+        };
+        let notes = err.note_info();
+        assert!(
+            notes.is_empty(),
+            "expected no notes for TypeMismatch without decl_span"
+        );
+    }
+
+    /// ArityMismatch with a fn_span produces non-empty note_info().
+    #[test]
+    fn arity_mismatch_with_fn_span_produces_note() {
+        use crate::analyzer::error::AnalysisError;
+        let fn_span = Span { start: 20, end: 30 };
+        let err = AnalysisError::ArityMismatch {
+            expected: 2,
+            found: 3,
+            span: Span { start: 40, end: 50 },
+            fn_span: Some(fn_span),
+        };
+        let notes = err.note_info();
+        assert!(
+            !notes.is_empty(),
+            "expected notes for ArityMismatch with fn_span"
+        );
+        assert_eq!(notes[0].0, "function defined here");
+        assert_eq!(notes[0].1, Some(fn_span));
+    }
+
+    /// ArityMismatch without a fn_span produces empty note_info().
+    #[test]
+    fn arity_mismatch_without_fn_span_produces_no_note() {
+        use crate::analyzer::error::AnalysisError;
+        let err = AnalysisError::ArityMismatch {
+            expected: 2,
+            found: 3,
+            span: Span { start: 40, end: 50 },
+            fn_span: None,
+        };
+        let notes = err.note_info();
+        assert!(
+            notes.is_empty(),
+            "expected no notes for ArityMismatch without fn_span"
+        );
+    }
+
+    /// MissingConformance with an iface_span produces non-empty note_info().
+    #[test]
+    fn missing_conformance_with_iface_span_produces_note() {
+        use crate::analyzer::error::AnalysisError;
+        let iface_span = Span { start: 5, end: 10 };
+        let err = AnalysisError::MissingConformance {
+            ty: "MyStruct".into(),
+            iface: "Addable".into(),
+            detail: "missing required hook `+`".into(),
+            span: Span { start: 50, end: 60 },
+            iface_span: Some(iface_span),
+        };
+        let notes = err.note_info();
+        assert!(
+            !notes.is_empty(),
+            "expected notes for MissingConformance with iface_span"
+        );
+        assert_eq!(notes[0].0, "interface required here");
+        assert_eq!(notes[0].1, Some(iface_span));
+    }
+
+    /// MissingConformance without an iface_span produces empty note_info().
+    #[test]
+    fn missing_conformance_without_iface_span_produces_no_note() {
+        use crate::analyzer::error::AnalysisError;
+        let err = AnalysisError::MissingConformance {
+            ty: "MyStruct".into(),
+            iface: "Addable".into(),
+            detail: "missing required hook `+`".into(),
+            span: Span { start: 50, end: 60 },
+            iface_span: None,
+        };
+        let notes = err.note_info();
+        assert!(
+            notes.is_empty(),
+            "expected no notes for MissingConformance without iface_span"
+        );
+    }
+
+    /// VarDecl with a type mismatch threads the declaration span into the error.
+    #[test]
+    fn var_decl_type_mismatch_includes_decl_span() {
+        let decl_span = Span { start: 0, end: 9 };
+        let val_span = Span { start: 12, end: 15 };
+        let block = Block {
+            stmts: vec![Stmt::VarDecl {
+                name: "_x".into(),
+                ty: bool_ty(),
+                value: Expr::Int(1, val_span),
+                mutable: false,
+                span: decl_span,
+            }],
+            span: Span { start: 0, end: 20 },
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        let mismatch = errs
+            .iter()
+            .find(|e| matches!(e, AnalysisError::TypeMismatch { .. }))
+            .expect("expected a TypeMismatch error");
+        match mismatch {
+            AnalysisError::TypeMismatch { decl_span: ds, .. } => {
+                assert_eq!(*ds, Some(decl_span), "decl_span should be the VarDecl span");
+            }
+            _ => panic!("expected TypeMismatch"),
+        }
+    }
+
+    /// Assigning to an immutable variable threads the declaration span into the error.
+    #[test]
+    fn assign_to_immutable_includes_decl_span() {
+        let decl_span = Span { start: 0, end: 9 };
+        let assign_span = Span { start: 20, end: 25 };
+        let block = Block {
+            stmts: vec![
+                Stmt::VarDecl {
+                    name: "x".into(),
+                    ty: int_ty(),
+                    value: Expr::Int(1, s()),
+                    mutable: false,
+                    span: decl_span,
+                },
+                Stmt::Assign {
+                    target: Expr::Ident("x".into(), assign_span),
+                    value: Expr::Int(2, s()),
+                    span: assign_span,
+                },
+            ],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        let err = errs
+            .iter()
+            .find(|e| matches!(e, AnalysisError::AssignToImmutable { .. }))
+            .expect("expected AssignToImmutable error");
+        let notes = err.note_info();
+        assert!(!notes.is_empty(), "expected a note pointing at declaration");
+        assert_eq!(
+            notes[0].1,
+            Some(decl_span),
+            "note should point at decl_span"
+        );
+    }
+
+    // ----- unreachable code warning tests (item 28) ----
+
+    fn return_stmt(span: Span) -> Stmt {
+        Stmt::Return { value: None, span }
+    }
+
+    fn break_stmt(span: Span) -> Stmt {
+        Stmt::Break(span)
+    }
+
+    fn raise_stmt(span: Span) -> Stmt {
+        Stmt::Raise {
+            value: Some(Expr::Int(1, span)),
+            span,
+        }
+    }
+
+    fn expr_stmt(span: Span) -> Stmt {
+        Stmt::Expr(Expr::Int(0, span))
+    }
+
+    #[test]
+    fn return_followed_by_stmt_produces_unreachable_warning() {
+        let ret_span = Span { start: 0, end: 8 };
+        let dead_span = Span { start: 10, end: 20 };
+        let block = Block {
+            stmts: vec![return_stmt(ret_span), expr_stmt(dead_span)],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        let warn = errs
+            .iter()
+            .find(|e| matches!(e, AnalysisError::UnreachableCode { .. }))
+            .expect("expected UnreachableCode warning");
+        match warn {
+            AnalysisError::UnreachableCode {
+                span,
+                terminator_span,
+            } => {
+                assert_eq!(*span, dead_span, "span should point at dead statement");
+                assert_eq!(
+                    *terminator_span, ret_span,
+                    "terminator_span should point at return"
+                );
+            }
+            _ => panic!("expected UnreachableCode"),
+        }
+    }
+
+    #[test]
+    fn break_followed_by_stmt_produces_unreachable_warning() {
+        let break_span = Span { start: 0, end: 5 };
+        let dead_span = Span { start: 10, end: 20 };
+        let block = Block {
+            stmts: vec![break_stmt(break_span), expr_stmt(dead_span)],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, AnalysisError::UnreachableCode { .. })),
+            "expected UnreachableCode warning after break: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn raise_followed_by_stmt_produces_unreachable_warning() {
+        let raise_span = Span { start: 0, end: 7 };
+        let dead_span = Span { start: 10, end: 20 };
+        let block = Block {
+            stmts: vec![raise_stmt(raise_span), expr_stmt(dead_span)],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, AnalysisError::UnreachableCode { .. })),
+            "expected UnreachableCode warning after raise: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn conditional_return_does_not_produce_unreachable_warning() {
+        // Only a return inside an if-branch; the statement after the if is reachable.
+        let block = Block {
+            stmts: vec![
+                Stmt::If {
+                    branches: vec![(
+                        Expr::Bool(true, s()),
+                        Block {
+                            stmts: vec![return_stmt(s())],
+                            span: s(),
+                        },
+                    )],
+                    else_branch: None,
+                    span: s(),
+                },
+                expr_stmt(s()),
+            ],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            !errs
+                .iter()
+                .any(|e| matches!(e, AnalysisError::UnreachableCode { .. })),
+            "should not warn for conditional return: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn only_first_unreachable_stmt_is_warned() {
+        let ret_span = Span { start: 0, end: 8 };
+        let block = Block {
+            stmts: vec![
+                return_stmt(ret_span),
+                expr_stmt(Span { start: 10, end: 20 }),
+                expr_stmt(Span { start: 25, end: 35 }),
+                expr_stmt(Span { start: 40, end: 50 }),
+            ],
+            span: s(),
+        };
+        let mut env = Env::new();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        let count = errs
+            .iter()
+            .filter(|e| matches!(e, AnalysisError::UnreachableCode { .. }))
+            .count();
+        assert_eq!(
+            count, 1,
+            "should emit exactly one unreachable warning, got {count}"
         );
     }
 }

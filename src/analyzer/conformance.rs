@@ -179,6 +179,7 @@ pub fn check_impl_completeness(
                             iface: iface_name.clone(),
                             detail: format!("impl block missing required hook `{hook_label}`"),
                             span: impl_block.span,
+                            iface_span: None,
                         });
                     }
                     Some(impl_hook) => {
@@ -194,6 +195,7 @@ pub fn check_impl_completeness(
                                     iface_params.len()
                                 ),
                                 span: impl_hook.span,
+                                iface_span: None,
                             });
                         } else {
                             for (impl_p, iface_p) in
@@ -217,6 +219,7 @@ pub fn check_impl_completeness(
                                             type_expr_display(&impl_p.ty, &type_name, &generic_subst),
                                         ),
                                         span: impl_hook.span,
+                                        iface_span: None,
                                     });
                                 }
                             }
@@ -239,6 +242,7 @@ pub fn check_impl_completeness(
                                                 type_expr_display(impl_ret_ty, &type_name, &generic_subst),
                                             ),
                                             span: impl_hook.span,
+                                            iface_span: None,
                                         });
                                     }
                                 }
@@ -254,6 +258,7 @@ pub fn check_impl_completeness(
                         iface: iface_name.clone(),
                         detail: format!("impl block missing required method `{}`", sig.name),
                         span: impl_block.span,
+                        iface_span: None,
                     });
                 }
             }
@@ -368,6 +373,7 @@ fn check_assoc_bindings(
                                 "associated type `{assoc_name}` must be `{expected}`, found `{actual}`"
                             ),
                             span: *span,
+                            iface_span: None,
                         });
                     }
                 }
@@ -437,6 +443,7 @@ fn check_against_iface(
                 iface: iface_name.to_string(),
                 detail: "interface not found".into(),
                 span: *span,
+                iface_span: None,
             });
             return;
         }
@@ -487,6 +494,7 @@ fn check_against_iface(
                         iface: iface_name.to_string(),
                         detail: format!("missing required field `{name}`"),
                         span: *span,
+                        iface_span: None,
                     });
                 }
             }
@@ -497,6 +505,7 @@ fn check_against_iface(
                         iface: iface_name.to_string(),
                         detail: format!("missing required hook `{name:?}`"),
                         span: *span,
+                        iface_span: None,
                     });
                 }
             }
@@ -507,6 +516,7 @@ fn check_against_iface(
                         iface: iface_name.to_string(),
                         detail: format!("missing required method `{}`", sig.name),
                         span: *span,
+                        iface_span: None,
                     });
                 }
             }

@@ -17,10 +17,26 @@ pub enum AnalysisError {
         expected: String,
         found: String,
         span: Span,
+        /// Span where the expected type was declared, for multi-span diagnostics.
+        decl_span: Option<Span>,
+    },
+
+    #[error("{span}: wrong number of arguments: expected {expected}, found {found}")]
+    ArityMismatch {
+        expected: usize,
+        found: usize,
+        span: Span,
+        /// Span of the function definition, for multi-span diagnostics.
+        fn_span: Option<Span>,
     },
 
     #[error("{span}: cannot assign to immutable binding `{name}`")]
-    AssignToImmutable { name: String, span: Span },
+    AssignToImmutable {
+        name: String,
+        span: Span,
+        /// Span of the variable declaration, for multi-span diagnostics.
+        decl_span: Option<Span>,
+    },
 
     #[error("{span}: duplicate top-level name `{name}`")]
     DuplicateName { name: String, span: Span },
@@ -37,6 +53,8 @@ pub enum AnalysisError {
         iface: String,
         detail: String,
         span: Span,
+        /// Span where the interface requirement originates, for multi-span diagnostics.
+        iface_span: Option<Span>,
     },
 
     #[error("{span}: type `{ty}` does not implement `{iface}`{context}")]
@@ -176,6 +194,13 @@ pub enum AnalysisError {
 
     #[error("{span}: variable `{name}` does not need to be mutable")]
     NeedlessMut { name: String, span: Span },
+
+    #[error("{span}: unreachable statement")]
+    UnreachableCode {
+        span: Span,
+        /// Span of the terminator that made subsequent code unreachable.
+        terminator_span: Span,
+    },
 }
 
 impl AnalysisError {
@@ -183,6 +208,7 @@ impl AnalysisError {
         match self {
             AnalysisError::UndefinedName { .. } => "E001",
             AnalysisError::TypeMismatch { .. } => "E002",
+            AnalysisError::ArityMismatch { .. } => "E002a",
             AnalysisError::AssignToImmutable { .. } => "E003",
             AnalysisError::DuplicateName { .. } => "E004",
             AnalysisError::MissingReturn { .. } => "E005",
@@ -218,6 +244,7 @@ impl AnalysisError {
             AnalysisError::MissingImplementsAnnotation { .. } => "E031",
             AnalysisError::UnusedVariable { .. } => "W005",
             AnalysisError::NeedlessMut { .. } => "W006",
+            AnalysisError::UnreachableCode { .. } => "W007",
         }
     }
 
@@ -225,6 +252,7 @@ impl AnalysisError {
         match self {
             AnalysisError::UndefinedName { .. } => "name error",
             AnalysisError::TypeMismatch { .. } => "type error",
+            AnalysisError::ArityMismatch { .. } => "type error",
             AnalysisError::AssignToImmutable { .. } => "mutability error",
             AnalysisError::DuplicateName { .. } => "name error",
             AnalysisError::MissingReturn { .. } => "control flow error",
@@ -260,6 +288,7 @@ impl AnalysisError {
             AnalysisError::MissingImplementsAnnotation { .. } => "annotation error",
             AnalysisError::UnusedVariable { .. } => "warning",
             AnalysisError::NeedlessMut { .. } => "warning",
+            AnalysisError::UnreachableCode { .. } => "warning",
         }
     }
 
@@ -275,6 +304,11 @@ impl AnalysisError {
                 expected, found, ..
             } => {
                 format!("type mismatch: expected `{expected}`, found `{found}`")
+            }
+            AnalysisError::ArityMismatch {
+                expected, found, ..
+            } => {
+                format!("wrong number of arguments: expected {expected}, found {found}")
             }
             AnalysisError::AssignToImmutable { name, .. } => {
                 format!("cannot assign to immutable binding `{name}`")
@@ -395,6 +429,7 @@ impl AnalysisError {
             AnalysisError::NeedlessMut { name, .. } => {
                 format!("variable `{name}` does not need to be mutable")
             }
+            AnalysisError::UnreachableCode { .. } => "unreachable statement".into(),
         }
     }
 
@@ -408,7 +443,43 @@ impl AnalysisError {
                     vec![]
                 }
             }
+            AnalysisError::AssignToImmutable { decl_span, .. } => {
+                if let Some(ds) = decl_span {
+                    vec![("variable declared immutable here".to_string(), Some(*ds))]
+                } else {
+                    vec![]
+                }
+            }
+            AnalysisError::TypeMismatch { decl_span, .. } => {
+                if let Some(ds) = decl_span {
+                    vec![("expected type declared here".to_string(), Some(*ds))]
+                } else {
+                    vec![]
+                }
+            }
+            AnalysisError::ArityMismatch { fn_span, .. } => {
+                if let Some(fs) = fn_span {
+                    vec![("function defined here".to_string(), Some(*fs))]
+                } else {
+                    vec![]
+                }
+            }
+            AnalysisError::MissingConformance { iface_span, .. } => {
+                if let Some(is) = iface_span {
+                    vec![("interface required here".to_string(), Some(*is))]
+                } else {
+                    vec![]
+                }
+            }
             AnalysisError::BoundViolation { notes, .. } => notes.clone(),
+            AnalysisError::UnreachableCode {
+                terminator_span, ..
+            } => {
+                vec![(
+                    "any code after this point is unreachable".to_string(),
+                    Some(*terminator_span),
+                )]
+            }
             AnalysisError::ProcessorFail { .. } | AnalysisError::ProcessorWarn { .. } => vec![],
             _ => vec![],
         }
@@ -418,6 +489,7 @@ impl AnalysisError {
         match self {
             AnalysisError::UndefinedName { span, .. } => *span,
             AnalysisError::TypeMismatch { span, .. } => *span,
+            AnalysisError::ArityMismatch { span, .. } => *span,
             AnalysisError::AssignToImmutable { span, .. } => *span,
             AnalysisError::DuplicateName { span, .. } => *span,
             AnalysisError::MissingReturn { span, .. } => *span,
@@ -453,6 +525,7 @@ impl AnalysisError {
             AnalysisError::MissingImplementsAnnotation { span } => *span,
             AnalysisError::UnusedVariable { span, .. } => *span,
             AnalysisError::NeedlessMut { span, .. } => *span,
+            AnalysisError::UnreachableCode { span, .. } => *span,
         }
     }
 }

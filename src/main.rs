@@ -335,6 +335,14 @@ fn run_build(
     for w in &build_warnings {
         let snippet = map.render_diagnostic(&src, w.span(), &path);
         emit_error(w.kind(), w.code(), &w.message(), &snippet);
+        for (note, note_span) in w.note_info() {
+            if let Some(ns) = note_span {
+                let note_block = map.render_note(&src, ns, &path, &note);
+                eprintln!("{note_block}");
+            } else {
+                eprintln!("note: {note}");
+            }
+        }
     }
     timer.stop();
 
@@ -602,6 +610,14 @@ fn run_check(file: &PathBuf, profile: bool) -> CheckOutcome {
                 for w in &warnings {
                     let snippet = map.render_diagnostic(&src, w.span(), &path);
                     emit_error(w.kind(), w.code(), &w.message(), &snippet);
+                    for (note, note_span) in w.note_info() {
+                        if let Some(ns) = note_span {
+                            let note_block = map.render_note(&src, ns, &path, &note);
+                            eprintln!("{note_block}");
+                        } else {
+                            eprintln!("note: {note}");
+                        }
+                    }
                 }
                 let mut stats = type_registry.profile_stats();
                 stats.symbols = build_symbol_rows(&syms);
@@ -616,6 +632,14 @@ fn run_check(file: &PathBuf, profile: bool) -> CheckOutcome {
                 for w in &warnings {
                     let snippet = map.render_diagnostic(&src, w.span(), &path);
                     emit_error(w.kind(), w.code(), &w.message(), &snippet);
+                    for (note, note_span) in w.note_info() {
+                        if let Some(ns) = note_span {
+                            let note_block = map.render_note(&src, ns, &path, &note);
+                            eprintln!("{note_block}");
+                        } else {
+                            eprintln!("note: {note}");
+                        }
+                    }
                 }
                 CheckOutcome::Ok
             }

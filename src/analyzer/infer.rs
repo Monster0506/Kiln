@@ -108,6 +108,7 @@ pub fn infer_typed_expr(
                             expected: "enum".into(),
                             found: enum_name.clone(),
                             span: *espan,
+                            decl_span: None,
                         });
                         (Ty::Unknown, 0)
                     }
@@ -185,6 +186,7 @@ pub fn infer_typed_expr(
                                 expected: "int, float, or Negatable".into(),
                                 found: to.ty.to_string(),
                                 span: *s,
+                                decl_span: None,
                             });
                             Ty::Unknown
                         }
@@ -200,6 +202,7 @@ pub fn infer_typed_expr(
                                 expected: "bool or hook !".into(),
                                 found: to.ty.to_string(),
                                 span: *s,
+                                decl_span: None,
                             });
                             Ty::Bool
                         }
@@ -215,6 +218,7 @@ pub fn infer_typed_expr(
                                 expected: "numeric or hook +".into(),
                                 found: to.ty.to_string(),
                                 span: *s,
+                                decl_span: None,
                             });
                             Ty::Unknown
                         }
@@ -256,6 +260,7 @@ pub fn infer_typed_expr(
                         expected: "a type implementing Try".into(),
                         found: other.to_string(),
                         span: *s,
+                        decl_span: None,
                     });
                     Ty::Unknown
                 }
@@ -936,13 +941,16 @@ fn infer_call_ident(
             generic_params: gparams,
             generic_bounds: gbounds,
             inferred_bounds: ibounds,
+            span: fn_def_span,
             ..
         }) => {
+            let fn_def_span = *fn_def_span;
             if params.len() != typed_args.len() && !params.iter().any(|(_, t)| *t == Ty::Unknown) {
-                errors.push(AnalysisError::TypeMismatch {
-                    expected: format!("{} argument(s)", params.len()),
-                    found: format!("{} argument(s)", typed_args.len()),
+                errors.push(AnalysisError::ArityMismatch {
+                    expected: params.len(),
+                    found: typed_args.len(),
                     span,
+                    fn_span: Some(fn_def_span),
                 });
             }
             // Check each argument type against the declared parameter type.
@@ -1557,6 +1565,7 @@ fn infer_binop(
                     expected: "numeric or operator-overloaded types".into(),
                     found: format!("{lt} and {rt}"),
                     span: *span,
+                    decl_span: None,
                 });
                 Ty::Unknown
             }
@@ -1576,6 +1585,7 @@ fn infer_binop(
                     expected: "bool".into(),
                     found: format!("{lt} and {rt}"),
                     span: *span,
+                    decl_span: None,
                 });
             }
             Ty::Bool
@@ -1615,6 +1625,26 @@ pub fn check_assignable(expected: &Ty, found: &Ty, span: &Span, errors: &mut Vec
             expected: expected.to_string(),
             found: found.to_string(),
             span: *span,
+            decl_span: None,
+        });
+    }
+}
+
+/// Like `check_assignable`, but attaches a secondary span pointing at where the
+/// expected type was declared.  Used by VarDecl to show the declaration site.
+pub fn check_assignable_with_decl_span(
+    expected: &Ty,
+    found: &Ty,
+    span: &Span,
+    decl_span: Option<Span>,
+    errors: &mut Vec<AnalysisError>,
+) {
+    if !types_compatible(expected, found) {
+        errors.push(AnalysisError::TypeMismatch {
+            expected: expected.to_string(),
+            found: found.to_string(),
+            span: *span,
+            decl_span,
         });
     }
 }
@@ -1637,6 +1667,7 @@ pub fn check_assignable_normalized(
             expected: norm_expected.to_string(),
             found: norm_found.to_string(),
             span: *span,
+            decl_span: None,
         });
     }
 }

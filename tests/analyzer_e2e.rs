@@ -1,4 +1,4 @@
-use kiln_compiler::analyzer::analyze;
+use kiln_compiler::analyzer::{analyze, analyze_with_base};
 use kiln_compiler::annotations::{default_registry, run_processors};
 use kiln_compiler::lexer::Lexer;
 use kiln_compiler::parser::Parser;
@@ -15,6 +15,18 @@ fn run(src: &str) -> Vec<String> {
             .iter()
             .map(|e: &kiln_compiler::analyzer::AnalysisError| e.to_string())
             .collect(),
+    }
+}
+
+fn warnings(src: &str) -> Vec<kiln_compiler::analyzer::AnalysisError> {
+    let tokens = Lexer::new(src).tokenize().expect("lex failed");
+    let mut ast = Parser::new(tokens).parse_file().expect("parse failed");
+    let registry = default_registry();
+    run_processors(&mut ast, &registry);
+    let base = std::path::PathBuf::from(".");
+    match analyze_with_base(&ast, &base) {
+        Ok((_, warns)) => warns,
+        Err(errs) => errs,
     }
 }
 
@@ -1917,4 +1929,80 @@ def f(n: Node) -> void {
 }
 "#);
     assert!(errs.is_empty(), "{errs:?}");
+}
+
+// ---------------------------------------------------------------------------
+// Unreachable code warning (item 28)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn return_followed_by_stmt_is_unreachable_warning() {
+    use kiln_compiler::analyzer::AnalysisError;
+    let warns = warnings("def f() -> int { return 1\n return 0 }");
+    assert!(
+        warns
+            .iter()
+            .any(|w| matches!(w, AnalysisError::UnreachableCode { .. })),
+        "expected W007 unreachable warning: {warns:?}"
+    );
+}
+
+#[test]
+fn break_in_loop_followed_by_stmt_is_unreachable_warning() {
+    use kiln_compiler::analyzer::AnalysisError;
+    let warns = warnings("def f() -> void { mut i: int = 0\n while i < 1 { break\n i += 1 } }");
+    assert!(
+        warns
+            .iter()
+            .any(|w| matches!(w, AnalysisError::UnreachableCode { .. })),
+        "expected W007 unreachable warning after break: {warns:?}"
+    );
+}
+
+#[test]
+fn raise_followed_by_stmt_is_unreachable_warning() {
+    use kiln_compiler::analyzer::AnalysisError;
+    let warns = warnings("def f() -> int { raise 1\n return 0 }");
+    assert!(
+        warns
+            .iter()
+            .any(|w| matches!(w, AnalysisError::UnreachableCode { .. })),
+        "expected W007 unreachable warning after raise: {warns:?}"
+    );
+}
+
+#[test]
+fn conditional_return_does_not_warn_unreachable() {
+    use kiln_compiler::analyzer::AnalysisError;
+    let warns = warnings("def f(x: int) -> int { if x > 0 { return x }\n return 0 }");
+    assert!(
+        !warns
+            .iter()
+            .any(|w| matches!(w, AnalysisError::UnreachableCode { .. })),
+        "should not warn for conditional return: {warns:?}"
+    );
+}
+
+#[test]
+fn only_first_unreachable_stmt_warns() {
+    use kiln_compiler::analyzer::AnalysisError;
+    let warns = warnings("def f(x: int) -> int { return x\n return 1\n return 2\n return 3 }");
+    let count = warns
+        .iter()
+        .filter(|w| matches!(w, AnalysisError::UnreachableCode { .. }))
+        .count();
+    assert_eq!(count, 1, "expected exactly one W007 warning, got {count}");
+}
+
+#[test]
+fn unreachable_warning_note_carries_terminator_span() {
+    use kiln_compiler::analyzer::AnalysisError;
+    let warns = warnings("def f() -> int { return 1\n return 0 }");
+    let w = warns
+        .iter()
+        .find(|w| matches!(w, AnalysisError::UnreachableCode { .. }))
+        .expect("expected W007");
+    let notes = w.note_info();
+    assert!(!notes.is_empty(), "expected note with terminator span");
+    assert!(notes[0].1.is_some(), "note should have a source span");
 }

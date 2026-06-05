@@ -20,6 +20,7 @@ fn lex_zero() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn lex_float() {
     let tokens = Lexer::new("3.14").tokenize().unwrap();
     assert_eq!(tokens[0].kind, TokenKind::Float(3.14));

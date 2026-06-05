@@ -8,14 +8,6 @@ fn parse_ok(src: &str) {
         .unwrap_or_else(|e| panic!("parse error: {e:?}"));
 }
 
-fn parse_fails(src: &str) -> bool {
-    let tokens = match Lexer::new(src).tokenize() {
-        Ok(t) => t,
-        Err(_) => return true,
-    };
-    Parser::new(tokens).parse_file().is_err()
-}
-
 // ---------------------------------------------------------------------------
 // 7: Associated type projection in type position  (I.Item)
 // ---------------------------------------------------------------------------
@@ -225,7 +217,7 @@ fn multi_bound_plus_and_paren_yield_same_bounds() {
 #[test]
 fn static_annotation_sets_is_static_on_hook() {
     use kiln_compiler::lexer::Lexer;
-    use kiln_compiler::parser::ast::{HookName, ImplBlock, Item};
+    use kiln_compiler::parser::ast::{ImplBlock, Item};
     use kiln_compiler::parser::Parser;
 
     let src = r#"impl Zero for int { @static hook zero() -> int {} }"#;

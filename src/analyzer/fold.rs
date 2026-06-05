@@ -1985,6 +1985,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn float_add_zero_identity() {
         let expr = binop(BinOp::Add, float_expr(3.14), float_expr(0.0), Ty::Float);
         let folded = fold_expr(expr);

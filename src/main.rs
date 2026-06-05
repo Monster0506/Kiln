@@ -207,8 +207,7 @@ fn diag_summary(errors: usize, warnings: usize) -> String {
 struct DiagKey {
     code: String,
     file: String,
-    line: usize,
-    col: usize,
+    message: String,
 }
 
 struct CheckResult {
@@ -299,18 +298,13 @@ fn format_analysis_errors_rich(
 
 fn diag_keys_from_errs(
     errs: &[kiln_compiler::analyzer::AnalysisError],
-    map: &SourceMap,
     path: &str,
 ) -> std::collections::HashSet<DiagKey> {
     errs.iter()
-        .map(|e| {
-            let (line, col) = map.location_of(e.span().start);
-            DiagKey {
-                code: e.code().to_string(),
-                file: path.to_string(),
-                line,
-                col,
-            }
+        .map(|e| DiagKey {
+            code: e.code().to_string(),
+            file: path.to_string(),
+            message: e.message(),
         })
         .collect()
 }
@@ -807,7 +801,7 @@ fn run_check(file: &PathBuf, profile: bool, timing: bool) -> CheckResult {
         match analyze_with_base_and_symbols(&ast, &base_dir) {
             Ok((_, type_registry, syms, warnings)) => {
                 timer.stop();
-                let keys = diag_keys_from_errs(&warnings, &map, &path);
+                let keys = diag_keys_from_errs(&warnings, &path);
                 emit_warnings_rich(&warnings, &map, &src, &path);
                 let summary = diag_summary(0, warnings.len());
                 if !summary.is_empty() {
@@ -823,7 +817,7 @@ fn run_check(file: &PathBuf, profile: bool, timing: bool) -> CheckResult {
             }
             Err(errs) => {
                 timer.stop();
-                let keys = diag_keys_from_errs(&errs, &map, &path);
+                let keys = diag_keys_from_errs(&errs, &path);
                 let ecount = errs.iter().filter(|e| !e.code().starts_with('W')).count();
                 let wcount = errs.iter().filter(|e| e.code().starts_with('W')).count();
                 let mut msgs = format_analysis_errors_rich(&errs, &map, &src, &path);
@@ -841,7 +835,7 @@ fn run_check(file: &PathBuf, profile: bool, timing: bool) -> CheckResult {
         match analyze_with_base(&ast, &base_dir) {
             Ok((_, warnings)) => {
                 timer.stop();
-                let keys = diag_keys_from_errs(&warnings, &map, &path);
+                let keys = diag_keys_from_errs(&warnings, &path);
                 emit_warnings_rich(&warnings, &map, &src, &path);
                 let summary = diag_summary(0, warnings.len());
                 if !summary.is_empty() {
@@ -854,7 +848,7 @@ fn run_check(file: &PathBuf, profile: bool, timing: bool) -> CheckResult {
             }
             Err(errs) => {
                 timer.stop();
-                let keys = diag_keys_from_errs(&errs, &map, &path);
+                let keys = diag_keys_from_errs(&errs, &path);
                 let ecount = errs.iter().filter(|e| !e.code().starts_with('W')).count();
                 let wcount = errs.iter().filter(|e| e.code().starts_with('W')).count();
                 let mut msgs = format_analysis_errors_rich(&errs, &map, &src, &path);
@@ -939,7 +933,7 @@ fn print_watch_result(
     time: &str,
     prev_keys: Option<&std::collections::HashSet<DiagKey>>,
 ) {
-    let unchanged = prev_keys.map_or(false, |p| p == &result.keys);
+    let unchanged = prev_keys == Some(&result.keys);
     if unchanged {
         match &result.outcome {
             CheckOutcome::Ok => println!("[ok] {time} (no change)"),
@@ -951,26 +945,22 @@ fn print_watch_result(
     if let Some(prev) = prev_keys {
         let mut fixed: Vec<_> = prev.difference(&result.keys).collect();
         let mut new: Vec<_> = result.keys.difference(prev).collect();
-        fixed.sort_by_key(|k| (&k.file, k.line, k.col));
-        new.sort_by_key(|k| (&k.file, k.line, k.col));
+        fixed.sort_by_key(|k| (&k.file, &k.code, &k.message));
+        new.sort_by_key(|k| (&k.file, &k.code, &k.message));
         for k in &fixed {
             println!(
-                "  fixed: {}[{}] at {}:{}:{}",
+                "  fixed: {}[{}]: {}",
                 diag_prefix(&k.code),
                 k.code,
-                k.file,
-                k.line,
-                k.col
+                k.message
             );
         }
         for k in &new {
             println!(
-                "  new:   {}[{}] at {}:{}:{}",
+                "  new:   {}[{}]: {}",
                 diag_prefix(&k.code),
                 k.code,
-                k.file,
-                k.line,
-                k.col
+                k.message
             );
         }
     }
@@ -1047,111 +1037,6 @@ fn emit_analysis_errors(
             eprintln!();
         }
         eprintln!("{msg}");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn run_build_valid_file_returns_ok() {
-        let file = PathBuf::from("examples/hello.kn");
-        let opts = BuildOptions {
-            timing: false,
-            verbose: false,
-            opt_level: 3,
-            emit: false,
-            profile: false,
-        };
-        let result = run_build(&file, None, true, &opts);
-        assert!(
-            matches!(result, BuildOutcome::Ok(_)),
-            "expected ok for valid file"
-        );
-        // Clean up the object file produced by no_link=true.
-        let _ = std::fs::remove_file(file.with_extension("o"));
-    }
-
-    #[test]
-    fn run_build_invalid_file_returns_errors() {
-        let file = PathBuf::from("examples/check_undefined.kn");
-        let opts = BuildOptions {
-            timing: false,
-            verbose: false,
-            opt_level: 3,
-            emit: false,
-            profile: false,
-        };
-        let result = run_build(&file, None, true, &opts);
-        assert!(
-            matches!(result, BuildOutcome::Errors(_)),
-            "expected errors for file with undefined names"
-        );
-    }
-
-    #[test]
-    fn format_build_result_ok_includes_path() {
-        let s = format_build_result(
-            &BuildOutcome::Ok(PathBuf::from("build/hello.exe")),
-            "14:05:01",
-        );
-        assert!(s.starts_with("[ok] 14:05:01"), "prefix wrong: {s}");
-        assert!(s.contains("hello.exe"), "missing path: {s}");
-    }
-
-    #[test]
-    fn format_build_result_error_includes_timestamp_and_first_error() {
-        let errors = vec!["error[E001]: UndefinedName: ghost_value".to_string()];
-        let s = format_build_result(&BuildOutcome::Errors(errors), "14:05:09");
-        assert!(s.starts_with("[error] 14:05:09"), "prefix wrong: {s}");
-        assert!(s.contains("E001"), "missing error code: {s}");
-    }
-
-    #[test]
-    fn run_check_valid_file_returns_ok() {
-        let result = run_check(&PathBuf::from("examples/check_valid.kn"), false, false);
-        assert!(
-            matches!(result.outcome, CheckOutcome::Ok),
-            "expected ok for valid file"
-        );
-    }
-
-    #[test]
-    fn run_check_undefined_name_returns_errors() {
-        let result = run_check(&PathBuf::from("examples/check_undefined.kn"), false, false);
-        assert!(
-            matches!(result.outcome, CheckOutcome::Errors(_)),
-            "expected errors for file with undefined names"
-        );
-    }
-
-    #[test]
-    fn run_check_produces_diag_keys_for_errors() {
-        let result = run_check(&PathBuf::from("examples/check_undefined.kn"), false, false);
-        assert!(!result.keys.is_empty(), "expected at least one DiagKey");
-        let key = result.keys.iter().next().unwrap();
-        assert_eq!(key.code, "E001", "undefined name should produce E001");
-    }
-
-    #[test]
-    fn format_watch_result_ok_produces_ok_line() {
-        let s = format_watch_result(&CheckOutcome::Ok, "14:02:01");
-        assert_eq!(s, "[ok] 14:02:01");
-    }
-
-    #[test]
-    fn format_watch_result_error_includes_timestamp_and_first_error() {
-        let errors = vec!["error[E001]: UndefinedName: ghost_value".to_string()];
-        let s = format_watch_result(&CheckOutcome::Errors(errors), "14:02:09");
-        assert!(s.starts_with("[error] 14:02:09"), "prefix wrong: {s}");
-        assert!(s.contains("E001"), "missing error code: {s}");
-    }
-
-    #[test]
-    fn format_watch_result_error_with_no_errors_vec_shows_unknown() {
-        let s = format_watch_result(&CheckOutcome::Errors(vec![]), "00:00:00");
-        assert!(s.starts_with("[error]"), "should still be error: {s}");
     }
 }
 
@@ -1393,5 +1278,200 @@ fn main() {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_build_valid_file_returns_ok() {
+        let file = PathBuf::from("examples/hello.kn");
+        let opts = BuildOptions {
+            timing: false,
+            verbose: false,
+            opt_level: 3,
+            emit: false,
+            profile: false,
+        };
+        let result = run_build(&file, None, true, &opts);
+        assert!(
+            matches!(result, BuildOutcome::Ok(_)),
+            "expected ok for valid file"
+        );
+        // Clean up the object file produced by no_link=true.
+        let _ = std::fs::remove_file(file.with_extension("o"));
+    }
+
+    #[test]
+    fn run_build_invalid_file_returns_errors() {
+        let file = PathBuf::from("examples/check_undefined.kn");
+        let opts = BuildOptions {
+            timing: false,
+            verbose: false,
+            opt_level: 3,
+            emit: false,
+            profile: false,
+        };
+        let result = run_build(&file, None, true, &opts);
+        assert!(
+            matches!(result, BuildOutcome::Errors(_)),
+            "expected errors for file with undefined names"
+        );
+    }
+
+    #[test]
+    fn format_build_result_ok_includes_path() {
+        let s = format_build_result(
+            &BuildOutcome::Ok(PathBuf::from("build/hello.exe")),
+            "14:05:01",
+        );
+        assert!(s.starts_with("[ok] 14:05:01"), "prefix wrong: {s}");
+        assert!(s.contains("hello.exe"), "missing path: {s}");
+    }
+
+    #[test]
+    fn format_build_result_error_includes_timestamp_and_first_error() {
+        let errors = vec!["error[E001]: UndefinedName: ghost_value".to_string()];
+        let s = format_build_result(&BuildOutcome::Errors(errors), "14:05:09");
+        assert!(s.starts_with("[error] 14:05:09"), "prefix wrong: {s}");
+        assert!(s.contains("E001"), "missing error code: {s}");
+    }
+
+    #[test]
+    fn run_check_valid_file_returns_ok() {
+        let result = run_check(&PathBuf::from("examples/check_valid.kn"), false, false);
+        assert!(
+            matches!(result.outcome, CheckOutcome::Ok),
+            "expected ok for valid file"
+        );
+    }
+
+    #[test]
+    fn run_check_undefined_name_returns_errors() {
+        let result = run_check(&PathBuf::from("examples/check_undefined.kn"), false, false);
+        assert!(
+            matches!(result.outcome, CheckOutcome::Errors(_)),
+            "expected errors for file with undefined names"
+        );
+    }
+
+    fn key(code: &str, message: &str) -> DiagKey {
+        DiagKey {
+            code: code.to_string(),
+            file: "test.kn".to_string(),
+            message: message.to_string(),
+        }
+    }
+
+    fn keyset(pairs: &[(&str, &str)]) -> std::collections::HashSet<DiagKey> {
+        pairs.iter().map(|(c, m)| key(c, m)).collect()
+    }
+
+    #[test]
+    fn diff_unchanged_when_keys_identical() {
+        let prev = keyset(&[("E001", "undefined name `x`"), ("E002", "type mismatch")]);
+        let current = prev.clone();
+        let fixed: Vec<_> = prev.difference(&current).collect();
+        let new: Vec<_> = current.difference(&prev).collect();
+        assert!(fixed.is_empty(), "nothing fixed when keys identical");
+        assert!(new.is_empty(), "nothing new when keys identical");
+        assert_eq!(prev, current, "sets equal means unchanged");
+    }
+
+    #[test]
+    fn diff_fixed_when_error_disappears() {
+        let prev = keyset(&[
+            ("E001", "undefined name `x`"),
+            ("E003", "cannot assign to `n`"),
+        ]);
+        let current = keyset(&[("E001", "undefined name `x`")]);
+        let fixed: Vec<_> = prev.difference(&current).collect();
+        let new: Vec<_> = current.difference(&prev).collect();
+        assert_eq!(fixed.len(), 1, "one error fixed");
+        assert_eq!(fixed[0].code, "E003");
+        assert!(new.is_empty(), "nothing new");
+    }
+
+    #[test]
+    fn diff_new_when_error_appears() {
+        let prev = keyset(&[("E001", "undefined name `x`")]);
+        let current = keyset(&[("E001", "undefined name `x`"), ("E002", "type mismatch")]);
+        let fixed: Vec<_> = prev.difference(&current).collect();
+        let new: Vec<_> = current.difference(&prev).collect();
+        assert!(fixed.is_empty(), "nothing fixed");
+        assert_eq!(new.len(), 1, "one new error");
+        assert_eq!(new[0].code, "E002");
+    }
+
+    #[test]
+    fn diff_mixed_fixed_and_new() {
+        let prev = keyset(&[
+            ("E001", "undefined name `x`"),
+            ("E003", "cannot assign to `n`"),
+        ]);
+        let current = keyset(&[("E001", "undefined name `x`"), ("E002", "type mismatch")]);
+        let mut fixed: Vec<_> = prev.difference(&current).collect();
+        let mut new: Vec<_> = current.difference(&prev).collect();
+        fixed.sort_by_key(|k| &k.code);
+        new.sort_by_key(|k| &k.code);
+        assert_eq!(fixed.len(), 1);
+        assert_eq!(fixed[0].code, "E003", "E003 was fixed");
+        assert_eq!(new.len(), 1);
+        assert_eq!(new[0].code, "E002", "E002 is new");
+    }
+
+    #[test]
+    fn diff_stable_across_message_not_position() {
+        // Same error message = same key even if position changes (line shift scenario).
+        let prev = keyset(&[("E001", "undefined name `ghost_value`")]);
+        let current = keyset(&[("E001", "undefined name `ghost_value`")]);
+        assert_eq!(
+            prev, current,
+            "same message means same key despite any position shift"
+        );
+    }
+
+    #[test]
+    fn diff_distinct_messages_are_separate_keys() {
+        let prev = keyset(&[("E002", "type mismatch: expected `bool`, found `int`")]);
+        let current = keyset(&[("E002", "type mismatch: expected `float`, found `bool`")]);
+        let fixed: Vec<_> = prev.difference(&current).collect();
+        let new: Vec<_> = current.difference(&prev).collect();
+        assert_eq!(fixed.len(), 1, "different message = different key");
+        assert_eq!(new.len(), 1, "different message = different key");
+    }
+
+    #[test]
+    fn run_check_produces_diag_keys_for_errors() {
+        let result = run_check(&PathBuf::from("examples/check_undefined.kn"), false, false);
+        assert!(!result.keys.is_empty(), "expected at least one DiagKey");
+        let key = result.keys.iter().next().unwrap();
+        assert_eq!(key.code, "E001", "undefined name should produce E001");
+        assert!(
+            !key.message.is_empty(),
+            "key should carry the error message"
+        );
+    }
+
+    #[test]
+    fn format_watch_result_ok_produces_ok_line() {
+        let s = format_watch_result(&CheckOutcome::Ok, "14:02:01");
+        assert_eq!(s, "[ok] 14:02:01");
+    }
+
+    #[test]
+    fn format_watch_result_error_includes_timestamp_and_first_error() {
+        let errors = vec!["error[E001]: UndefinedName: ghost_value".to_string()];
+        let s = format_watch_result(&CheckOutcome::Errors(errors), "14:02:09");
+        assert!(s.starts_with("[error] 14:02:09"), "prefix wrong: {s}");
+        assert!(s.contains("E001"), "missing error code: {s}");
+    }
+
+    #[test]
+    fn format_watch_result_error_with_no_errors_vec_shows_unknown() {
+        let s = format_watch_result(&CheckOutcome::Errors(vec![]), "00:00:00");
+        assert!(s.starts_with("[error]"), "should still be error: {s}");
     }
 }

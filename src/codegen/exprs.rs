@@ -1400,6 +1400,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn float_literal_emits_f64() {
         with_builder(types::F64, |b, vars, ctx| {
             lower_typed_expr(&mk(TypedExprKind::Float(3.14), Ty::Float), b, vars, ctx)

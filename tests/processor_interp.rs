@@ -39,7 +39,7 @@ fn expr_contains_gen_splice(e: &Expr) -> bool {
         } => {
             expr_contains_gen_splice(scrutinee)
                 || arms.iter().any(|arm| {
-                    arm.guard.as_ref().map_or(false, expr_contains_gen_splice)
+                    arm.guard.as_ref().is_some_and(expr_contains_gen_splice)
                         || expr_contains_gen_splice(&arm.body)
                 })
         }
@@ -73,9 +73,7 @@ fn stmt_contains_gen_splice(stmt: &Stmt) -> bool {
             branches
                 .iter()
                 .any(|(c, b)| expr_contains_gen_splice(c) || block_contains_gen_splice(b))
-                || else_branch
-                    .as_ref()
-                    .map_or(false, block_contains_gen_splice)
+                || else_branch.as_ref().is_some_and(block_contains_gen_splice)
         }
         Stmt::While { cond, body, .. } => {
             expr_contains_gen_splice(cond) || block_contains_gen_splice(body)
@@ -94,7 +92,7 @@ fn stmt_contains_gen_splice(stmt: &Stmt) -> bool {
         } => {
             block_contains_gen_splice(body)
                 || handlers.iter().any(|h| block_contains_gen_splice(&h.body))
-                || finally.as_ref().map_or(false, block_contains_gen_splice)
+                || finally.as_ref().is_some_and(block_contains_gen_splice)
         }
         _ => false,
     }

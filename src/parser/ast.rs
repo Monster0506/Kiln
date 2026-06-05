@@ -38,7 +38,7 @@ pub enum TypeExpr {
         inner: Box<TypeExpr>,
         span: Span,
     },
-    /// `Base.Assoc` — associated type projection, e.g. `Self.Item`, `I.Output`
+    /// `Base.Assoc` -- associated type projection, e.g. `Self.Item`, `I.Output`
     Projection {
         base: String,
         assoc: String,
@@ -80,11 +80,11 @@ pub enum GenericParamKind {
 /// Variance annotation on a generic type parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Variance {
-    /// `+T` — covariant: `F[Sub]` is a subtype of `F[Super]`
+    /// `+T` -- covariant: `F[Sub]` is a subtype of `F[Super]`
     Covariant,
-    /// `-T` — contravariant: `F[Super]` is a subtype of `F[Sub]`
+    /// `-T` -- contravariant: `F[Super]` is a subtype of `F[Sub]`
     Contravariant,
-    /// No annotation — invariant (default)
+    /// No annotation -- invariant (default)
     Invariant,
 }
 

@@ -454,7 +454,7 @@ pub fn analyze_with_base_and_symbols(
 }
 
 /// Collect the disk paths of all files transitively imported by `source`.
-/// Stdlib/VFS imports are excluded — only real on-disk `.kn` files are returned.
+/// Stdlib/VFS imports are excluded -- only real on-disk `.kn` files are returned.
 pub fn collect_imported_disk_paths(
     source: &SourceFile,
     base_dir: &std::path::Path,

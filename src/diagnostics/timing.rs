@@ -62,6 +62,56 @@ impl PhaseTimer {
         }
     }
 
+    /// Lightweight timing table for commands that don't have full BuildStats (e.g. `check`).
+    pub fn report_simple(&self, label: &str, out: &mut dyn Write) {
+        let mut phases = self.phases.clone();
+        if let Some((name, t)) = &self.current {
+            phases.push((name.clone(), t.elapsed()));
+        }
+        if phases.is_empty() {
+            return;
+        }
+        let total: std::time::Duration = phases.iter().map(|(_, d)| *d).sum();
+        let phase_name_w = phases
+            .iter()
+            .map(|(n, _)| n.len())
+            .max()
+            .unwrap_or(0)
+            .max("total".len());
+        let time_strings: Vec<String> = phases.iter().map(|(_, d)| fmt_dur(*d)).collect();
+        let total_str = fmt_dur(total);
+        let time_w = time_strings
+            .iter()
+            .map(|s| s.len())
+            .max()
+            .unwrap_or(0)
+            .max(total_str.len());
+
+        writeln!(out, "{label}").unwrap();
+        for ((name, _), time_str) in phases.iter().zip(time_strings.iter()) {
+            writeln!(
+                out,
+                "  {:<name_w$}  {:>time_w$}",
+                name,
+                time_str,
+                name_w = phase_name_w,
+                time_w = time_w
+            )
+            .unwrap();
+        }
+        let sep = "-".repeat(phase_name_w + time_w + 4);
+        writeln!(out, "  {}", sep).unwrap();
+        writeln!(
+            out,
+            "  {:<name_w$}  {:>time_w$}",
+            "total",
+            total_str,
+            name_w = phase_name_w,
+            time_w = time_w
+        )
+        .unwrap();
+    }
+
     pub fn report(&self, stats: &BuildStats, verbose: bool, out: &mut dyn Write) {
         // Collect all phases including any active one.
         let mut phases = self.phases.clone();

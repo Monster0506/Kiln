@@ -386,7 +386,7 @@ fn stmt_has_break_or_continue(stmt: &TypedStmt) -> bool {
                 || handlers.iter().any(|h| has_break_or_continue(&h.body))
                 || finally.as_ref().is_some_and(has_break_or_continue)
         }
-        // Nested loops own their own break/continue — don't recurse into them.
+        // Nested loops own their own break/continue -- don't recurse into them.
         TypedStmt::While { .. } | TypedStmt::DoWhile { .. } | TypedStmt::For { .. } => false,
         _ => false,
     }

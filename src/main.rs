@@ -9,7 +9,7 @@ use kiln_compiler::analyzer::{
 use kiln_compiler::annotations::{default_registry, run_processors, run_user_processors};
 use kiln_compiler::codegen::{compile::compile, context::CodegenContext, emit};
 use kiln_compiler::diagnostics::timing::{BuildStats, ItemCounts, PhaseTimer};
-use kiln_compiler::diagnostics::SourceMap;
+use kiln_compiler::diagnostics::{RenderOpts, SourceMap};
 use kiln_compiler::lexer::Lexer;
 use kiln_compiler::parser::ast::Item;
 use kiln_compiler::parser::Parser as KilnParser;
@@ -43,6 +43,9 @@ enum Command {
         /// Re-run check on every file change
         #[arg(long)]
         watch: bool,
+        /// Print phase timing table to stderr
+        #[arg(long)]
+        timing: bool,
         /// Print profile stats (type registry, method frequency) to stderr
         #[arg(long)]
         profile: bool,
@@ -172,13 +175,144 @@ fn build_symbol_rows(syms: &SymbolList) -> Vec<(String, String, usize)> {
     rows
 }
 
-fn emit_error(kind: &str, code: &str, msg: &str, snippet: &str) {
-    eprintln!("error[{code}]: {kind}: {msg}");
+fn diag_prefix(code: &str) -> &'static str {
+    if code.starts_with('W') {
+        "warning"
+    } else {
+        "error"
+    }
+}
+
+fn emit_diagnostic(code: &str, msg: &str, snippet: &str) {
+    eprintln!("{}[{code}]: {msg}", diag_prefix(code));
     eprintln!("{snippet}");
 }
 
-fn emit_error_no_span(kind: &str, code: &str, msg: &str) {
-    eprintln!("error[{code}]: {kind}: {msg}");
+fn emit_diagnostic_no_span(code: &str, msg: &str) {
+    eprintln!("{}[{code}]: {msg}", diag_prefix(code));
+}
+
+fn diag_summary(errors: usize, warnings: usize) -> String {
+    let es = if errors == 1 { "" } else { "s" };
+    let ws = if warnings == 1 { "" } else { "s" };
+    match (errors, warnings) {
+        (0, 0) => String::new(),
+        (0, w) => format!("{w} warning{ws}"),
+        (e, 0) => format!("{e} error{es}"),
+        (e, w) => format!("{e} error{es}, {w} warning{ws}"),
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+struct DiagKey {
+    code: String,
+    file: String,
+    line: usize,
+    col: usize,
+}
+
+struct CheckResult {
+    outcome: CheckOutcome,
+    keys: std::collections::HashSet<DiagKey>,
+}
+
+fn compute_gutter_width(
+    map: &SourceMap,
+    errs: &[kiln_compiler::analyzer::AnalysisError],
+    context_after: usize,
+) -> usize {
+    errs.iter()
+        .flat_map(|e| {
+            let (line, _) = map.location_of(e.span().start);
+            let note_lines: Vec<usize> = e
+                .note_info()
+                .into_iter()
+                .filter_map(|(_, ns)| ns)
+                .map(|ns| {
+                    let (l, _) = map.location_of(ns.start);
+                    l + context_after
+                })
+                .collect();
+            let mut lines = vec![line + context_after];
+            lines.extend(note_lines);
+            lines.into_iter()
+        })
+        .map(|l| l.to_string().len())
+        .max()
+        .unwrap_or(1)
+}
+
+fn format_analysis_errors_rich(
+    errs: &[kiln_compiler::analyzer::AnalysisError],
+    map: &SourceMap,
+    src: &str,
+    path: &str,
+) -> Vec<String> {
+    use kiln_compiler::diagnostics::colors::get_colors;
+    let c = get_colors();
+    let gw = compute_gutter_width(map, errs, 1);
+    errs.iter()
+        .map(|e| {
+            let code = e.code();
+            let label_owned = e.caret_label();
+            let label = label_owned.as_deref();
+            let opts = RenderOpts {
+                code,
+                caret_label: label,
+                gutter_width: gw,
+                hyperlinks: c.hyperlinks,
+                context_before: 2,
+                context_after: 1,
+            };
+            let block = map.render_rich(src, e.span(), path, &opts);
+            let prefix_color = c.code_color(code);
+            let header = format!(
+                "{prefix_color}{}[{code}]:{} {}",
+                diag_prefix(code),
+                c.reset,
+                e.message()
+            );
+            let mut msg = format!("{header}\n{block}");
+            for (note, note_span) in e.note_info() {
+                if let Some(ns) = note_span {
+                    let note_opts = RenderOpts {
+                        code: "note",
+                        caret_label: None,
+                        gutter_width: gw,
+                        hyperlinks: c.hyperlinks,
+                        context_before: 0,
+                        context_after: 0,
+                    };
+                    let note_block = map.render_note_rich(src, ns, path, &note, &note_opts);
+                    msg.push('\n');
+                    msg.push_str(&note_block);
+                } else {
+                    let nc = c.note;
+                    let r = c.reset;
+                    msg.push_str(&format!("\n{nc}note:{r} {note}"));
+                }
+            }
+            msg
+        })
+        .collect()
+}
+
+fn diag_keys_from_errs(
+    errs: &[kiln_compiler::analyzer::AnalysisError],
+    map: &SourceMap,
+    path: &str,
+) -> std::collections::HashSet<DiagKey> {
+    errs.iter()
+        .map(|e| {
+            let (line, col) = map.location_of(e.span().start);
+            DiagKey {
+                code: e.code().to_string(),
+                file: path.to_string(),
+                line,
+                col,
+            }
+        })
+        .collect()
 }
 
 pub enum BuildOutcome {
@@ -239,9 +373,9 @@ fn run_build(
                 .map(|e| {
                     let snippet = map.render_diagnostic(&src, e.span(), &path);
                     format!(
-                        "error[{}]: {}: {}\n{}",
+                        "{}[{}]: {}\n{}",
+                        diag_prefix(e.code()),
                         e.code(),
-                        e.kind(),
                         e.message(),
                         snippet
                     )
@@ -260,9 +394,15 @@ fn run_build(
             let msg = e.message();
             let formatted = if let Some(span) = e.span() {
                 let snippet = map.render_diagnostic(&src, span, &path);
-                format!("error[{}]: {}: {}\n{}", e.code(), e.kind(), msg, snippet)
+                format!(
+                    "{}[{}]: {}\n{}",
+                    diag_prefix(e.code()),
+                    e.code(),
+                    msg,
+                    snippet
+                )
             } else {
-                format!("error[{}]: {}: {}", e.code(), e.kind(), msg)
+                format!("{}[{}]: {}", diag_prefix(e.code()), e.code(), msg)
             };
             return BuildOutcome::Errors(vec![formatted]);
         }
@@ -306,35 +446,19 @@ fn run_build(
     let (typed_file, type_registry, env_symbols, build_warnings) = match analyze_result {
         Ok(t) => t,
         Err(errs) => {
-            let msgs = errs
-                .iter()
-                .map(|e| {
-                    let snippet = map.render_diagnostic(&src, e.span(), &path);
-                    let mut msg = format!(
-                        "error[{}]: {}: {}\n{}",
-                        e.code(),
-                        e.kind(),
-                        e.message(),
-                        snippet
-                    );
-                    for (note, note_span) in e.note_info() {
-                        if let Some(ns) = note_span {
-                            let note_block = map.render_note(&src, ns, &path, &note);
-                            msg.push('\n');
-                            msg.push_str(&note_block);
-                        } else {
-                            msg.push_str(&format!("\nnote: {note}"));
-                        }
-                    }
-                    msg
-                })
-                .collect();
+            let ecount = errs.iter().filter(|e| !e.code().starts_with('W')).count();
+            let wcount = errs.iter().filter(|e| e.code().starts_with('W')).count();
+            let mut msgs = format_analysis_errors_rich(&errs, &map, &src, &path);
+            let summary = diag_summary(ecount, wcount);
+            if !summary.is_empty() {
+                msgs.push(summary);
+            }
             return BuildOutcome::Errors(msgs);
         }
     };
     for w in &build_warnings {
         let snippet = map.render_diagnostic(&src, w.span(), &path);
-        emit_error(w.kind(), w.code(), &w.message(), &snippet);
+        emit_diagnostic(w.code(), &w.message(), &snippet);
         for (note, note_span) in w.note_info() {
             if let Some(ns) = note_span {
                 let note_block = map.render_note(&src, ns, &path, &note);
@@ -552,14 +676,21 @@ pub enum CheckOutcome {
     Errors(Vec<String>),
 }
 
-fn run_check(file: &PathBuf, profile: bool) -> CheckOutcome {
+fn run_check(file: &PathBuf, profile: bool, timing: bool) -> CheckResult {
     let path = file.to_string_lossy().to_string();
     let src = match fs::read_to_string(file) {
         Ok(s) => s,
-        Err(e) => return CheckOutcome::Errors(vec![format!("error reading {path}: {e}")]),
+        Err(e) => {
+            return CheckResult {
+                outcome: CheckOutcome::Errors(vec![format!("error reading {path}: {e}")]),
+                keys: Default::default(),
+            }
+        }
     };
     let map = SourceMap::new(&src);
+    let mut timer = kiln_compiler::diagnostics::timing::PhaseTimer::new();
 
+    timer.start("lex");
     let tokens = match Lexer::new(&src).tokenize() {
         Ok(t) => t,
         Err(errors) => {
@@ -568,31 +699,46 @@ fn run_check(file: &PathBuf, profile: bool) -> CheckOutcome {
                 .map(|e| {
                     let snippet = map.render_diagnostic(&src, e.span(), &path);
                     format!(
-                        "error[{}]: {}: {}\n{}",
+                        "{}[{}]: {}\n{}",
+                        diag_prefix(e.code()),
                         e.code(),
-                        e.kind(),
                         e.message(),
                         snippet
                     )
                 })
                 .collect();
-            return CheckOutcome::Errors(msgs);
+            return CheckResult {
+                outcome: CheckOutcome::Errors(msgs),
+                keys: Default::default(),
+            };
         }
     };
+    timer.stop();
 
+    timer.start("parse");
     let mut ast = match KilnParser::new(tokens).parse_file() {
         Ok(a) => a,
         Err(e) => {
             let msg = e.message();
             let formatted = if let Some(span) = e.span() {
                 let snippet = map.render_diagnostic(&src, span, &path);
-                format!("error[{}]: {}: {}\n{}", e.code(), e.kind(), msg, snippet)
+                format!(
+                    "{}[{}]: {}\n{}",
+                    diag_prefix(e.code()),
+                    e.code(),
+                    msg,
+                    snippet
+                )
             } else {
-                format!("error[{}]: {}: {}", e.code(), e.kind(), msg)
+                format!("{}[{}]: {}", diag_prefix(e.code()), e.code(), msg)
             };
-            return CheckOutcome::Errors(vec![formatted]);
+            return CheckResult {
+                outcome: CheckOutcome::Errors(vec![formatted]),
+                keys: Default::default(),
+            };
         }
     };
+    timer.stop();
 
     let registry = default_registry();
     run_processors(&mut ast, &registry);
@@ -604,78 +750,131 @@ fn run_check(file: &PathBuf, profile: bool) -> CheckOutcome {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-    if profile {
+    fn emit_warnings_rich(
+        warnings: &[kiln_compiler::analyzer::AnalysisError],
+        map: &SourceMap,
+        src: &str,
+        path: &str,
+    ) {
+        use kiln_compiler::diagnostics::colors::get_colors;
+        let c = get_colors();
+        let gw = compute_gutter_width(map, warnings, 1);
+        for w in warnings {
+            let code = w.code();
+            let label_owned = w.caret_label();
+            let label = label_owned.as_deref();
+            let opts = RenderOpts {
+                code,
+                caret_label: label,
+                gutter_width: gw,
+                hyperlinks: c.hyperlinks,
+                context_before: 2,
+                context_after: 1,
+            };
+            let block = map.render_rich(src, w.span(), path, &opts);
+            let prefix_color = c.code_color(code);
+            eprintln!(
+                "{prefix_color}{}[{code}]:{} {}",
+                diag_prefix(code),
+                c.reset,
+                w.message()
+            );
+            eprintln!("{block}");
+            for (note, note_span) in w.note_info() {
+                if let Some(ns) = note_span {
+                    let note_opts = RenderOpts {
+                        code: "note",
+                        caret_label: None,
+                        gutter_width: gw,
+                        hyperlinks: c.hyperlinks,
+                        context_before: 0,
+                        context_after: 0,
+                    };
+                    let note_block = map.render_note_rich(src, ns, path, &note, &note_opts);
+                    eprintln!("{note_block}");
+                } else {
+                    let nc = c.note;
+                    let r = c.reset;
+                    eprintln!("{nc}note:{r} {note}");
+                }
+            }
+            eprintln!();
+        }
+    }
+
+    timer.start("analyze");
+    let result = if profile {
         match analyze_with_base_and_symbols(&ast, &base_dir) {
             Ok((_, type_registry, syms, warnings)) => {
-                for w in &warnings {
-                    let snippet = map.render_diagnostic(&src, w.span(), &path);
-                    emit_error(w.kind(), w.code(), &w.message(), &snippet);
-                    for (note, note_span) in w.note_info() {
-                        if let Some(ns) = note_span {
-                            let note_block = map.render_note(&src, ns, &path, &note);
-                            eprintln!("{note_block}");
-                        } else {
-                            eprintln!("note: {note}");
-                        }
-                    }
+                timer.stop();
+                let keys = diag_keys_from_errs(&warnings, &map, &path);
+                emit_warnings_rich(&warnings, &map, &src, &path);
+                let summary = diag_summary(0, warnings.len());
+                if !summary.is_empty() {
+                    eprintln!("{summary}");
                 }
                 let mut stats = type_registry.profile_stats();
                 stats.symbols = build_symbol_rows(&syms);
                 stats.report(&mut std::io::stderr());
-                CheckOutcome::Ok
+                CheckResult {
+                    outcome: CheckOutcome::Ok,
+                    keys,
+                }
             }
-            Err(errs) => CheckOutcome::Errors(format_analysis_errors(&errs, &map, &src, &path)),
+            Err(errs) => {
+                timer.stop();
+                let keys = diag_keys_from_errs(&errs, &map, &path);
+                let ecount = errs.iter().filter(|e| !e.code().starts_with('W')).count();
+                let wcount = errs.iter().filter(|e| e.code().starts_with('W')).count();
+                let mut msgs = format_analysis_errors_rich(&errs, &map, &src, &path);
+                let summary = diag_summary(ecount, wcount);
+                if !summary.is_empty() {
+                    msgs.push(summary);
+                }
+                CheckResult {
+                    outcome: CheckOutcome::Errors(msgs),
+                    keys,
+                }
+            }
         }
     } else {
         match analyze_with_base(&ast, &base_dir) {
             Ok((_, warnings)) => {
-                for w in &warnings {
-                    let snippet = map.render_diagnostic(&src, w.span(), &path);
-                    emit_error(w.kind(), w.code(), &w.message(), &snippet);
-                    for (note, note_span) in w.note_info() {
-                        if let Some(ns) = note_span {
-                            let note_block = map.render_note(&src, ns, &path, &note);
-                            eprintln!("{note_block}");
-                        } else {
-                            eprintln!("note: {note}");
-                        }
-                    }
+                timer.stop();
+                let keys = diag_keys_from_errs(&warnings, &map, &path);
+                emit_warnings_rich(&warnings, &map, &src, &path);
+                let summary = diag_summary(0, warnings.len());
+                if !summary.is_empty() {
+                    eprintln!("{summary}");
                 }
-                CheckOutcome::Ok
+                CheckResult {
+                    outcome: CheckOutcome::Ok,
+                    keys,
+                }
             }
-            Err(errs) => CheckOutcome::Errors(format_analysis_errors(&errs, &map, &src, &path)),
+            Err(errs) => {
+                timer.stop();
+                let keys = diag_keys_from_errs(&errs, &map, &path);
+                let ecount = errs.iter().filter(|e| !e.code().starts_with('W')).count();
+                let wcount = errs.iter().filter(|e| e.code().starts_with('W')).count();
+                let mut msgs = format_analysis_errors_rich(&errs, &map, &src, &path);
+                let summary = diag_summary(ecount, wcount);
+                if !summary.is_empty() {
+                    msgs.push(summary);
+                }
+                CheckResult {
+                    outcome: CheckOutcome::Errors(msgs),
+                    keys,
+                }
+            }
         }
-    }
-}
+    };
 
-fn format_analysis_errors(
-    errs: &[kiln_compiler::analyzer::AnalysisError],
-    map: &SourceMap,
-    src: &str,
-    path: &str,
-) -> Vec<String> {
-    errs.iter()
-        .map(|e| {
-            let snippet = map.render_diagnostic(src, e.span(), path);
-            let mut msg = format!(
-                "error[{}]: {}: {}\n{}",
-                e.code(),
-                e.kind(),
-                e.message(),
-                snippet
-            );
-            for (note, note_span) in e.note_info() {
-                if let Some(ns) = note_span {
-                    let note_block = map.render_note(src, ns, path, &note);
-                    msg.push('\n');
-                    msg.push_str(&note_block);
-                } else {
-                    msg.push_str(&format!("\nnote: {note}"));
-                }
-            }
-            msg
-        })
-        .collect()
+    if timing {
+        timer.report_simple("kiln check timing", &mut std::io::stderr());
+    }
+
+    result
 }
 
 fn format_watch_result(outcome: &CheckOutcome, time: &str) -> String {
@@ -735,21 +934,70 @@ fn register_watch_paths(watcher: &mut dyn notify::Watcher, file: &PathBuf, extra
     }
 }
 
+fn print_watch_result(
+    result: &CheckResult,
+    time: &str,
+    prev_keys: Option<&std::collections::HashSet<DiagKey>>,
+) {
+    let unchanged = prev_keys.map_or(false, |p| p == &result.keys);
+    if unchanged {
+        match &result.outcome {
+            CheckOutcome::Ok => println!("[ok] {time} (no change)"),
+            CheckOutcome::Errors(_) => println!("[error] {time} (no change)"),
+        }
+        return;
+    }
+
+    if let Some(prev) = prev_keys {
+        let mut fixed: Vec<_> = prev.difference(&result.keys).collect();
+        let mut new: Vec<_> = result.keys.difference(prev).collect();
+        fixed.sort_by_key(|k| (&k.file, k.line, k.col));
+        new.sort_by_key(|k| (&k.file, k.line, k.col));
+        for k in &fixed {
+            println!(
+                "  fixed: {}[{}] at {}:{}:{}",
+                diag_prefix(&k.code),
+                k.code,
+                k.file,
+                k.line,
+                k.col
+            );
+        }
+        for k in &new {
+            println!(
+                "  new:   {}[{}] at {}:{}:{}",
+                diag_prefix(&k.code),
+                k.code,
+                k.file,
+                k.line,
+                k.col
+            );
+        }
+    }
+
+    println!("{}", format_watch_result(&result.outcome, time));
+    if let CheckOutcome::Errors(ref errs) = result.outcome {
+        for (i, e) in errs.iter().enumerate() {
+            if i > 0 {
+                println!();
+            }
+            println!("{e}");
+        }
+    }
+}
+
 fn run_watch(file: &PathBuf) {
     use notify::{Config, Event, RecommendedWatcher, Watcher};
+    use std::collections::HashSet;
     use std::sync::mpsc;
     use std::time::Duration;
 
     let path = file.to_string_lossy().to_string();
     println!("watching {path}");
 
-    let outcome = run_check(file, false);
-    println!("{}", format_watch_result(&outcome, &current_time_str()));
-    if let CheckOutcome::Errors(ref errs) = outcome {
-        for e in errs {
-            println!("{e}");
-        }
-    }
+    let result = run_check(file, false, false);
+    print_watch_result(&result, &current_time_str(), None);
+    let mut prev_keys: HashSet<DiagKey> = result.keys;
 
     let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
     let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap_or_else(|e| {
@@ -772,7 +1020,6 @@ fn run_watch(file: &PathBuf) {
             }
         }
 
-        // Refresh import list — a newly added import might need watching.
         let new_imports = imported_paths(file);
         for p in &new_imports {
             if !imports.contains(p) {
@@ -782,13 +1029,9 @@ fn run_watch(file: &PathBuf) {
             }
         }
 
-        let outcome = run_check(file, false);
-        println!("{}", format_watch_result(&outcome, &current_time_str()));
-        if let CheckOutcome::Errors(ref errs) = outcome {
-            for e in errs {
-                println!("{e}");
-            }
-        }
+        let result = run_check(file, false, false);
+        print_watch_result(&result, &current_time_str(), Some(&prev_keys));
+        prev_keys = result.keys;
     }
 }
 
@@ -798,17 +1041,12 @@ fn emit_analysis_errors(
     src: &str,
     path: &str,
 ) {
-    for e in errs {
-        let snippet = map.render_diagnostic(src, e.span(), path);
-        emit_error(e.kind(), e.code(), &e.message(), &snippet);
-        for (note, note_span) in e.note_info() {
-            if let Some(ns) = note_span {
-                let note_block = map.render_note(src, ns, path, &note);
-                eprintln!("{note_block}");
-            } else {
-                eprintln!("note: {note}");
-            }
+    let msgs = format_analysis_errors_rich(errs, map, src, path);
+    for (i, msg) in msgs.iter().enumerate() {
+        if i > 0 {
+            eprintln!();
         }
+        eprintln!("{msg}");
     }
 }
 
@@ -872,20 +1110,28 @@ mod tests {
 
     #[test]
     fn run_check_valid_file_returns_ok() {
-        let result = run_check(&PathBuf::from("examples/check_valid.kn"), false);
+        let result = run_check(&PathBuf::from("examples/check_valid.kn"), false, false);
         assert!(
-            matches!(result, CheckOutcome::Ok),
+            matches!(result.outcome, CheckOutcome::Ok),
             "expected ok for valid file"
         );
     }
 
     #[test]
     fn run_check_undefined_name_returns_errors() {
-        let result = run_check(&PathBuf::from("examples/check_undefined.kn"), false);
+        let result = run_check(&PathBuf::from("examples/check_undefined.kn"), false, false);
         assert!(
-            matches!(result, CheckOutcome::Errors(_)),
+            matches!(result.outcome, CheckOutcome::Errors(_)),
             "expected errors for file with undefined names"
         );
+    }
+
+    #[test]
+    fn run_check_produces_diag_keys_for_errors() {
+        let result = run_check(&PathBuf::from("examples/check_undefined.kn"), false, false);
+        assert!(!result.keys.is_empty(), "expected at least one DiagKey");
+        let key = result.keys.iter().next().unwrap();
+        assert_eq!(key.code, "E001", "undefined name should produce E001");
     }
 
     #[test]
@@ -930,7 +1176,7 @@ fn main() {
                 Err(errors) => {
                     for e in &errors {
                         let snippet = map.render_diagnostic(&src, e.span(), &file);
-                        emit_error(e.kind(), e.code(), &e.message(), &snippet);
+                        emit_diagnostic(e.code(), &e.message(), &snippet);
                     }
                     std::process::exit(1);
                 }
@@ -940,15 +1186,19 @@ fn main() {
         Command::Check {
             file,
             watch,
+            timing,
             profile,
         } => {
             if watch {
                 run_watch(&file);
             } else {
-                match run_check(&file, profile) {
+                match run_check(&file, profile, timing).outcome {
                     CheckOutcome::Ok => println!("ok"),
                     CheckOutcome::Errors(errs) => {
-                        for e in &errs {
+                        for (i, e) in errs.iter().enumerate() {
+                            if i > 0 {
+                                eprintln!();
+                            }
                             eprintln!("{e}");
                         }
                         std::process::exit(1);
@@ -1037,7 +1287,7 @@ fn main() {
             let tokens = Lexer::new(&src).tokenize().unwrap_or_else(|errors| {
                 for e in &errors {
                     let snippet = map.render_diagnostic(&src, e.span(), &path);
-                    emit_error(e.kind(), e.code(), &e.message(), &snippet);
+                    emit_diagnostic(e.code(), &e.message(), &snippet);
                 }
                 std::process::exit(1);
             });
@@ -1045,9 +1295,9 @@ fn main() {
                 let msg = e.message();
                 if let Some(span) = e.span() {
                     let snippet = map.render_diagnostic(&src, span, &path);
-                    emit_error(e.kind(), e.code(), &msg, &snippet);
+                    emit_diagnostic(e.code(), &msg, &snippet);
                 } else {
-                    emit_error_no_span(e.kind(), e.code(), &msg);
+                    emit_diagnostic_no_span(e.code(), &msg);
                 }
                 std::process::exit(1);
             });
@@ -1124,7 +1374,7 @@ fn main() {
             let tokens = Lexer::new(&src).tokenize().unwrap_or_else(|errors| {
                 for e in &errors {
                     let snippet = map.render_diagnostic(&src, e.span(), &file);
-                    emit_error(e.kind(), e.code(), &e.message(), &snippet);
+                    emit_diagnostic(e.code(), &e.message(), &snippet);
                 }
                 std::process::exit(1);
             });
@@ -1135,9 +1385,9 @@ fn main() {
                     let msg = e.message();
                     if let Some(span) = e.span() {
                         let snippet = map.render_diagnostic(&src, span, &file);
-                        emit_error(e.kind(), e.code(), &msg, &snippet);
+                        emit_diagnostic(e.code(), &msg, &snippet);
                     } else {
-                        emit_error_no_span(e.kind(), e.code(), &msg);
+                        emit_diagnostic_no_span(e.code(), &msg);
                     }
                     std::process::exit(1);
                 }

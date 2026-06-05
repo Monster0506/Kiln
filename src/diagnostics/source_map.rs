@@ -1,4 +1,32 @@
+use super::colors::get_colors;
 use super::Span;
+
+pub struct RenderOpts<'a> {
+    pub code: &'a str,
+    pub caret_label: Option<&'a str>,
+    /// Pre-computed gutter digit width for cross-diagnostic alignment.
+    /// Pass 0 to let the method compute from the local context range.
+    pub gutter_width: usize,
+    pub hyperlinks: bool,
+    pub context_before: usize,
+    pub context_after: usize,
+}
+
+fn make_file_uri(file: &str, line: usize, col: usize) -> String {
+    let abs = std::fs::canonicalize(file)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| file.to_string());
+    let normalized = abs.trim_start_matches(r"\\?\").replace('\\', "/");
+    format!("file:///{normalized}:{line}:{col}")
+}
+
+fn osc8_open(uri: &str) -> String {
+    format!("\x1b]8;;{uri}\x1b\\")
+}
+
+fn osc8_close() -> &'static str {
+    "\x1b]8;;\x1b\\"
+}
 
 /// Maps byte offsets back to 1-indexed (line, column) pairs for human-readable diagnostics.
 pub struct SourceMap {
@@ -78,6 +106,124 @@ impl SourceMap {
         )
     }
 
+    fn get_line_opt<'s>(&self, src: &'s str, line_num: usize) -> Option<&'s str> {
+        if line_num < 1 || line_num > self.line_starts.len() {
+            return None;
+        }
+        let idx = line_num - 1;
+        let start = self.line_starts[idx];
+        let end = if idx + 1 < self.line_starts.len() {
+            self.line_starts[idx + 1].saturating_sub(1)
+        } else {
+            src.len()
+        };
+        Some(&src[start..end])
+    }
+
+    /// Renders a rich diagnostic block with context lines, colors, hyperlinks, and caret label.
+    ///
+    /// The caller is responsible for printing the header line (`error[E002]: ...`).
+    /// This method returns the location + source excerpt portion.
+    ///
+    /// ```text
+    ///   --> file.kn:5:14
+    ///    |
+    /// 3  | (dim) prev prev line
+    /// 4  | (dim) prev line
+    /// 5  | let x: bool = 42
+    ///    |                ^^ expected `bool`
+    /// 6  | (dim) next line
+    /// ```
+    pub fn render_rich(&self, src: &str, span: Span, file: &str, opts: &RenderOpts<'_>) -> String {
+        let c = get_colors();
+        let (line_num, col) = self.location_of(span.start);
+        let (_, _, caret_w) = self.line_info(src, span);
+
+        let total_lines = self.line_starts.len();
+        let ctx_start = line_num.saturating_sub(opts.context_before).max(1);
+        let ctx_end = (line_num + opts.context_after).min(total_lines);
+
+        let gw = if opts.gutter_width > 0 {
+            opts.gutter_width
+        } else {
+            ctx_end.to_string().len()
+        };
+        let pad = " ".repeat(gw);
+
+        let arrow = if opts.hyperlinks {
+            let uri = make_file_uri(file, line_num, col);
+            format!(
+                "{pad}--> {}{}:{line_num}:{col}{}",
+                osc8_open(&uri),
+                file,
+                osc8_close()
+            )
+        } else {
+            format!("{pad}--> {file}:{line_num}:{col}")
+        };
+
+        let mut out = String::new();
+        out.push_str(&format!("{}{arrow}{}\n", c.gutter, c.reset));
+        out.push_str(&format!("{}{pad} |{}\n", c.gutter, c.reset));
+
+        for ln in ctx_start..=ctx_end {
+            if let Some(line_text) = self.get_line_opt(src, ln) {
+                let lnum_str = format!("{:>gw$}", ln, gw = gw);
+                if ln == line_num {
+                    out.push_str(&format!(
+                        "{}{lnum_str} |{} {line_text}\n",
+                        c.gutter, c.reset
+                    ));
+                    let indent = " ".repeat(col - 1);
+                    let caret = "^".repeat(caret_w);
+                    let label = match opts.caret_label {
+                        Some(l) if !l.is_empty() => format!(" {l}"),
+                        _ => String::new(),
+                    };
+                    let cc = c.code_caret(opts.code);
+                    out.push_str(&format!(
+                        "{}{pad} |{} {indent}{}{caret}{label}{}\n",
+                        c.gutter, c.reset, cc, c.reset
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "{}{lnum_str} |{}{} {line_text}{}\n",
+                        c.gutter, c.reset, c.dim, c.reset
+                    ));
+                }
+            }
+        }
+
+        if out.ends_with('\n') {
+            out.pop();
+        }
+        out
+    }
+
+    /// Renders a rich note block with context lines, colors, hyperlinks, and caret.
+    ///
+    /// Includes the `note: <text>` header line.
+    pub fn render_note_rich(
+        &self,
+        src: &str,
+        span: Span,
+        file: &str,
+        note: &str,
+        opts: &RenderOpts<'_>,
+    ) -> String {
+        let c = get_colors();
+        let note_opts = RenderOpts {
+            code: "note",
+            caret_label: None,
+            gutter_width: opts.gutter_width,
+            hyperlinks: opts.hyperlinks,
+            context_before: 0,
+            context_after: 0,
+        };
+        let block = self.render_rich(src, span, file, &note_opts);
+        format!("{}note:{} {note}\n{block}", c.note, c.reset)
+    }
+
     /// Returns a two-line snippet (source line + caret row).
     pub fn render_snippet(&self, src: &str, span: Span) -> String {
         let (line_num, _col) = self.location_of(span.start);
@@ -121,6 +267,83 @@ impl SourceMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use super::RenderOpts;
+
+    fn no_color_opts<'a>(code: &'a str, caret_label: Option<&'a str>) -> RenderOpts<'a> {
+        RenderOpts {
+            code,
+            caret_label,
+            gutter_width: 0,
+            hyperlinks: false,
+            context_before: 2,
+            context_after: 1,
+        }
+    }
+
+    #[test]
+    fn render_rich_includes_context_lines() {
+        let src = "line1\nline2\nline3\nline4\nline5\n";
+        let map = SourceMap::new(src);
+        let span = Span::new(12, 17);
+        let result = map.render_rich(src, span, "test.kn", &no_color_opts("E001", None));
+        assert!(result.contains("line2"), "context before");
+        assert!(result.contains("line3"), "error line");
+        assert!(result.contains("line4"), "context after");
+        assert!(result.contains('^'), "caret present");
+    }
+
+    #[test]
+    fn render_rich_caret_label_appended() {
+        let src = "let x: bool = 42\n";
+        let map = SourceMap::new(src);
+        let span = Span::new(14, 16);
+        let result = map.render_rich(
+            src,
+            span,
+            "test.kn",
+            &no_color_opts("E002", Some("expected `bool`")),
+        );
+        assert!(result.contains("expected `bool`"), "label in output");
+    }
+
+    #[test]
+    fn render_rich_hyperlink_when_enabled() {
+        let src = "let x = 42\n";
+        let map = SourceMap::new(src);
+        let span = Span::new(4, 5);
+        let opts = RenderOpts {
+            code: "E001",
+            caret_label: None,
+            gutter_width: 0,
+            hyperlinks: true,
+            context_before: 0,
+            context_after: 0,
+        };
+        let result = map.render_rich(src, span, "test.kn", &opts);
+        assert!(result.contains("\x1b]8;;"), "OSC 8 hyperlink present");
+    }
+
+    #[test]
+    fn render_rich_gutter_width_aligns() {
+        let src = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\n";
+        let map = SourceMap::new(src);
+        let span = Span::new(20, 21);
+        let opts = RenderOpts {
+            code: "E001",
+            caret_label: None,
+            gutter_width: 3,
+            hyperlinks: false,
+            context_before: 1,
+            context_after: 1,
+        };
+        let result = map.render_rich(src, span, "test.kn", &opts);
+        let first_line = result.lines().next().unwrap_or("");
+        assert!(
+            first_line.starts_with("   -->"),
+            "gutter width=3 pads arrow"
+        );
+    }
 
     #[test]
     fn single_line_offsets() {

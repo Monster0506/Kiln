@@ -27,7 +27,7 @@ pub fn collect_top_level(
 
         if env.would_shadow(&name) {
             // Allow multiple definitions of the same function name at the same scope
-            // level — they become overloads, resolved in Pass 1b.
+            // level -- they become overloads, resolved in Pass 1b.
             let in_same_scope = matches!(
                 env.lookup_in_current_scope(&name),
                 Some(Symbol::Fn { .. }) | Some(Symbol::FnOverloadSet { .. })

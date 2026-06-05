@@ -15,7 +15,7 @@ pub fn compound_assign_hierarchy(op: &BinOp) -> &'static [&'static str] {
     }
 }
 
-/// Returns the required interface for a compound-assign operator — the loosest
+/// Returns the required interface for a compound-assign operator -- the loosest
 /// bound that guarantees the operation is possible at all.
 /// Returns None for operators with no compound-assign interface.
 pub fn compound_assign_iface(op: &BinOp) -> Option<&'static str> {

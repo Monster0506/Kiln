@@ -6,7 +6,7 @@ use cranelift_codegen::ir::types::{self, Type};
 /// Lower a Kiln `Ty` to a Cranelift scalar `Type`.
 ///
 /// Returns `None` for `Ty::Void` (no value) and for composite types that
-/// require out-of-band handling (str, tuples, structs) — callers that may
+/// require out-of-band handling (str, tuples, structs) -- callers that may
 /// receive those must check first.
 ///
 /// Heap-allocated composite types (Vec, Map, Set, Shared, Ref, Named) are

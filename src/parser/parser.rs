@@ -473,7 +473,7 @@ impl Parser {
                                 self.eat(&TokenKind::Comma);
                                 continue;
                             } else {
-                                // Not a binding — backtrack and parse as a generic type
+                                // Not a binding -- backtrack and parse as a generic type
                                 self.pos = saved_pos;
                             }
                         }
@@ -1776,7 +1776,7 @@ impl Parser {
                     {
                         self.advance(); // consume `:`
                         let variant = self.expect_ident()?;
-                        // `EnumName:Variant { fields }` — fielded enum variant construction
+                        // `EnumName:Variant { fields }` -- fielded enum variant construction
                         if allow_struct && self.peek() == &TokenKind::LBrace {
                             return self.parse_struct_literal(variant, start);
                         }

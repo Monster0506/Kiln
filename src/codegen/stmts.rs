@@ -602,7 +602,7 @@ fn lower_for(
     let zero = builder.ins().iconst(types::I64, 0);
     builder.def_var(idx_var, zero);
 
-    // User binding variable — element type drives the Cranelift slot type.
+    // User binding variable -- element type drives the Cranelift slot type.
     let bind_clif_ty = clif_type(binding_ty).unwrap_or(types::I64);
     let bind_zero = if bind_clif_ty == types::F64 {
         builder.ins().f64const(0.0)

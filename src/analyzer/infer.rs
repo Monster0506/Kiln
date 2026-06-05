@@ -818,7 +818,7 @@ fn infer_call_field(
 
         if let (Some(method), Some(elem)) = (registry.find_method(tname, field), &elem_ty) {
             // Check each argument against the substituted parameter type.
-            // method.params does NOT include self — it matches typed_args 1:1.
+            // method.params does NOT include self -- it matches typed_args 1:1.
             let expected_params: Vec<Ty> = method
                 .params
                 .iter()
@@ -1057,7 +1057,7 @@ fn infer_call_ident(
             }
         }
         Some(Symbol::Var { .. }) => {
-            // Callable variable whose type wasn't Callable above — indirect.
+            // Callable variable whose type wasn't Callable above -- indirect.
             let callee =
                 infer_typed_expr(&Expr::Ident(name.to_string(), span), env, registry, errors);
             mk(
@@ -1070,7 +1070,7 @@ fn infer_call_ident(
             )
         }
         _ => {
-            // Unknown name or type — emit as a plain Call with Unknown type.
+            // Unknown name or type -- emit as a plain Call with Unknown type.
             let callee = mk(TypedExprKind::Ident(name.to_string()), Ty::Unknown, span);
             mk(
                 TypedExprKind::Call {

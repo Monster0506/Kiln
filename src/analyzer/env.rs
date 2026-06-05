@@ -260,7 +260,7 @@ impl Env {
         result
     }
 
-    /// Mutable lookup — searches from innermost scope outward.
+    /// Mutable lookup -- searches from innermost scope outward.
     pub fn lookup_mut(&mut self, name: &str) -> Option<&mut Symbol> {
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains_key(name) {

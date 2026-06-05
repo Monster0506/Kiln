@@ -485,9 +485,36 @@ impl AnalysisError {
         }
     }
 
+    pub fn caret_label(&self) -> Option<String> {
+        match self {
+            AnalysisError::TypeMismatch { expected, .. } => Some(format!("expected `{expected}`")),
+            AnalysisError::AssignToImmutable { name, .. } => {
+                Some(format!("cannot assign to `{name}`"))
+            }
+            AnalysisError::AssignToConst { name, .. } => Some(format!("cannot assign to `{name}`")),
+            AnalysisError::UndefinedName { name, .. } => Some(format!("`{name}` not found")),
+            AnalysisError::UnreachableCode { .. } => Some("unreachable".to_string()),
+            AnalysisError::UnusedVariable { name, .. } => Some(format!("`{name}` unused")),
+            AnalysisError::NeedlessMut { name, .. } => Some(format!("`{name}` never reassigned")),
+            AnalysisError::ArityMismatch {
+                expected, found, ..
+            } => Some(format!("expected {expected}, found {found}")),
+            AnalysisError::MissingReturn { .. } => Some("no return on all paths".to_string()),
+            AnalysisError::DuplicateName { name, .. } => Some(format!("`{name}` redefined")),
+            AnalysisError::MissingConformance { iface, .. } => Some(format!("missing `{iface}`")),
+            AnalysisError::NoField { field, .. } => Some(format!("no field `{field}`")),
+            AnalysisError::PrivateField { field, .. } => Some(format!("`{field}` is private")),
+            AnalysisError::BareFieldAccess { field, .. } => {
+                Some(format!("did you mean `self.{field}`?"))
+            }
+            _ => None,
+        }
+    }
+
     pub fn span(&self) -> Span {
         match self {
             AnalysisError::UndefinedName { span, .. } => *span,
+
             AnalysisError::TypeMismatch { span, .. } => *span,
             AnalysisError::ArityMismatch { span, .. } => *span,
             AnalysisError::AssignToImmutable { span, .. } => *span,
@@ -527,5 +554,51 @@ impl AnalysisError {
             AnalysisError::NeedlessMut { span, .. } => *span,
             AnalysisError::UnreachableCode { span, .. } => *span,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diagnostics::Span;
+
+    fn s() -> Span {
+        Span::new(0, 1)
+    }
+
+    #[test]
+    fn caret_label_type_mismatch() {
+        let e = AnalysisError::TypeMismatch {
+            expected: "bool".to_string(),
+            found: "int".to_string(),
+            span: s(),
+            decl_span: None,
+        };
+        assert_eq!(e.caret_label(), Some("expected `bool`".to_string()));
+    }
+
+    #[test]
+    fn caret_label_undefined_name() {
+        let e = AnalysisError::UndefinedName {
+            name: "ghost".to_string(),
+            span: s(),
+            did_you_mean: None,
+        };
+        assert_eq!(e.caret_label(), Some("`ghost` not found".to_string()));
+    }
+
+    #[test]
+    fn caret_label_unused_variable() {
+        let e = AnalysisError::UnusedVariable {
+            name: "x".to_string(),
+            span: s(),
+        };
+        assert_eq!(e.caret_label(), Some("`x` unused".to_string()));
+    }
+
+    #[test]
+    fn caret_label_none_for_non_exhaustive_match() {
+        let e = AnalysisError::NonExhaustiveMatch { span: s() };
+        assert_eq!(e.caret_label(), None);
     }
 }

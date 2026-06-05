@@ -1,11 +1,13 @@
+pub mod colors;
 pub mod error;
 pub mod profiling;
 pub mod source_map;
 pub mod span;
 pub mod suggest;
 pub mod timing;
+pub use colors::{get_colors, init_colors, Colors};
 pub use error::LexError;
 pub use profiling::RegistryStats;
-pub use source_map::SourceMap;
+pub use source_map::{RenderOpts, SourceMap};
 pub use span::Span;
 pub use timing::{BuildStats, ItemCounts, PhaseTimer, ProcessorRun};

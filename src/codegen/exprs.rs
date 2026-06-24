@@ -35,6 +35,8 @@ pub struct LowerCtx<'a> {
     pub defined_thunks: &'a mut HashSet<String>,
     /// Bodies of @inline functions available for expansion at call sites.
     pub inline_bodies: &'a HashMap<String, (ParamList, TypedBlock)>,
+    /// Type names (monomorphized) that have a registered `{name}_drop` function.
+    pub droppable_types: &'a HashSet<String>,
 }
 
 /// Substitute Ident nodes in a TypedExpr based on a parameter->argument map.
@@ -150,7 +152,11 @@ fn inline_subst(expr: TypedExpr, subst: &HashMap<String, TypedExpr>) -> TypedExp
 pub struct VarEnv {
     vars: HashMap<String, Variable>,
     var_types: HashMap<String, Type>,
+    /// Kiln-level type for each variable, used for drop dispatch.
+    kiln_types: HashMap<String, Ty>,
     str_vars: HashSet<String>,
+    /// Per-scope lists of (name, Ty) in declaration order, for RAII drop emission.
+    scope_stack: Vec<Vec<(String, Ty)>>,
 }
 
 impl Default for VarEnv {
@@ -164,7 +170,9 @@ impl VarEnv {
         Self {
             vars: HashMap::new(),
             var_types: HashMap::new(),
+            kiln_types: HashMap::new(),
             str_vars: HashSet::new(),
+            scope_stack: Vec::new(),
         }
     }
 
@@ -172,6 +180,22 @@ impl VarEnv {
         let var = builder.declare_var(ty);
         self.vars.insert(name.to_string(), var);
         self.var_types.insert(name.to_string(), ty);
+        var
+    }
+
+    /// Like `declare` but also records the Kiln type for drop dispatch.
+    pub fn declare_kiln(
+        &mut self,
+        name: &str,
+        clif_ty: Type,
+        kiln_ty: Ty,
+        builder: &mut FunctionBuilder,
+    ) -> Variable {
+        let var = self.declare(name, clif_ty, builder);
+        self.kiln_types.insert(name.to_string(), kiln_ty.clone());
+        if let Some(scope) = self.scope_stack.last_mut() {
+            scope.push((name.to_string(), kiln_ty));
+        }
         var
     }
 
@@ -189,6 +213,30 @@ impl VarEnv {
 
     pub fn is_str(&self, name: &str) -> bool {
         self.str_vars.contains(name)
+    }
+
+    pub fn push_scope(&mut self) {
+        self.scope_stack.push(Vec::new());
+    }
+
+    /// Pop and return the innermost scope's variable list (reverse-order drops are caller's job).
+    pub fn pop_scope(&mut self) -> Vec<(String, Ty)> {
+        self.scope_stack.pop().unwrap_or_default()
+    }
+
+    /// Number of currently active scopes (used to set LoopCtx.scope_depth).
+    pub fn scope_depth(&self) -> usize {
+        self.scope_stack.len()
+    }
+
+    /// Clone all scopes for use by a Return that must drop the entire live set.
+    pub fn clone_all_scopes(&self) -> Vec<Vec<(String, Ty)>> {
+        self.scope_stack.clone()
+    }
+
+    /// Clone scopes from `from_depth` onward (used by break/continue).
+    pub fn clone_scopes_from(&self, from_depth: usize) -> Vec<Vec<(String, Ty)>> {
+        self.scope_stack[from_depth..].to_vec()
     }
 }
 
@@ -722,6 +770,7 @@ fn lower_typed_expr_inner(
                     return_clif_type: None,
                     defined_thunks: ctx.defined_thunks,
                     inline_bodies: ctx.inline_bodies,
+                    droppable_types: ctx.droppable_types,
                 };
 
                 let result = match body {
@@ -1367,6 +1416,7 @@ mod tests {
         let mut thunks = HashSet::new();
         let empty_inline: HashMap<String, (ParamList, TypedBlock)> = HashMap::new();
         let empty_inline_globals: HashMap<String, TypedExpr> = HashMap::new();
+        let empty_droppable: HashSet<String> = HashSet::new();
         let mut lctx = LowerCtx {
             module: &mut cgx.module,
             layouts: &layouts,
@@ -1378,6 +1428,7 @@ mod tests {
             return_clif_type: None,
             defined_thunks: &mut thunks,
             inline_bodies: &empty_inline,
+            droppable_types: &empty_droppable,
         };
         let val = f(&mut builder, &mut vars, &mut lctx);
         assert_eq!(builder.func.dfg.value_type(val), ret_ty);

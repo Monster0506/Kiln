@@ -680,9 +680,12 @@ pub fn compile(
         map
     };
 
-    // Pass 2: compile each function body.
+    let droppable_types: HashSet<String> = func_ids
+        .keys()
+        .filter_map(|n| n.strip_suffix("_drop").map(|t| t.to_string()))
+        .collect();
+
     let mut fbc = FunctionBuilderContext::new();
-    // Pre-seed defined_ids so @builtin wrappers for runtime imports are never compiled.
     let mut defined_ids: HashSet<FuncId> = runtime_ids.values().copied().collect();
     let mut defined_thunks: HashSet<String> = HashSet::new();
     let mut fn_codegen_times: Vec<(String, std::time::Duration)> = vec![];
@@ -760,6 +763,7 @@ pub fn compile(
             return_clif_type,
             defined_thunks: &mut defined_thunks,
             inline_bodies: &inline_bodies,
+            droppable_types: &droppable_types,
         };
 
         // Inject __kiln_init_globals call at the top of main.

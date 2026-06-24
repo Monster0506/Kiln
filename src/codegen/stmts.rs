@@ -30,6 +30,46 @@ pub fn block_needs_term(builder: &FunctionBuilder) -> bool {
 pub struct LoopCtx {
     pub header: ClifBlock,
     pub exit: ClifBlock,
+    pub scope_depth: usize,
+}
+
+fn emit_drop_for_var(
+    name: &str,
+    ty: &crate::analyzer::ty::Ty,
+    vars: &VarEnv,
+    builder: &mut FunctionBuilder,
+    ctx: &mut LowerCtx,
+) {
+    use crate::codegen::mono::type_mono_name;
+    let mono = type_mono_name(ty);
+    if ctx.droppable_types.contains(&mono) {
+        if let Some(var) = vars.get(name) {
+            let val = builder.use_var(var);
+            call_fn_by_name(&format!("{}_drop", mono), &[val], builder, ctx);
+        }
+    }
+}
+
+fn emit_scope_drops(
+    scope: &[(String, crate::analyzer::ty::Ty)],
+    vars: &VarEnv,
+    builder: &mut FunctionBuilder,
+    ctx: &mut LowerCtx,
+) {
+    for (name, ty) in scope.iter().rev() {
+        emit_drop_for_var(name, ty, vars, builder, ctx);
+    }
+}
+
+fn emit_all_drops(
+    all_scopes: &[Vec<(String, crate::analyzer::ty::Ty)>],
+    vars: &VarEnv,
+    builder: &mut FunctionBuilder,
+    ctx: &mut LowerCtx,
+) {
+    for scope in all_scopes.iter().rev() {
+        emit_scope_drops(scope, vars, builder, ctx);
+    }
 }
 
 pub fn lower_typed_block(
@@ -39,11 +79,16 @@ pub fn lower_typed_block(
     loops: &mut Vec<LoopCtx>,
     ctx: &mut LowerCtx,
 ) {
+    vars.push_scope();
     for stmt in &block.stmts {
         lower_typed_stmt(stmt, builder, vars, loops, ctx);
         if !block_needs_term(builder) {
             break;
         }
+    }
+    let scope = vars.pop_scope();
+    if block_needs_term(builder) {
+        emit_scope_drops(&scope, vars, builder, ctx);
     }
 }
 
@@ -69,7 +114,7 @@ fn lower_typed_stmt(
             name, ty, value, ..
         } => {
             let clif_ty = clif_type(ty).unwrap_or(types::I64);
-            let var = vars.declare(name, clif_ty, builder);
+            let var = vars.declare_kiln(name, clif_ty, ty.clone(), builder);
             let raw = lower_typed_expr_loops(value, builder, vars, loops, ctx);
             let val = coerce_to(raw, clif_ty, builder);
             builder.def_var(var, val);
@@ -227,20 +272,28 @@ fn lower_typed_stmt(
             }
         }
 
-        TypedStmt::Return { value, .. } => match value {
-            Some(v) => {
-                let raw = lower_typed_expr_loops(v, builder, vars, loops, ctx);
-                let val = if let Some(ret_ty) = ctx.return_clif_type {
-                    coerce_to(raw, ret_ty, builder)
-                } else {
-                    raw
-                };
-                builder.ins().return_(&[val]);
+        TypedStmt::Return { value, .. } => {
+            // Evaluate the return value before dropping (it may reference live vars).
+            let ret_val = value
+                .as_ref()
+                .map(|v| lower_typed_expr_loops(v, builder, vars, loops, ctx));
+            // Drop all live scopes (innermost first) before leaving the function.
+            let all_scopes = vars.clone_all_scopes();
+            emit_all_drops(&all_scopes, vars, builder, ctx);
+            match ret_val {
+                Some(raw) => {
+                    let val = if let Some(ret_ty) = ctx.return_clif_type {
+                        coerce_to(raw, ret_ty, builder)
+                    } else {
+                        raw
+                    };
+                    builder.ins().return_(&[val]);
+                }
+                None => {
+                    builder.ins().return_(&[]);
+                }
             }
-            None => {
-                builder.ins().return_(&[]);
-            }
-        },
+        }
 
         TypedStmt::Expr(expr) => {
             lower_typed_expr_loops(expr, builder, vars, loops, ctx);
@@ -285,14 +338,20 @@ fn lower_typed_stmt(
 
         TypedStmt::Break(_) => {
             if let Some(lctx) = loops.last() {
+                let depth = lctx.scope_depth;
                 let exit = lctx.exit;
+                let loop_scopes = vars.clone_scopes_from(depth);
+                emit_all_drops(&loop_scopes, vars, builder, ctx);
                 builder.ins().jump(exit, &[]);
             }
         }
 
         TypedStmt::Continue(_) => {
             if let Some(lctx) = loops.last() {
+                let depth = lctx.scope_depth;
                 let header = lctx.header;
+                let loop_scopes = vars.clone_scopes_from(depth);
+                emit_all_drops(&loop_scopes, vars, builder, ctx);
                 builder.ins().jump(header, &[]);
             }
         }
@@ -512,6 +571,7 @@ fn lower_while(
     loops.push(LoopCtx {
         header: header_bb,
         exit: exit_bb,
+        scope_depth: vars.scope_depth(),
     });
     lower_typed_block(body, builder, vars, loops, ctx);
     loops.pop();
@@ -542,6 +602,7 @@ fn lower_do_while(
     loops.push(LoopCtx {
         header: body_bb,
         exit: exit_bb,
+        scope_depth: vars.scope_depth(),
     });
     lower_typed_block(body, builder, vars, loops, ctx);
     loops.pop();
@@ -640,6 +701,7 @@ fn lower_for(
     loops.push(LoopCtx {
         header: incr_bb,
         exit: exit_bb,
+        scope_depth: vars.scope_depth(),
     });
     lower_typed_block(body, builder, vars, loops, ctx);
     loops.pop();
@@ -770,6 +832,7 @@ fn lower_for_iterable(
     loops.push(LoopCtx {
         header: incr_bb,
         exit: exit_bb,
+        scope_depth: vars.scope_depth(),
     });
     lower_typed_block(body, builder, vars, loops, ctx);
     loops.pop();

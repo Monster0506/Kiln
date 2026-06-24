@@ -166,6 +166,113 @@ fn kiln_run(src: &str) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+// ---------------------------------------------------------------------------
+// Droppable / RAII drop tests
+// ---------------------------------------------------------------------------
+
+const DROP_PRELUDE: &str = r#"
+struct Tracked { id: int }
+impl Droppable for Tracked {
+    hook drop() -> void { println("drop:{self.id}") }
+}
+"#;
+
+#[test]
+fn drop_fires_at_scope_exit() {
+    let src = format!(
+        r#"{DROP_PRELUDE}
+@entry
+def main() -> int {{
+    t: Tracked = Tracked {{ id: 1 }}
+    println("before")
+    return 0
+}}"#
+    );
+    let out = kiln_run(&src);
+    assert_eq!(out.lines().collect::<Vec<_>>(), vec!["before", "drop:1"]);
+}
+
+#[test]
+fn drop_fires_on_early_return() {
+    let src = format!(
+        r#"{DROP_PRELUDE}
+def make_and_drop() -> void {{
+    t: Tracked = Tracked {{ id: 2 }}
+    return
+}}
+@entry
+def main() -> int {{
+    make_and_drop()
+    return 0
+}}"#
+    );
+    let out = kiln_run(&src);
+    assert_eq!(out.trim(), "drop:2");
+}
+
+#[test]
+fn drop_fires_on_loop_break() {
+    let src = format!(
+        r#"{DROP_PRELUDE}
+@entry
+def main() -> int {{
+    mut i: int = 0
+    while i < 3 {{
+        t: Tracked = Tracked {{ id: i }}
+        if i == 1 {{
+            break
+        }}
+        i = i + 1
+    }}
+    return 0
+}}"#
+    );
+    let out = kiln_run(&src);
+    // iteration 0: normal exit drops id=0; iteration 1: break drops id=1
+    assert_eq!(out.lines().collect::<Vec<_>>(), vec!["drop:0", "drop:1"]);
+}
+
+#[test]
+fn drop_order_is_reverse_declaration() {
+    let src = format!(
+        r#"{DROP_PRELUDE}
+def multi_drop() -> void {{
+    a: Tracked = Tracked {{ id: 10 }}
+    b: Tracked = Tracked {{ id: 20 }}
+    c: Tracked = Tracked {{ id: 30 }}
+}}
+@entry
+def main() -> int {{
+    multi_drop()
+    return 0
+}}"#
+    );
+    let out = kiln_run(&src);
+    // c declared last, so dropped first
+    assert_eq!(
+        out.lines().collect::<Vec<_>>(),
+        vec!["drop:30", "drop:20", "drop:10"]
+    );
+}
+
+#[test]
+fn compile_droppable_interface_is_builtin() {
+    // Droppable must resolve from the prelude without a local definition.
+    let src = r#"
+struct Handle { fd: int }
+impl Droppable for Handle {
+    hook drop() -> void { println("closed") }
+}
+@entry
+def main() -> int {
+    h: Handle = Handle { fd: 3 }
+    return 0
+}
+"#;
+    let out = kiln_run(src);
+    assert_eq!(out.trim(), "closed");
+}
+
 #[test]
 fn array_literal_length_is_correct() {
     let out = kiln_run(

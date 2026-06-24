@@ -1504,15 +1504,31 @@ fn substitute_name_in_expr(expr: TypedExpr, name: &str, replacement: &TypedExpr)
     TypedExpr { kind, ty, span }
 }
 
-/// DCE pass using a known-impure set (emit path only).
-/// Unlike `dce_file`, this can drop dead VarDecls whose RHS calls pure functions.
 pub fn dce_file_with_purity(file: TypedFile, impure: &HashSet<String>) -> TypedFile {
+    use crate::parser::ast::HookName;
+    let droppable: HashSet<String> = file
+        .items
+        .iter()
+        .filter_map(|item| {
+            if let TypedItem::ImplBlock(ib) = item {
+                let has_drop = ib
+                    .hooks
+                    .iter()
+                    .any(|h| matches!(&h.name, HookName::Named(n) if n == "drop"));
+                if has_drop {
+                    return Some(ib.for_type.clone());
+                }
+            }
+            None
+        })
+        .collect();
+
     let items = file
         .items
         .into_iter()
         .map(|item| match item {
             TypedItem::Function(mut f) => {
-                f.body = dce_block_ctx(f.body, impure);
+                f.body = dce_block_ctx(f.body, impure, &droppable);
                 TypedItem::Function(f)
             }
             TypedItem::ImplBlock(mut ib) => {
@@ -1520,7 +1536,7 @@ pub fn dce_file_with_purity(file: TypedFile, impure: &HashSet<String>) -> TypedF
                     .methods
                     .into_iter()
                     .map(|mut f| {
-                        f.body = dce_block_ctx(f.body, impure);
+                        f.body = dce_block_ctx(f.body, impure, &droppable);
                         f
                     })
                     .collect();
@@ -1528,7 +1544,7 @@ pub fn dce_file_with_purity(file: TypedFile, impure: &HashSet<String>) -> TypedF
                     .hooks
                     .into_iter()
                     .map(|mut h| {
-                        h.body = dce_block_ctx(h.body, impure);
+                        h.body = dce_block_ctx(h.body, impure, &droppable);
                         h
                     })
                     .collect();
@@ -1543,7 +1559,11 @@ pub fn dce_file_with_purity(file: TypedFile, impure: &HashSet<String>) -> TypedF
     }
 }
 
-fn dce_block_ctx(block: TypedBlock, impure: &HashSet<String>) -> TypedBlock {
+fn dce_block_ctx(
+    block: TypedBlock,
+    impure: &HashSet<String>,
+    droppable: &HashSet<String>,
+) -> TypedBlock {
     let mut live: HashSet<String> = HashSet::new();
     for stmt in &block.stmts {
         collect_reads_stmt(stmt, &mut live);
@@ -1553,11 +1573,18 @@ fn dce_block_ctx(block: TypedBlock, impure: &HashSet<String>) -> TypedBlock {
         match &stmt {
             TypedStmt::VarDecl {
                 name,
+                ty,
                 value,
                 mutable,
                 ..
             } => {
-                if !mutable && !live.contains(name) && !expr_has_side_effects_ctx(value, impure) {
+                use crate::analyzer::infer::type_name_of;
+                let var_is_droppable = type_name_of(ty).is_some_and(|n| droppable.contains(&n));
+                if !mutable
+                    && !live.contains(name)
+                    && !expr_has_side_effects_ctx(value, impure)
+                    && !var_is_droppable
+                {
                     continue;
                 }
             }
@@ -1572,7 +1599,7 @@ fn dce_block_ctx(block: TypedBlock, impure: &HashSet<String>) -> TypedBlock {
             }
             _ => {}
         }
-        let stmt = dce_stmt_ctx(stmt, impure);
+        let stmt = dce_stmt_ctx(stmt, impure, droppable);
         new_stmts.push(stmt);
     }
     TypedBlock {
@@ -1581,7 +1608,11 @@ fn dce_block_ctx(block: TypedBlock, impure: &HashSet<String>) -> TypedBlock {
     }
 }
 
-fn dce_stmt_ctx(stmt: TypedStmt, impure: &HashSet<String>) -> TypedStmt {
+fn dce_stmt_ctx(
+    stmt: TypedStmt,
+    impure: &HashSet<String>,
+    droppable: &HashSet<String>,
+) -> TypedStmt {
     match stmt {
         TypedStmt::If {
             branches,
@@ -1590,18 +1621,18 @@ fn dce_stmt_ctx(stmt: TypedStmt, impure: &HashSet<String>) -> TypedStmt {
         } => TypedStmt::If {
             branches: branches
                 .into_iter()
-                .map(|(c, b)| (c, dce_block_ctx(b, impure)))
+                .map(|(c, b)| (c, dce_block_ctx(b, impure, droppable)))
                 .collect(),
-            else_branch: else_branch.map(|b| dce_block_ctx(b, impure)),
+            else_branch: else_branch.map(|b| dce_block_ctx(b, impure, droppable)),
             span,
         },
         TypedStmt::While { cond, body, span } => TypedStmt::While {
             cond,
-            body: dce_block_ctx(body, impure),
+            body: dce_block_ctx(body, impure, droppable),
             span,
         },
         TypedStmt::DoWhile { body, cond, span } => TypedStmt::DoWhile {
-            body: dce_block_ctx(body, impure),
+            body: dce_block_ctx(body, impure, droppable),
             cond,
             span,
         },
@@ -1616,7 +1647,7 @@ fn dce_stmt_ctx(stmt: TypedStmt, impure: &HashSet<String>) -> TypedStmt {
             binding,
             binding_ty,
             iterable,
-            body: dce_block_ctx(body, impure),
+            body: dce_block_ctx(body, impure, droppable),
             iter_ty,
             span,
         },
@@ -1626,19 +1657,19 @@ fn dce_stmt_ctx(stmt: TypedStmt, impure: &HashSet<String>) -> TypedStmt {
             finally,
             span,
         } => TypedStmt::TryCatch {
-            body: dce_block_ctx(body, impure),
+            body: dce_block_ctx(body, impure, droppable),
             handlers: handlers
                 .into_iter()
                 .map(|mut h| {
-                    h.body = dce_block_ctx(h.body, impure);
+                    h.body = dce_block_ctx(h.body, impure, droppable);
                     h
                 })
                 .collect(),
-            finally: finally.map(|b| dce_block_ctx(b, impure)),
+            finally: finally.map(|b| dce_block_ctx(b, impure, droppable)),
             span,
         },
         TypedStmt::FnDef(mut f) => {
-            f.body = dce_block_ctx(f.body, impure);
+            f.body = dce_block_ctx(f.body, impure, droppable);
             TypedStmt::FnDef(f)
         }
         other => other,

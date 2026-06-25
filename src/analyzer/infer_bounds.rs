@@ -387,6 +387,8 @@ fn collect_expr(
         | TypedExprKind::Bool(_)
         | TypedExprKind::Ident(_)
         | TypedExprKind::EnumVariant { .. } => {}
+        TypedExprKind::BoundMethod { object, .. } => collect_expr(object, params, registry, out),
+        TypedExprKind::PrimTypeRef { .. } => {}
     }
 }
 

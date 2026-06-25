@@ -269,6 +269,14 @@ fn collect_callees_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
         | TypedExprKind::Bool(_)
         | TypedExprKind::Ident(_)
         | TypedExprKind::EnumVariant { .. } => {}
+        TypedExprKind::BoundMethod {
+            object,
+            qualified_name,
+        } => {
+            out.insert(qualified_name.clone());
+            collect_callees_expr(object, out);
+        }
+        TypedExprKind::PrimTypeRef { .. } => {}
     }
 }
 

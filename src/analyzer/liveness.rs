@@ -203,6 +203,8 @@ fn expr_uses(expr: &TypedExpr, uses: &mut HashSet<String>, defs: &HashSet<String
         | TypedExprKind::Bool(_)
         | TypedExprKind::Str(_)
         | TypedExprKind::EnumVariant { .. } => {}
+        TypedExprKind::BoundMethod { object, .. } => expr_uses(object, uses, defs),
+        TypedExprKind::PrimTypeRef { .. } => {}
     }
 }
 

@@ -6,7 +6,9 @@ use clap::{Parser, Subcommand};
 use kiln_compiler::analyzer::{
     analyze_with_base, analyze_with_base_and_registry, analyze_with_base_and_symbols, SymbolList,
 };
-use kiln_compiler::annotations::{default_registry, run_processors, run_user_processors};
+use kiln_compiler::annotations::{
+    default_registry, run_processors, run_source_processors, run_user_processors,
+};
 use kiln_compiler::codegen::{compile::compile, context::CodegenContext, emit};
 use kiln_compiler::diagnostics::timing::{BuildStats, ItemCounts, PhaseTimer};
 use kiln_compiler::diagnostics::{RenderOpts, SourceMap};
@@ -414,9 +416,9 @@ fn run_build(
 
     let registry = default_registry();
     timer.start("processors");
-    run_processors(&mut ast, &registry);
+    run_source_processors(&mut ast, &registry);
     let mut proc_errors: Vec<kiln_compiler::analyzer::AnalysisError> = vec![];
-    let proc_runs = run_user_processors(&mut ast, &registry, &mut proc_errors);
+    let proc_runs = run_user_processors(&mut ast, &mut proc_errors);
     timer.stop();
     stats.processor_runs = proc_runs;
 
@@ -437,7 +439,7 @@ fn run_build(
         analyze_with_base_and_registry(&ast, &base_dir)
             .map(|(tf, reg, warns)| (tf, reg, None, warns))
     };
-    let (typed_file, type_registry, env_symbols, build_warnings) = match analyze_result {
+    let (mut typed_file, type_registry, env_symbols, build_warnings) = match analyze_result {
         Ok(t) => t,
         Err(errs) => {
             let ecount = errs.iter().filter(|e| !e.code().starts_with('W')).count();
@@ -463,6 +465,7 @@ fn run_build(
         }
     }
     timer.stop();
+    run_processors(&ast, &mut typed_file, &registry);
 
     if opts.emit {
         let user_names = user_item_names(&ast);
@@ -735,9 +738,9 @@ fn run_check(file: &PathBuf, profile: bool, timing: bool) -> CheckResult {
     timer.stop();
 
     let registry = default_registry();
-    run_processors(&mut ast, &registry);
+    run_source_processors(&mut ast, &registry);
     let mut proc_errors: Vec<kiln_compiler::analyzer::AnalysisError> = vec![];
-    run_user_processors(&mut ast, &registry, &mut proc_errors);
+    run_user_processors(&mut ast, &mut proc_errors);
 
     let base_dir = file
         .parent()
@@ -1187,20 +1190,21 @@ fn main() {
                 std::process::exit(1);
             });
             let registry = default_registry();
-            run_processors(&mut ast, &registry);
+            run_source_processors(&mut ast, &registry);
             let mut proc_errors: Vec<kiln_compiler::analyzer::AnalysisError> = vec![];
-            run_user_processors(&mut ast, &registry, &mut proc_errors);
+            run_user_processors(&mut ast, &mut proc_errors);
             inject_harness(&mut ast);
             let base_dir = file
                 .parent()
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
-            let (typed_file, type_registry, run_warnings) =
+            let (mut typed_file, type_registry, run_warnings) =
                 analyze_with_base_and_registry(&ast, &base_dir).unwrap_or_else(|errs| {
                     emit_analysis_errors(&errs, &map, &src, &path);
                     std::process::exit(1);
                 });
             emit_analysis_errors(&run_warnings, &map, &src, &path);
+            run_processors(&ast, &mut typed_file, &registry);
             let module_name = file
                 .file_stem()
                 .and_then(|s| s.to_str())

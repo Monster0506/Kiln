@@ -911,6 +911,8 @@ fn read_expr(kind: &TypedExprKind, reads: &mut std::collections::HashSet<String>
                 }
             }
         }
+        TypedExprKind::BoundMethod { object, .. } => read_expr(&object.kind, reads),
+        TypedExprKind::PrimTypeRef { .. } => {}
         TypedExprKind::Int(_)
         | TypedExprKind::Float(_)
         | TypedExprKind::Bool(_)

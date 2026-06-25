@@ -355,6 +355,8 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
         | TypedExprKind::Bool(_)
         | TypedExprKind::Ident(_)
         | TypedExprKind::EnumVariant { .. } => {}
+        TypedExprKind::BoundMethod { object, .. } => collect_expr(object, out),
+        TypedExprKind::PrimTypeRef { .. } => {}
     }
 }
 

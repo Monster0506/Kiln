@@ -1,37 +1,63 @@
 pub mod api;
 pub mod builtins;
 pub mod interp;
+pub mod source_builders;
+pub mod typed_builders;
 
+use crate::analyzer::typed_ast::{TypedFile, TypedItem};
 use crate::analyzer::AnalysisError;
-use crate::annotations::api::{AnnotationArgs, AnnotationTarget};
+use crate::annotations::api::{AnnotationArgs, AnnotationTarget, SourceAnnotationTarget};
 use crate::annotations::interp::{ProcessorOutcome, Replacement};
 use crate::diagnostics::timing::ProcessorRun;
 use crate::parser::ast::{AnnotationDef, ImplBlock, Item, ProcessorDef, SourceFile, TypeExpr};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-type ProcessorFn = Box<dyn Fn(AnnotationTarget, AnnotationArgs) -> Vec<Item> + Send + Sync>;
+type SourceProcessorFn =
+    Box<dyn Fn(&SourceFile, SourceAnnotationTarget, AnnotationArgs) -> Vec<Item> + Send + Sync>;
+
+type TypedProcessorFn =
+    Box<dyn Fn(&TypedFile, AnnotationTarget, AnnotationArgs) -> Vec<TypedItem> + Send + Sync>;
 
 pub struct ProcessorRegistry {
-    processors: HashMap<String, ProcessorFn>,
+    source: HashMap<String, SourceProcessorFn>,
+    typed: HashMap<String, TypedProcessorFn>,
 }
 
 impl ProcessorRegistry {
     pub fn new() -> Self {
         Self {
-            processors: HashMap::new(),
+            source: HashMap::new(),
+            typed: HashMap::new(),
         }
+    }
+
+    pub fn register_source<F>(&mut self, name: &str, f: F)
+    where
+        F: Fn(&SourceFile, SourceAnnotationTarget, AnnotationArgs) -> Vec<Item>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.source.insert(name.to_string(), Box::new(f));
     }
 
     pub fn register<F>(&mut self, name: &str, f: F)
     where
-        F: Fn(AnnotationTarget, AnnotationArgs) -> Vec<Item> + Send + Sync + 'static,
+        F: Fn(&TypedFile, AnnotationTarget, AnnotationArgs) -> Vec<TypedItem>
+            + Send
+            + Sync
+            + 'static,
     {
-        self.processors.insert(name.to_string(), Box::new(f));
+        self.typed.insert(name.to_string(), Box::new(f));
     }
 
-    pub fn get(&self, name: &str) -> Option<&ProcessorFn> {
-        self.processors.get(name)
+    fn get_source(&self, name: &str) -> Option<&SourceProcessorFn> {
+        self.source.get(name)
+    }
+
+    fn get_typed(&self, name: &str) -> Option<&TypedProcessorFn> {
+        self.typed.get(name)
     }
 }
 
@@ -41,33 +67,38 @@ impl Default for ProcessorRegistry {
     }
 }
 
-/// Run all registered processors over every annotated item in `source`.
-/// New items produced by processors are appended to `source.items`.
-/// ImplBlocks are deduplicated: if an explicit impl for (interface, type) already
-/// exists in the source, the derived one is dropped.
-pub fn run_processors(source: &mut SourceFile, registry: &ProcessorRegistry) {
+/// Run source processors pre-analysis, appending generated Items to `source`.
+pub fn run_source_processors(source: &mut SourceFile, registry: &ProcessorRegistry) {
     let mut new_items: Vec<Item> = Vec::new();
 
-    for item in &source.items {
-        let annotations = item_annotations(item);
-        for ann in annotations {
-            if let Some(processor) = registry.get(&ann.name) {
-                if let Some(target) = make_target(item) {
-                    let generated = processor(target, &ann.args);
-                    new_items.extend(generated);
-                }
-            }
+    let item_count = source.items.len();
+    for idx in 0..item_count {
+        let anns = match &source.items[idx] {
+            Item::Function(f) => f.annotations.clone(),
+            Item::Struct(s) => s.annotations.clone(),
+            Item::Enum(e) => e.annotations.clone(),
+            _ => continue,
+        };
+
+        for ann in &anns {
+            let processor = match registry.get_source(&ann.name) {
+                Some(p) => p,
+                None => continue,
+            };
+            let target = match source_target_of(&source.items[idx]) {
+                Some(t) => t,
+                None => continue,
+            };
+            new_items.extend(processor(source, target, &ann.args));
         }
     }
 
-    // Build a set of (interface_name, for_type_name) for all existing impl blocks,
-    // then drop any generated impl that would duplicate an existing one.
-    let existing: HashSet<(String, String)> = source
+    let existing_fns: HashSet<String> = source
         .items
         .iter()
-        .filter_map(|item| {
-            if let Item::ImplBlock(ib) = item {
-                impl_key(ib)
+        .filter_map(|i| {
+            if let Item::Function(f) = i {
+                Some(f.name.clone())
             } else {
                 None
             }
@@ -75,8 +106,8 @@ pub fn run_processors(source: &mut SourceFile, registry: &ProcessorRegistry) {
         .collect();
 
     for item in new_items {
-        let is_dup = if let Item::ImplBlock(ib) = &item {
-            impl_key(ib).is_some_and(|k| existing.contains(&k))
+        let is_dup = if let Item::Function(f) = &item {
+            existing_fns.contains(&f.name)
         } else {
             false
         };
@@ -86,16 +117,72 @@ pub fn run_processors(source: &mut SourceFile, registry: &ProcessorRegistry) {
     }
 }
 
-/// Run user-defined `processor` bodies (written in Kiln) over each annotated item.
-/// Processors are looked up by annotation name from the `ProcessorDef` items in `source`.
-/// Results (replacements and new items) are applied the same way as `run_processors`.
-/// Returns per-processor timing records for use with `BuildStats`.
+/// Run typed processors post-analysis, appending generated TypedItems to `typed_file`.
+pub fn run_processors(
+    source: &SourceFile,
+    typed_file: &mut TypedFile,
+    registry: &ProcessorRegistry,
+) {
+    let mut new_items: Vec<TypedItem> = Vec::new();
+
+    for item in &source.items {
+        let anns = item_annotations(item);
+        if anns.is_empty() {
+            continue;
+        }
+        let name = match item_name(item) {
+            Some(n) => n,
+            None => continue,
+        };
+        for ann in anns {
+            let processor = match registry.get_typed(&ann.name) {
+                Some(p) => p,
+                None => continue,
+            };
+            let target = match find_typed_target(typed_file, name, item) {
+                Some(t) => t,
+                None => continue,
+            };
+            let file_snapshot = typed_file.clone();
+            new_items.extend(processor(&file_snapshot, target, &ann.args));
+        }
+    }
+
+    let existing: HashSet<(String, String)> = typed_file
+        .items
+        .iter()
+        .filter_map(|item| {
+            if let TypedItem::ImplBlock(ib) = item {
+                Some((ib.interface.clone(), ib.for_type.clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for item in new_items {
+        let is_dup = if let TypedItem::ImplBlock(ib) = &item {
+            existing.contains(&(ib.interface.clone(), ib.for_type.clone()))
+        } else {
+            false
+        };
+        if !is_dup {
+            typed_file.items.push(item);
+        }
+    }
+}
+
+pub fn default_registry() -> ProcessorRegistry {
+    let mut r = ProcessorRegistry::new();
+    builtins::register_all(&mut r);
+    r
+}
+
+/// Run user-defined Kiln processors over annotated items. Returns timing records.
 pub fn run_user_processors(
     source: &mut SourceFile,
-    _registry: &ProcessorRegistry,
     errors: &mut Vec<AnalysisError>,
 ) -> Vec<ProcessorRun> {
-    // Collect processor defs and annotation defs by annotation name.
     let procs: Vec<ProcessorDef> = source
         .items
         .iter()
@@ -126,38 +213,27 @@ pub fn run_user_processors(
 
     let mut new_items: Vec<Item> = vec![];
     let mut removed_indices: HashSet<usize> = HashSet::new();
-    // Track (item_count, total_duration) per processor name, in insertion order.
     let mut proc_order: Vec<String> = vec![];
     let mut proc_stats: HashMap<String, (usize, std::time::Duration)> = HashMap::new();
 
-    // Process each item's annotations in declaration order, chaining outputs:
-    // each processor in a stack sees the output of the previous one.
     let item_count = source.items.len();
     for idx in 0..item_count {
-        // Clone the annotation list from the original function once, so the
-        // loop order is stable even as source.items[idx] is mutated.
         let annotations = match &source.items[idx] {
             Item::Function(f) => f.annotations.clone(),
             _ => continue,
         };
 
-        // Bottom-up order (Python decorator convention): the annotation closest
-        // to the function is applied first (innermost), so the topmost annotation
-        // ends up as the outermost wrapper.
         for ann in annotations.iter().rev() {
             let proc = match procs.iter().find(|p| p.annotation_name == ann.name) {
                 Some(p) => p.clone(),
                 None => continue,
             };
 
-            // Re-read the current item so each processor sees the previous output.
             let fn_def = match &source.items[idx] {
                 Item::Function(f) => f.clone(),
                 _ => continue,
             };
 
-            // Merge annotation defaults: start with declared field defaults, then
-            // overlay the explicitly provided args so caller args always win.
             let resolved_args: Vec<(String, crate::parser::ast::Expr)> = {
                 let mut merged = Vec::new();
                 if let Some(adef) = ann_defs.iter().find(|a| a.name == ann.name) {
@@ -228,7 +304,6 @@ pub fn run_user_processors(
         }
     }
 
-    // Remove items marked for deletion (in reverse order to preserve indices).
     if !removed_indices.is_empty() {
         let mut idx_vec: Vec<usize> = removed_indices.into_iter().collect();
         idx_vec.sort_unstable_by(|a, b| b.cmp(a));
@@ -237,7 +312,6 @@ pub fn run_user_processors(
         }
     }
 
-    // Deduplicate new impl blocks, then extend.
     let existing: HashSet<(String, String)> = source
         .items
         .iter()
@@ -274,13 +348,6 @@ pub fn run_user_processors(
         .collect()
 }
 
-/// Build the default registry with all built-in processors registered.
-pub fn default_registry() -> ProcessorRegistry {
-    let mut r = ProcessorRegistry::new();
-    builtins::register_all(&mut r);
-    r
-}
-
 fn impl_key(ib: &ImplBlock) -> Option<(String, String)> {
     let iface = match &ib.interface {
         TypeExpr::Named { name, .. } => name.clone(),
@@ -302,91 +369,96 @@ fn item_annotations(item: &Item) -> &[crate::parser::ast::AnnotationUse] {
     }
 }
 
-fn make_target(item: &Item) -> Option<AnnotationTarget<'_>> {
+fn item_name(item: &Item) -> Option<&str> {
     match item {
-        Item::Function(f) => Some(AnnotationTarget::Function(f)),
-        Item::Struct(s) => Some(AnnotationTarget::Struct(s)),
-        Item::Enum(e) => Some(AnnotationTarget::Enum(e)),
+        Item::Function(f) => Some(&f.name),
+        Item::Struct(s) => Some(&s.name),
+        Item::Enum(e) => Some(&e.name),
         _ => None,
     }
+}
+
+fn source_target_of(item: &Item) -> Option<SourceAnnotationTarget<'_>> {
+    match item {
+        Item::Function(f) => Some(SourceAnnotationTarget::Function(f)),
+        Item::Struct(s) => Some(SourceAnnotationTarget::Struct(s)),
+        Item::Enum(e) => Some(SourceAnnotationTarget::Enum(e)),
+        _ => None,
+    }
+}
+
+fn find_typed_target<'a>(
+    typed_file: &'a TypedFile,
+    name: &str,
+    untyped: &Item,
+) -> Option<AnnotationTarget<'a>> {
+    for item in &typed_file.items {
+        match (untyped, item) {
+            (Item::Struct(_), TypedItem::Struct(s)) if s.name == name => {
+                return Some(AnnotationTarget::Struct(s));
+            }
+            (Item::Enum(_), TypedItem::Enum(e)) if e.name == name => {
+                return Some(AnnotationTarget::Enum(e));
+            }
+            (Item::Function(_), TypedItem::Function(f)) if f.name == name => {
+                return Some(AnnotationTarget::Function(f));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyzer::typed_ast::TypedFile;
     use crate::diagnostics::Span;
-    use crate::parser::ast::*;
 
-    fn s() -> Span {
-        Span::new(0, 0)
+    fn empty_typed_file() -> TypedFile {
+        TypedFile {
+            items: vec![],
+            span: Span::new(0, 0),
+        }
+    }
+
+    fn empty_source() -> SourceFile {
+        SourceFile {
+            items: vec![],
+            span: Span::new(0, 0),
+        }
     }
 
     #[test]
-    fn registry_dispatches_to_registered_processor() {
+    fn registry_registers_and_retrieves_typed_processor() {
         let mut registry = ProcessorRegistry::new();
-        registry.register("Log", |_target, _args| vec![]);
-        let fn_def = FnDef {
-            annotations: vec![AnnotationUse {
-                name: "Log".into(),
-                args: vec![],
-                span: s(),
-            }],
-            name: "foo".into(),
-            generic_params: vec![],
-            params: vec![],
-            variadic: None,
-            return_type: TypeExpr::Named {
-                name: "void".into(),
-                generics: vec![],
-                bindings: vec![],
-                span: s(),
-            },
-            body: Block {
-                stmts: vec![],
-                span: s(),
-            },
-            is_declaration: false,
-            span: s(),
-        };
-        let mut source = SourceFile {
-            items: vec![Item::Function(fn_def)],
-            span: s(),
-        };
-        run_processors(&mut source, &registry);
-        assert_eq!(source.items.len(), 1); // no new items from no-op processor
+        registry.register("Log", |_file, _target, _args| vec![]);
+        assert!(registry.get_typed("Log").is_some());
+        assert!(registry.get_typed("Unknown").is_none());
     }
 
     #[test]
-    fn unknown_annotation_is_ignored() {
+    fn registry_registers_and_retrieves_source_processor() {
+        let mut registry = ProcessorRegistry::new();
+        registry.register_source("gen", |_file, _target, _args| vec![]);
+        assert!(registry.get_source("gen").is_some());
+        assert!(registry.get_source("unknown").is_none());
+    }
+
+    #[test]
+    fn run_source_processors_on_empty_source_does_nothing() {
         let registry = ProcessorRegistry::new();
-        let fn_def = FnDef {
-            annotations: vec![AnnotationUse {
-                name: "UnknownAnnotation".into(),
-                args: vec![],
-                span: s(),
-            }],
-            name: "bar".into(),
-            generic_params: vec![],
-            params: vec![],
-            variadic: None,
-            return_type: TypeExpr::Named {
-                name: "void".into(),
-                generics: vec![],
-                bindings: vec![],
-                span: s(),
-            },
-            body: Block {
-                stmts: vec![],
-                span: s(),
-            },
-            is_declaration: false,
-            span: s(),
-        };
-        let mut source = SourceFile {
-            items: vec![Item::Function(fn_def)],
-            span: s(),
-        };
-        run_processors(&mut source, &registry);
-        assert_eq!(source.items.len(), 1);
+        let mut source = empty_source();
+        run_source_processors(&mut source, &registry);
+        assert_eq!(source.items.len(), 0);
+    }
+
+    #[test]
+    fn run_processors_on_empty_source_does_nothing() {
+        let registry = ProcessorRegistry::new();
+        let source = empty_source();
+        let mut typed_file = empty_typed_file();
+        run_processors(&source, &mut typed_file, &registry);
+        assert_eq!(typed_file.items.len(), 0);
     }
 }

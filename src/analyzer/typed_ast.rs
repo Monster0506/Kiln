@@ -227,8 +227,19 @@ pub enum TypedExprKind {
     Float(f64),
     Bool(bool),
     Str(Vec<TypedStringSegment>),
-    /// Variable or function reference
     Ident(String),
+    /// `obj.method` used as a first-class value (not at a call site)
+    BoundMethod {
+        object: Box<TypedExpr>,
+        /// Qualified method name as registered in codegen (e.g. "Vec_add").
+        qualified_name: String,
+    },
+    /// Primitive type name used as a first-class callable value.
+    /// `source` is Unknown until specialization resolves it from context.
+    PrimTypeRef {
+        source: Ty,
+        target: Ty,
+    },
     Tuple(Vec<TypedExpr>),
     StructLiteral {
         ty_name: String,

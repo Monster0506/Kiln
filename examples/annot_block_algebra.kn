@@ -75,7 +75,7 @@ processor Summary(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 
     for p <- target.params {
         entry: Block = gen {
-            describe_param(<<p.name>>, <<p.ty>>)
+            describe_param(<<p.name>>, <<p.ty as str>>)
         }
         manifest = manifest.concat(entry)
     }
@@ -92,7 +92,7 @@ def guard_str(label: str, strict: bool) -> void { println(label) }
 def guard_int(label: str, strict: bool) -> void { println(label) }
 def guard_float(label: str, strict: bool) -> void { println(label) }
 def guard_bool(label: str, strict: bool) -> void { println(label) }
-def describe_param(label: str, ty: str) -> void { println(label) }
+def describe_param(label: str, ty: str) -> void { println("{label}: {ty}") }
 def open_conn(host: str, user: str) -> bool { return true }
 def do_work(n: int) -> void { println("work") }
 def move_funds(src: str, dst: str, amount: int) -> bool { return true }

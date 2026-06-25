@@ -1643,7 +1643,6 @@ impl Parser {
             | TokenKind::LtEq
             | TokenKind::GtEq
             | TokenKind::Spaceship => Some((7, 8)),
-            TokenKind::DotDot => Some((8, 9)),
             TokenKind::Plus | TokenKind::Minus => Some((9, 10)),
             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some((11, 12)),
             _ => None,
@@ -1709,19 +1708,11 @@ impl Parser {
                 self.advance();
                 let rhs = self.parse_expr_inner(rbp, allow_struct)?;
                 let span = Span::new(lhs.span().start, rhs.span().end);
-                lhs = if op_kind == TokenKind::DotDot {
-                    Expr::Range {
-                        start: Box::new(lhs),
-                        end: Box::new(rhs),
-                        span,
-                    }
-                } else {
-                    Expr::BinOp {
-                        op: Self::token_to_binop(&op_kind),
-                        left: Box::new(lhs),
-                        right: Box::new(rhs),
-                        span,
-                    }
+                lhs = Expr::BinOp {
+                    op: Self::token_to_binop(&op_kind),
+                    left: Box::new(lhs),
+                    right: Box::new(rhs),
+                    span,
                 };
                 let _ = op_span;
                 continue;

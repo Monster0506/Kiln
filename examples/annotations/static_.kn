@@ -22,7 +22,7 @@ impl Constructable for Vec2 {
 
 impl Display for Vec2 {
     hook to_str() -> str {
-        return "({x}, {y})"
+        return "({self.x}, {self.y})"
     }
 }
 
@@ -51,7 +51,7 @@ impl Default for Matrix2 {
 
 impl Display for Matrix2 {
     hook to_str() -> str {
-        return "[{a} {b}; {c} {d}]"
+        return "[{self.a} {self.b}; {self.c} {self.d}]"
     }
 }
 
@@ -64,7 +64,7 @@ struct Direction {
 
 impl Display for Direction {
     hook to_str() -> str {
-        return "({dx},{dy})"
+        return "({self.dx},{self.dy})"
     }
 }
 

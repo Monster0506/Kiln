@@ -233,5 +233,7 @@ fn expr_touches_impure(
         | TypedExprKind::Bool(_)
         | TypedExprKind::Ident(_)
         | TypedExprKind::EnumVariant { .. } => false,
+        TypedExprKind::BoundMethod { object, .. } => expr_touches_impure(object, impure),
+        TypedExprKind::PrimTypeRef { .. } => false,
     }
 }

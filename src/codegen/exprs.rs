@@ -819,6 +819,200 @@ fn lower_typed_expr_inner(
             fat_ptr
         }
 
+        TypedExprKind::BoundMethod {
+            object,
+            qualified_name,
+        } => {
+            let n_params = match &expr.ty {
+                Ty::Callable(params, _) => params.len(),
+                _ => 0,
+            };
+            // Thunk name is unique per (method, arity) and can be reused across sites.
+            let thunk_name = format!("__bm_thunk_{}", qualified_name);
+
+            let mut thunk_sig = ctx.module.make_signature();
+            thunk_sig.params.push(AbiParam::new(types::I64)); // env_ptr = self
+            for _ in 0..n_params {
+                thunk_sig.params.push(AbiParam::new(types::I64));
+            }
+            thunk_sig.returns.push(AbiParam::new(types::I64));
+
+            let thunk_id = if ctx.defined_thunks.contains(&thunk_name) {
+                match ctx.module.get_name(&thunk_name) {
+                    Some(FuncOrDataId::Func(id)) => id,
+                    _ => unreachable!(),
+                }
+            } else {
+                let tid = ctx
+                    .module
+                    .declare_function(&thunk_name, Linkage::Local, &thunk_sig)
+                    .unwrap_or_else(|_| match ctx.module.get_name(&thunk_name) {
+                        Some(FuncOrDataId::Func(id)) => id,
+                        _ => panic!(
+                            "internal compiler error: bound method thunk declaration failed for '{}'",
+                            thunk_name
+                        ),
+                    });
+
+                if let Some(&real_id) = ctx.func_ids.get(qualified_name.as_str()) {
+                    use cranelift_frontend::FunctionBuilderContext;
+                    let mut fn_ctx = ctx.module.make_context();
+                    fn_ctx.func.signature = thunk_sig;
+                    let mut fbc = FunctionBuilderContext::new();
+                    let mut fn_builder = FunctionBuilder::new(&mut fn_ctx.func, &mut fbc);
+                    let entry = fn_builder.create_block();
+                    fn_builder.append_block_params_for_function_params(entry);
+                    fn_builder.switch_to_block(entry);
+                    fn_builder.seal_block(entry);
+
+                    // block_params[0] = env_ptr (self), [1..] = user args
+                    // forward all block params directly to the real function
+                    let block_params = fn_builder.block_params(entry).to_vec();
+                    let real_ref = ctx.module.declare_func_in_func(real_id, fn_builder.func);
+                    let call = fn_builder.ins().call(real_ref, &block_params);
+                    let raw = fn_builder
+                        .inst_results(call)
+                        .first()
+                        .copied()
+                        .unwrap_or_else(|| fn_builder.ins().iconst(types::I64, 0));
+                    let ret_val = {
+                        let vty = fn_builder.func.dfg.value_type(raw);
+                        if vty == types::I64 {
+                            raw
+                        } else if vty.is_int() {
+                            fn_builder.ins().uextend(types::I64, raw)
+                        } else if vty.is_float() {
+                            fn_builder.ins().bitcast(types::I64, MemFlags::new(), raw)
+                        } else {
+                            raw
+                        }
+                    };
+                    fn_builder.ins().return_(&[ret_val]);
+                    fn_builder.finalize();
+                    if ctx.module.define_function(tid, &mut fn_ctx).is_ok() {
+                        ctx.defined_thunks.insert(thunk_name);
+                    }
+                }
+                tid
+            };
+
+            let fat_ptr = emit_malloc(16, ctx.module, builder);
+            let thunk_ref = ctx.module.declare_func_in_func(thunk_id, builder.func);
+            let thunk_addr = builder.ins().func_addr(types::I64, thunk_ref);
+            store_field(thunk_addr, fat_ptr, 0, builder);
+            let obj_val = lower_typed_expr(object, builder, vars, ctx);
+            store_field(obj_val, fat_ptr, 8, builder);
+            fat_ptr
+        }
+
+        TypedExprKind::PrimTypeRef { source, target } => {
+            let src_name = match &source {
+                Ty::Int => "int",
+                Ty::Float => "float",
+                Ty::Bool => "bool",
+                Ty::Str => "str",
+                _ => "any",
+            };
+            let tgt_name = match &target {
+                Ty::Int => "int",
+                Ty::Float => "float",
+                Ty::Bool => "bool",
+                Ty::Str => "str",
+                _ => "any",
+            };
+            let thunk_name = format!("__prim_conv_{}_{}", src_name, tgt_name);
+
+            let mut thunk_sig = ctx.module.make_signature();
+            thunk_sig.params.push(AbiParam::new(types::I64)); // env_ptr (ignored)
+            thunk_sig.params.push(AbiParam::new(types::I64)); // single arg
+            thunk_sig.returns.push(AbiParam::new(types::I64));
+
+            let thunk_id = if ctx.defined_thunks.contains(&thunk_name) {
+                match ctx.module.get_name(&thunk_name) {
+                    Some(FuncOrDataId::Func(id)) => id,
+                    _ => unreachable!(),
+                }
+            } else {
+                let tid = ctx
+                    .module
+                    .declare_function(&thunk_name, Linkage::Local, &thunk_sig)
+                    .unwrap_or_else(|_| match ctx.module.get_name(&thunk_name) {
+                        Some(FuncOrDataId::Func(id)) => id,
+                        _ => panic!(
+                            "internal compiler error: prim conv thunk failed for '{}'",
+                            thunk_name
+                        ),
+                    });
+
+                use cranelift_frontend::FunctionBuilderContext;
+                let mut fn_ctx = ctx.module.make_context();
+                fn_ctx.func.signature = thunk_sig;
+                let mut fbc = FunctionBuilderContext::new();
+                let mut fn_builder = FunctionBuilder::new(&mut fn_ctx.func, &mut fbc);
+                let entry = fn_builder.create_block();
+                fn_builder.append_block_params_for_function_params(entry);
+                fn_builder.switch_to_block(entry);
+                fn_builder.seal_block(entry);
+
+                // block_params[0] = env_ptr (ignored), [1] = the value to convert
+                let block_params = fn_builder.block_params(entry).to_vec();
+                let x = block_params[1];
+
+                let result = match (&source, &target) {
+                    (Ty::Float, Ty::Int) => {
+                        let fv = fn_builder.ins().bitcast(types::F64, MemFlags::new(), x);
+                        fn_builder.ins().fcvt_to_sint_sat(types::I64, fv)
+                    }
+                    (Ty::Int, Ty::Float) => {
+                        let fv = fn_builder.ins().fcvt_from_sint(types::F64, x);
+                        fn_builder.ins().bitcast(types::I64, MemFlags::new(), fv)
+                    }
+                    (_, Ty::Str) => {
+                        // Delegate to the appropriate runtime helper.
+                        let rt_fn = match &source {
+                            Ty::Int => "__kiln_int_to_str",
+                            Ty::Float => "__kiln_float_to_str",
+                            Ty::Bool => "__kiln_bool_to_str",
+                            _ => "__kiln_to_str_dispatch",
+                        };
+                        let mut rt_sig = ctx.module.make_signature();
+                        rt_sig.params.push(AbiParam::new(types::I64));
+                        rt_sig.returns.push(AbiParam::new(types::I64));
+                        let rt_id = ctx
+                            .module
+                            .declare_function(rt_fn, Linkage::Import, &rt_sig)
+                            .unwrap_or_else(|_| match ctx.module.get_name(rt_fn) {
+                                Some(FuncOrDataId::Func(id)) => id,
+                                _ => panic!("prim conv: cannot declare {}", rt_fn),
+                            });
+                        let rt_ref = ctx.module.declare_func_in_func(rt_id, fn_builder.func);
+                        let call = fn_builder.ins().call(rt_ref, &[x]);
+                        fn_builder
+                            .inst_results(call)
+                            .first()
+                            .copied()
+                            .unwrap_or_else(|| fn_builder.ins().iconst(types::I64, 0))
+                    }
+                    // Identity or bool/int conversions: pass through unchanged.
+                    _ => x,
+                };
+                fn_builder.ins().return_(&[result]);
+                fn_builder.finalize();
+                if ctx.module.define_function(tid, &mut fn_ctx).is_ok() {
+                    ctx.defined_thunks.insert(thunk_name);
+                }
+                tid
+            };
+
+            let fat_ptr = emit_malloc(16, ctx.module, builder);
+            let thunk_ref = ctx.module.declare_func_in_func(thunk_id, builder.func);
+            let thunk_addr = builder.ins().func_addr(types::I64, thunk_ref);
+            store_field(thunk_addr, fat_ptr, 0, builder);
+            let zero = builder.ins().iconst(types::I64, 0);
+            store_field(zero, fat_ptr, 8, builder);
+            fat_ptr
+        }
+
         TypedExprKind::Spawn(inner) => {
             let fat_ptr = lower_typed_expr(inner, builder, vars, ctx);
             let fn_ptr = builder.ins().load(types::I64, MemFlags::new(), fat_ptr, 0);

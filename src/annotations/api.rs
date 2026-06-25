@@ -1,12 +1,20 @@
+use crate::analyzer::typed_ast::{TypedEnumDef, TypedFnDef, TypedStructDef};
 use crate::parser::ast::{EnumDef, FnDef, StructDef};
 
-/// A read-only view of the AST node an annotation is applied to.
+/// The typed AST node that an annotation is applied to (post-analysis).
 #[derive(Debug, Clone)]
 pub enum AnnotationTarget<'a> {
+    Function(&'a TypedFnDef),
+    Struct(&'a TypedStructDef),
+    Enum(&'a TypedEnumDef),
+}
+
+/// The untyped AST node that an annotation is applied to (pre-analysis).
+#[derive(Debug, Clone)]
+pub enum SourceAnnotationTarget<'a> {
     Function(&'a FnDef),
     Struct(&'a StructDef),
     Enum(&'a EnumDef),
 }
 
-/// The args from `@Foo { field: val }` or `@Foo(Name, Other)`.
 pub type AnnotationArgs<'a> = &'a [(String, crate::parser::ast::Expr)];

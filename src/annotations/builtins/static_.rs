@@ -1,52 +1,49 @@
+use crate::analyzer::typed_ast::{TypedFile, TypedItem};
 use crate::annotations::api::{AnnotationArgs, AnnotationTarget};
 use crate::annotations::ProcessorRegistry;
-use crate::parser::ast::Item;
 
 pub fn register(registry: &mut ProcessorRegistry) {
     registry.register("static", process_static);
 }
 
-pub fn process_static(target: AnnotationTarget, _args: AnnotationArgs) -> Vec<Item> {
-    // @static is a field-level annotation on methods inside struct bodies.
-    // The codegen and analyzer read it directly from the FnDef annotations.
-    // No new items are generated.
-    let _ = target;
+pub fn process_static(
+    _file: &TypedFile,
+    _target: AnnotationTarget,
+    _args: AnnotationArgs,
+) -> Vec<TypedItem> {
     vec![]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::annotations::api::AnnotationTarget;
+    use crate::analyzer::ty::Ty;
+    use crate::analyzer::typed_ast::{TypedFile, TypedFnDef};
+    use crate::annotations::typed_builders::{s, tblock};
     use crate::diagnostics::Span;
-    use crate::parser::ast::*;
 
-    fn s() -> Span {
-        Span::new(0, 0)
+    fn empty_file() -> TypedFile {
+        TypedFile {
+            items: vec![],
+            span: Span::new(0, 0),
+        }
     }
 
     #[test]
     fn static_on_function_produces_no_new_items() {
-        let fn_def = FnDef {
-            annotations: vec![],
+        let f = TypedFnDef {
             name: "new".into(),
-            generic_params: vec![],
             params: vec![],
             variadic: None,
-            return_type: TypeExpr::Named {
-                name: "void".into(),
-                generics: vec![],
-                bindings: vec![],
-                span: s(),
-            },
-            body: Block {
-                stmts: vec![],
-                span: s(),
-            },
+            return_type: Ty::Void,
+            body: tblock(vec![]),
+            is_builtin: false,
+            is_inline: false,
             is_declaration: false,
+            is_entry: false,
+            is_impure: false,
             span: s(),
         };
-        let result = process_static(AnnotationTarget::Function(&fn_def), &[]);
-        assert!(result.is_empty());
+        assert!(process_static(&empty_file(), AnnotationTarget::Function(&f), &[]).is_empty());
     }
 }

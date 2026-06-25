@@ -1,6 +1,6 @@
 use crate::analyzer::env::{Env, FnOverload, Symbol};
 use crate::analyzer::error::AnalysisError;
-use crate::analyzer::resolve::resolve_type_expr;
+use crate::analyzer::resolve::{resolve_primitive_name, resolve_type_expr};
 use crate::analyzer::ty::{Ty, TypeRegistry};
 use crate::analyzer::typed_ast::{
     TypedClosureBody, TypedExpr, TypedExprKind, TypedMatchArm, TypedParam, TypedPattern,
@@ -67,6 +67,18 @@ pub fn infer_typed_expr(
                     return mk(value, ty, span);
                 }
                 _ => {
+                    // Primitive type names are not in env; return a PrimTypeRef so the
+                    // type can be specialized later (e.g. in VarDecl from the annotation).
+                    if let Some(target) = resolve_primitive_name(name) {
+                        return mk(
+                            TypedExprKind::PrimTypeRef {
+                                source: Ty::Unknown,
+                                target: target.clone(),
+                            },
+                            Ty::Callable(vec![Ty::Unknown], Box::new(target)),
+                            span,
+                        );
+                    }
                     let did_you_mean = crate::diagnostics::suggest::closest_match(
                         name,
                         env.all_names().into_iter(),
@@ -319,8 +331,41 @@ pub fn infer_typed_expr(
                 other => other.clone(),
             };
             let field_ty = resolve_field_ty(&effective_ty, field, registry);
+            if field_ty != Ty::Unknown {
+                return mk(
+                    TypedExprKind::Field {
+                        object: Box::new(to),
+                        field: field.clone(),
+                    },
+                    field_ty,
+                    span,
+                );
+            }
+            // Not a struct field -- check if it resolves to a method.
+            if let Some(tname) = type_name_of(&effective_ty) {
+                if let Some(entry) = registry.find_method(&tname, field) {
+                    let callable = Ty::Callable(
+                        // Skip the first param (self), which is captured in the fat pointer.
+                        entry
+                            .params
+                            .iter()
+                            .skip(1)
+                            .map(|(_, t)| t.clone())
+                            .collect(),
+                        Box::new(entry.ret.clone()),
+                    );
+                    return mk(
+                        TypedExprKind::BoundMethod {
+                            object: Box::new(to),
+                            qualified_name: entry.qualified_fn.clone(),
+                        },
+                        callable,
+                        span,
+                    );
+                }
+            }
             let is_annot_args = matches!(&effective_ty, Ty::Named(_, n, _) if n == "AnnotArgs");
-            if field_ty == Ty::Unknown && effective_ty != Ty::Unknown && !is_annot_args {
+            if effective_ty != Ty::Unknown && !is_annot_args {
                 errors.push(AnalysisError::NoField {
                     ty: effective_ty.to_string(),
                     field: field.clone(),
@@ -332,7 +377,7 @@ pub fn infer_typed_expr(
                     object: Box::new(to),
                     field: field.clone(),
                 },
-                field_ty,
+                Ty::Unknown,
                 span,
             )
         }
@@ -592,24 +637,6 @@ pub fn infer_typed_expr(
                 TypedExprKind::Closure {
                     params: typed_params,
                     body: typed_body,
-                },
-                ty,
-                span,
-            )
-        }
-
-        Expr::Range { start, end, .. } => {
-            let ts = infer_typed_expr(start, env, registry, errors);
-            let te = infer_typed_expr(end, env, registry, errors);
-            let id = registry
-                .lookup_by_name("Range")
-                .map(|e| e.id.clone())
-                .unwrap_or(crate::analyzer::ty::TypeId(0));
-            let ty = Ty::Named(id, "Range".into(), vec![]);
-            mk(
-                TypedExprKind::StructLiteral {
-                    ty_name: "Range".into(),
-                    fields: vec![("start".into(), ts), ("end".into(), te)],
                 },
                 ty,
                 span,
@@ -937,6 +964,28 @@ fn infer_call_ident(
     errors: &mut Vec<AnalysisError>,
     span: Span,
 ) -> TypedExpr {
+    // Primitive type names (int, float, str, bool) are not in the env;
+    // handle them before the lookup so int(x) desugars to x as int.
+    if let Some(target) = resolve_primitive_name(name) {
+        if typed_args.len() != 1 {
+            errors.push(AnalysisError::ArityMismatch {
+                expected: 1,
+                found: typed_args.len(),
+                span,
+                fn_span: None,
+            });
+            return mk(TypedExprKind::Int(0), Ty::Unknown, span);
+        }
+        let arg = typed_args.into_iter().next().unwrap();
+        return mk(
+            TypedExprKind::As {
+                expr: Box::new(arg),
+                ty: target.clone(),
+            },
+            target,
+            span,
+        );
+    }
     match env.lookup(name) {
         Some(Symbol::Var {
             ty: Ty::Callable(_, ret),
@@ -1369,6 +1418,7 @@ fn lower_stmt_shallow(
         } => {
             let declared = resolve_type_expr(ty, env, errors);
             let typed_val = infer_typed_expr(value, env, registry, errors);
+            let typed_val = specialize_prim_ref(typed_val, &declared);
             TypedStmt::VarDecl {
                 name: name.clone(),
                 ty: declared,
@@ -1748,6 +1798,32 @@ pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
 
 fn mk(kind: TypedExprKind, ty: Ty, span: Span) -> TypedExpr {
     TypedExpr { kind, ty, span }
+}
+
+/// If `expr` is an unspecialized PrimTypeRef and `expected` is a matching
+/// Callable type, fill in the concrete source type so codegen can emit the
+/// right conversion thunk.
+fn specialize_prim_ref(expr: TypedExpr, expected: &Ty) -> TypedExpr {
+    if let TypedExprKind::PrimTypeRef {
+        source: Ty::Unknown,
+        ref target,
+    } = expr.kind
+    {
+        if let Ty::Callable(ref params, ref ret) = *expected {
+            if params.len() == 1 && **ret == *target {
+                let src = params[0].clone();
+                return TypedExpr {
+                    kind: TypedExprKind::PrimTypeRef {
+                        source: src.clone(),
+                        target: target.clone(),
+                    },
+                    ty: Ty::Callable(vec![src], Box::new(target.clone())),
+                    span: expr.span,
+                };
+            }
+        }
+    }
+    expr
 }
 
 #[cfg(test)]

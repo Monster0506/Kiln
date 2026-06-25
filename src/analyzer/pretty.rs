@@ -408,6 +408,13 @@ fn emit_expr_kind(kind: &TypedExprKind) -> String {
             let parts: Vec<_> = elems.iter().map(emit_expr).collect();
             format!("[{}]", parts.join(", "))
         }
+        TypedExprKind::BoundMethod {
+            object,
+            qualified_name,
+        } => {
+            format!("{}.{}", emit_expr(object), qualified_name)
+        }
+        TypedExprKind::PrimTypeRef { target, .. } => format!("<{:?}>", target),
         TypedExprKind::Gen { .. } => "<gen>".to_string(),
         TypedExprKind::GenSplice(inner) => format!("splice {}", emit_expr(inner)),
         TypedExprKind::Block(stmts) => {

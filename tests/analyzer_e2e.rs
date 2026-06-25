@@ -2046,43 +2046,192 @@ def main() -> void {
     );
 }
 
-// Range literals
+// Bound method references as first-class Callable values
 
 #[test]
-fn range_literal_typechecks_as_range() {
+fn bound_method_typechecks_as_callable() {
     let errs = run(r#"
+struct Counter { value: int }
+interface Summable {
+    def add_to(self: Counter, x: int) -> int {}
+}
+impl Summable for Counter {
+    def add_to(self: Counter, x: int) -> int {
+        return self.value + x
+    }
+}
+def apply(f: Callable[(int), int], x: int) -> int {
+    return f(x)
+}
 def main() -> void {
-    r: Range = 1..10
+    c: Counter = Counter { value: 10 }
+    result: int = apply(c.add_to, 5)
+    println(result)
 }
 "#);
     assert!(
         errs.is_empty(),
-        "1..10 should type-check as Range: {errs:?}"
+        "bound method should type-check as Callable: {errs:?}"
     );
 }
 
 #[test]
-fn range_literal_with_expr_bounds() {
+fn bound_method_stored_in_variable() {
     let errs = run(r#"
-def main() -> void {
-    n: int = 5
-    r: Range = 0..n
+struct Multiplier { factor: int }
+interface Scalable {
+    def scale(self: Multiplier, x: int) -> int {}
 }
-"#);
-    assert!(errs.is_empty(), "0..n should type-check as Range: {errs:?}");
-}
-
-#[test]
-fn range_literal_usable_in_for_loop() {
-    let errs = run(r#"
-def main() -> void {
-    for i <- 0..5 {
-        println(i)
+impl Scalable for Multiplier {
+    def scale(self: Multiplier, x: int) -> int {
+        return self.factor * x
     }
+}
+def main() -> void {
+    m: Multiplier = Multiplier { factor: 3 }
+    f: Callable[(int), int] = m.scale
 }
 "#);
     assert!(
         errs.is_empty(),
-        "range literal in for loop should type-check: {errs:?}"
+        "bound method stored in variable should type-check: {errs:?}"
+    );
+}
+
+// Primitive type names as constructor/conversion callables
+
+#[test]
+fn int_conversion_call_typechecks() {
+    let errs = run(r#"
+def main() -> void {
+    x: float = 3.7
+    n: int = int(x)
+    println(n)
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "int(float) should type-check as int: {errs:?}"
+    );
+}
+
+#[test]
+fn float_conversion_call_typechecks() {
+    let errs = run(r#"
+def main() -> void {
+    x: int = 42
+    f: float = float(x)
+    println(f)
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "float(int) should type-check as float: {errs:?}"
+    );
+}
+
+#[test]
+fn str_conversion_call_typechecks() {
+    let errs = run(r#"
+def main() -> void {
+    x: int = 99
+    s: str = str(x)
+    println(s)
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "str(int) should type-check as str: {errs:?}"
+    );
+}
+
+#[test]
+fn bool_conversion_call_typechecks() {
+    let errs = run(r#"
+def main() -> void {
+    x: int = 1
+    b: bool = bool(x)
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "bool(int) should type-check as bool: {errs:?}"
+    );
+}
+
+#[test]
+fn type_conversion_wrong_arity_is_error() {
+    let errs = run(r#"
+def main() -> void {
+    n: int = int(1, 2)
+}
+"#);
+    assert!(!errs.is_empty(), "int() with 2 args should fail");
+}
+
+// Primitive types as first-class storable callables
+
+#[test]
+fn int_as_callable_value_typechecks() {
+    let errs = run(r#"
+def main() -> void {
+    f: Callable[(float), int] = int
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "int stored as Callable[(float), int] should type-check: {errs:?}"
+    );
+}
+
+#[test]
+fn float_as_callable_value_typechecks() {
+    let errs = run(r#"
+def main() -> void {
+    f: Callable[(int), float] = float
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "float stored as Callable[(int), float] should type-check: {errs:?}"
+    );
+}
+
+#[test]
+fn str_as_callable_value_typechecks() {
+    let errs = run(r#"
+def main() -> void {
+    f: Callable[(int), str] = str
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "str stored as Callable[(int), str] should type-check: {errs:?}"
+    );
+}
+
+#[test]
+fn bool_as_callable_value_typechecks() {
+    let errs = run(r#"
+def main() -> void {
+    f: Callable[(int), bool] = bool
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "bool stored as Callable[(int), bool] should type-check: {errs:?}"
+    );
+}
+
+#[test]
+fn prim_callable_wrong_target_type_is_error() {
+    let errs = run(r#"
+def main() -> void {
+    f: Callable[(float), str] = int
+}
+"#);
+    assert!(
+        !errs.is_empty(),
+        "int stored as Callable[(float), str] should fail: wrong target type"
     );
 }

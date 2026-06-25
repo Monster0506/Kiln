@@ -78,11 +78,11 @@ struct Registry {
     }
 
     def register(name: str) -> void {
-        items.add(name)
+        self.items.add(name)
     }
 
     def count() -> int {
-        return items.length()
+        return self.items.length()
     }
 }
 
@@ -131,7 +131,7 @@ struct OldApi {
 
 # ---- @derive with manual impl override ---------------------------------------
 
-@derive(Eq, Display)
+@derive(Eq)
 struct Wrapper {
     value: int
     label: str
@@ -139,7 +139,7 @@ struct Wrapper {
 
 impl Display for Wrapper {
     hook to_str() -> str {
-        return "[{label}: {value}]"
+        return "[{self.label}: {self.value}]"
     }
 }
 

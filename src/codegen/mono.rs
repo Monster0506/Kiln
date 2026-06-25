@@ -577,6 +577,8 @@ fn seed_expr(
         | TypedExprKind::Bool(_)
         | TypedExprKind::Ident(_)
         | TypedExprKind::EnumVariant { .. } => {}
+        TypedExprKind::BoundMethod { object, .. } => seed_expr(object, generic_fns, queue),
+        TypedExprKind::PrimTypeRef { .. } => {}
     }
 }
 

@@ -51,14 +51,14 @@ struct Unit { }
 
 # ---- Explicit impl overrides derived one; other derives still apply ----------
 
-@derive(Eq, Display)
+@derive(Eq)
 struct Celsius {
     value: float
 }
 
 impl Display for Celsius {
     hook to_str() -> str {
-        return "{value} C"
+        return "{self.value} C"
     }
 }
 

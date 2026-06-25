@@ -2,7 +2,6 @@
 # All types are @builtin -- the compiler supplies the runtime representation.
 # Declared here so the analyzer can type-check processor signatures and bodies.
 
-@builtin
 struct Type {
     name: str
     generics: Vec[Type]

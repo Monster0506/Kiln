@@ -929,6 +929,26 @@ fn value_to_expr(val: Value, span: Span) -> Result<Expr, ()> {
         Value::Float(f) => Ok(Expr::Float(f, span)),
         Value::Bool(b) => Ok(Expr::Bool(b, span)),
         Value::Str(s) => Ok(Expr::Str(vec![StringSegment::Text(s)], span)),
+        Value::List(items) => {
+            let exprs: Result<Vec<Expr>, ()> =
+                items.into_iter().map(|v| value_to_expr(v, span)).collect();
+            Ok(Expr::Array(exprs?, span))
+        }
+        Value::Struct { ty, fields } if ty == "Type" => {
+            let name = match fields.get("name") {
+                Some(v) => value_to_expr(v.clone(), span)?,
+                None => return Err(()),
+            };
+            let generics = match fields.get("generics") {
+                Some(v) => value_to_expr(v.clone(), span)?,
+                None => Expr::Array(vec![], span),
+            };
+            Ok(Expr::StructLiteral {
+                ty: "Type".into(),
+                fields: vec![("name".into(), name), ("generics".into(), generics)],
+                span,
+            })
+        }
         _ => Err(()),
     }
 }

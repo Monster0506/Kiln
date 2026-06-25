@@ -64,10 +64,8 @@ processor Typecheck(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 
 # ---- @Summary processor ------------------------------------------------------
 #
-# Prepends one describe_param(name, type) call per parameter before the body.
-# Uses Block.prepend so the accumulation reads naturally: build the summary
-# block, then put it in front.
-#
+# Prepends one describe_param(name, ty) call per parameter.
+# p.ty is spliced as a first-class Type value at compile time.
 # For a function with 3 params the generated preamble is exactly 3 calls.
 
 processor Summary(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
@@ -75,7 +73,7 @@ processor Summary(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 
     for p <- target.params {
         entry: Block = gen {
-            describe_param(<<p.name>>, <<p.ty as str>>)
+            describe_param(<<p.name>>, <<p.ty>>)
         }
         manifest = manifest.concat(entry)
     }
@@ -92,7 +90,7 @@ def guard_str(label: str, strict: bool) -> void { println(label) }
 def guard_int(label: str, strict: bool) -> void { println(label) }
 def guard_float(label: str, strict: bool) -> void { println(label) }
 def guard_bool(label: str, strict: bool) -> void { println(label) }
-def describe_param(label: str, ty: str) -> void { println("{label}: {ty}") }
+def describe_param(label: str, ty: Type) -> void { println("{label}: {ty.name}") }
 def open_conn(host: str, user: str) -> bool { return true }
 def do_work(n: int) -> void { println("work") }
 def move_funds(src: str, dst: str, amount: int) -> bool { return true }

@@ -578,7 +578,8 @@ pub fn infer_typed_expr(
                         stmts: typed_stmts,
                         span: b.span,
                     };
-                    (TypedClosureBody::Block(tb), Ty::Unknown)
+                    let ret = block_return_ty(&tb);
+                    (TypedClosureBody::Block(tb), ret)
                 }
             };
             let ty = Ty::Callable(param_tys, Box::new(ret_ty));
@@ -1519,6 +1520,18 @@ fn shallow_block(
             .collect(),
         span: block.span,
     }
+}
+
+fn block_return_ty(block: &crate::analyzer::typed_ast::TypedBlock) -> Ty {
+    use crate::analyzer::typed_ast::TypedStmt;
+    for stmt in &block.stmts {
+        if let TypedStmt::Return { value: Some(e), .. } = stmt {
+            if e.ty != Ty::Unknown {
+                return e.ty.clone();
+            }
+        }
+    }
+    Ty::Void
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
-use kiln_compiler::analyzer::{analyze, analyze_with_base};
-use kiln_compiler::annotations::{default_registry, run_processors};
+use kiln_compiler::analyzer::{analyze_with_base, analyze_with_base_and_registry};
+use kiln_compiler::annotations::{default_registry, run_processors, run_source_processors};
 use kiln_compiler::lexer::Lexer;
 use kiln_compiler::parser::Parser;
 use std::fs;
@@ -8,9 +8,13 @@ fn run(src: &str) -> Vec<String> {
     let tokens = Lexer::new(src).tokenize().expect("lex failed");
     let mut ast = Parser::new(tokens).parse_file().expect("parse failed");
     let registry = default_registry();
-    run_processors(&mut ast, &registry);
-    match analyze(&ast) {
-        Ok(_) => vec![],
+    run_source_processors(&mut ast, &registry);
+    let base = std::path::PathBuf::from(".");
+    match analyze_with_base_and_registry(&ast, &base) {
+        Ok((mut typed, _, _warns)) => {
+            run_processors(&ast, &mut typed, &registry);
+            vec![]
+        }
         Err(errs) => errs
             .iter()
             .map(|e: &kiln_compiler::analyzer::AnalysisError| e.to_string())
@@ -22,7 +26,7 @@ fn warnings(src: &str) -> Vec<kiln_compiler::analyzer::AnalysisError> {
     let tokens = Lexer::new(src).tokenize().expect("lex failed");
     let mut ast = Parser::new(tokens).parse_file().expect("parse failed");
     let registry = default_registry();
-    run_processors(&mut ast, &registry);
+    run_source_processors(&mut ast, &registry);
     let base = std::path::PathBuf::from(".");
     match analyze_with_base(&ast, &base) {
         Ok((_, warns)) => warns,
@@ -1351,7 +1355,9 @@ def main() -> void {}
 
 fn analyze_file_from(path: &str) -> Vec<String> {
     use kiln_compiler::analyzer::analyze_with_base;
-    use kiln_compiler::annotations::{default_registry, run_processors, run_user_processors};
+    use kiln_compiler::annotations::{
+        default_registry, run_source_processors, run_user_processors,
+    };
     use kiln_compiler::lexer::Lexer;
     use kiln_compiler::parser::Parser;
     use std::path::PathBuf;
@@ -1359,9 +1365,9 @@ fn analyze_file_from(path: &str) -> Vec<String> {
     let tokens = Lexer::new(&src).tokenize().expect("lex failed");
     let mut ast = Parser::new(tokens).parse_file().expect("parse failed");
     let registry = default_registry();
-    run_processors(&mut ast, &registry);
+    run_source_processors(&mut ast, &registry);
     let mut _proc_errors = vec![];
-    run_user_processors(&mut ast, &registry, &mut _proc_errors);
+    run_user_processors(&mut ast, &mut _proc_errors);
     let base = PathBuf::from(path).parent().unwrap().to_path_buf();
     match analyze_with_base(&ast, &base) {
         Ok(_) => vec![],
@@ -1992,6 +1998,55 @@ fn only_first_unreachable_stmt_warns() {
         .filter(|w| matches!(w, AnalysisError::UnreachableCode { .. }))
         .count();
     assert_eq!(count, 1, "expected exactly one W007 warning, got {count}");
+}
+
+// ---------------------------------------------------------------------------
+// Closure block-body return type inference
+// ---------------------------------------------------------------------------
+
+#[test]
+fn closure_block_body_return_type_inferred_from_return_stmt() {
+    let errs = run(r#"
+def main() -> void {
+    f: Callable[(int), int] = (x: int) -> {
+        return x + 1
+    }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "block closure with explicit return should type-check: {errs:?}"
+    );
+}
+
+#[test]
+fn closure_block_body_void_when_no_return() {
+    let errs = run(r#"
+def main() -> void {
+    f: Callable[(int), void] = (x: int) -> {
+        mut y: int = x + 1
+    }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "block closure with no return should have void type: {errs:?}"
+    );
+}
+
+#[test]
+fn closure_block_body_bool_return() {
+    let errs = run(r#"
+def main() -> void {
+    f: Callable[(int), bool] = (x: int) -> {
+        return x > 0
+    }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "block closure returning bool should type-check: {errs:?}"
+    );
 }
 
 #[test]

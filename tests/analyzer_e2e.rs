@@ -2061,3 +2061,41 @@ fn unreachable_warning_note_carries_terminator_span() {
     assert!(!notes.is_empty(), "expected note with terminator span");
     assert!(notes[0].1.is_some(), "note should have a source span");
 }
+
+// ---------------------------------------------------------------------------
+// Single-overload function reference as first-class value
+// ---------------------------------------------------------------------------
+
+#[test]
+fn single_overload_fn_reference_typechecks_as_callable() {
+    let errs = run(r#"
+def double(x: int) -> int { return x * 2 }
+
+def apply(f: Callable[(int), int], x: int) -> int {
+    return f(x)
+}
+
+def main() -> void {
+    result: int = apply(double, 5)
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "single-overload fn ref should type-check: {errs:?}"
+    );
+}
+
+#[test]
+fn single_overload_fn_stored_in_variable() {
+    let errs = run(r#"
+def negate(x: int) -> int { return 0 - x }
+
+def main() -> void {
+    f: Callable[(int), int] = negate
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "storing a single-overload fn ref should type-check: {errs:?}"
+    );
+}

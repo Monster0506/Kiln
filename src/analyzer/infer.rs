@@ -42,10 +42,15 @@ pub fn infer_typed_expr(
                     params.iter().map(|(_, t)| t.clone()).collect(),
                     Box::new(ret.clone()),
                 ),
-                Some(Symbol::FnOverloadSet { .. }) => {
-                    // Overloaded function used as first-class value -- ambiguous without a call.
-                    Ty::Unknown
+                Some(Symbol::FnOverloadSet { overloads }) if overloads.len() == 1 => {
+                    let o = &overloads[0];
+                    let callable = Ty::Callable(
+                        o.params.iter().map(|(_, t)| t.clone()).collect(),
+                        Box::new(o.ret.clone()),
+                    );
+                    return mk(TypedExprKind::Ident(o.mangled_name.clone()), callable, span);
                 }
+                Some(Symbol::FnOverloadSet { .. }) => Ty::Unknown,
                 Some(Symbol::Type { id, .. }) => Ty::Named(id.clone(), name.clone(), vec![]),
                 Some(Symbol::StructField { ty }) => {
                     let ty = ty.clone();

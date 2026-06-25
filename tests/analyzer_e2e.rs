@@ -43,9 +43,7 @@ fn analyze_file(path: &str) -> Vec<String> {
     run(&src)
 }
 
-// ---------------------------------------------------------------------------
 // Fancy-interface examples: full analyzer pass
-// ---------------------------------------------------------------------------
 
 #[test]
 fn analyze_fancy_layer1_arithmetic() {
@@ -270,9 +268,7 @@ struct Foo { y: int }
     assert!(!errs.is_empty(), "duplicate struct name must be an error");
 }
 
-// ---------------------------------------------------------------------------
 // Constraint solver: operator interface bounds
-// ---------------------------------------------------------------------------
 
 #[test]
 fn int_arithmetic_passes() {
@@ -461,9 +457,7 @@ def main() -> void {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Bug 5: ImplKind propagation and enforcement
-// ---------------------------------------------------------------------------
 
 #[test]
 fn duplicate_plain_impl_is_error() {
@@ -511,9 +505,7 @@ specialized impl Greet for Dog {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Bug 6: Associated type names in scope during impl resolution
-// ---------------------------------------------------------------------------
 
 #[test]
 fn assoc_type_name_in_impl_hook_signature_is_not_undefined() {
@@ -538,9 +530,7 @@ impl Add for Vec2 {
     );
 }
 
-// ---------------------------------------------------------------------------
 // 8: Ordering builtin type
-// ---------------------------------------------------------------------------
 
 #[test]
 fn ordering_type_is_defined() {
@@ -558,9 +548,7 @@ def compare(a: int, b: int) -> Ordering {
     );
 }
 
-// ---------------------------------------------------------------------------
 // 10: Object safety checking
-// ---------------------------------------------------------------------------
 
 #[test]
 fn non_object_safe_interface_as_dynamic_type_is_error() {
@@ -669,9 +657,7 @@ struct Container {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Enum iteration: for x <- EnumType
-// ---------------------------------------------------------------------------
 
 #[test]
 fn for_over_enum_with_wrong_type_annotation_is_error() {
@@ -725,9 +711,7 @@ def test() -> void {
     );
 }
 
-// ---------------------------------------------------------------------------
 // @derive(Eq, Comparable) on enums
-// ---------------------------------------------------------------------------
 
 #[test]
 fn derive_eq_on_enum_no_errors() {
@@ -774,9 +758,7 @@ fn analyze_enums_derive_example() {
     assert!(errs.is_empty(), "enums_derive.kn: {errs:?}");
 }
 
-// ---------------------------------------------------------------------------
 // Implicit self field fall-through removal
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bare_field_name_in_method_body_is_error() {
@@ -847,9 +829,7 @@ impl Scalable for Wrapper {
     );
 }
 
-// ---------------------------------------------------------------------------
 // None/Some global accessibility (regression guard for prelude declarations)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn namespaced_variant_access_always_works() {
@@ -884,9 +864,7 @@ def check(x: Option[int]) -> int {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Prototype / forward declaration
-// ---------------------------------------------------------------------------
 
 #[test]
 fn body_less_def_without_implementation_is_error() {
@@ -1043,9 +1021,7 @@ def main() -> void {}
     );
 }
 
-// ---------------------------------------------------------------------------
 // Orphan declaration (declared but never implemented)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn declaration_without_implementation_is_error() {
@@ -1077,9 +1053,7 @@ def main() -> void {}
     );
 }
 
-// ---------------------------------------------------------------------------
 // Struct literal field validation
-// ---------------------------------------------------------------------------
 
 #[test]
 fn struct_literal_unknown_field_is_error() {
@@ -1114,9 +1088,7 @@ def main() -> void {
     );
 }
 
-// ---------------------------------------------------------------------------
 // @entry annotation
-// ---------------------------------------------------------------------------
 
 #[test]
 fn entry_annotation_is_recognized_not_unknown() {
@@ -1203,9 +1175,7 @@ def main() -> void {}
     );
 }
 
-// ---------------------------------------------------------------------------
 // Annotation processors and gen blocks
-// ---------------------------------------------------------------------------
 
 #[test]
 fn annotations_gen_basic_analyzes_clean() {
@@ -1281,9 +1251,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // Item 7: Ast.* type system (phases 7a-7c)
-// ---------------------------------------------------------------------------
 
 // 7a: FnDecl, Block, Decl, Stmt, Expr etc. must be known types after ast.kn loads.
 #[test]
@@ -1349,9 +1317,7 @@ def main() -> void {}
     );
 }
 
-// ---------------------------------------------------------------------------
 // Module system: import/export
-// ---------------------------------------------------------------------------
 
 fn analyze_file_from(path: &str) -> Vec<String> {
     use kiln_compiler::analyzer::analyze_with_base;
@@ -1433,9 +1399,7 @@ fn import_nonexistent_module_is_error() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Item 22: const declarations
-// ---------------------------------------------------------------------------
 
 #[test]
 fn const_int_is_usable_in_expressions() {
@@ -1469,9 +1433,7 @@ fn const_non_literal_initializer_is_error() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Multi-bound types (Iface1+Iface2 in value position)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn compound_type_in_param_position_accepts_valid_impl() {
@@ -1542,9 +1504,7 @@ def make() -> Exportable+Serializable { return make() }
     );
 }
 
-// ---------------------------------------------------------------------------
 // Associated type pinning at erasure site
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bare_interface_with_assoc_type_is_error_at_erasure_site() {
@@ -1597,9 +1557,7 @@ def main() -> void {}
     );
 }
 
-// ---------------------------------------------------------------------------
 // Variance inference and enforcement
-// ---------------------------------------------------------------------------
 
 #[test]
 fn mutex_is_invariant_in_type_arg() {
@@ -1688,9 +1646,7 @@ def main() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // E029: CyclicInterface
-// ---------------------------------------------------------------------------
 
 #[test]
 fn cyclic_interface_direct_self_extension_is_error() {
@@ -1776,9 +1732,7 @@ fn cyclic_interface_example_file_reports_errors() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // E030: RecursiveTypeWithoutIndirect
-// ---------------------------------------------------------------------------
 
 #[test]
 fn recursive_struct_without_indirect_is_error() {
@@ -1880,9 +1834,7 @@ fn recursive_type_example_file_reports_errors() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Wildcard _ and .. in match field patterns
-// ---------------------------------------------------------------------------
 
 #[test]
 fn wildcard_field_binding_does_not_introduce_name() {
@@ -1937,9 +1889,7 @@ def f(n: Node) -> void {
     assert!(errs.is_empty(), "{errs:?}");
 }
 
-// ---------------------------------------------------------------------------
 // Unreachable code warning (item 28)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn return_followed_by_stmt_is_unreachable_warning() {
@@ -2000,9 +1950,7 @@ fn only_first_unreachable_stmt_warns() {
     assert_eq!(count, 1, "expected exactly one W007 warning, got {count}");
 }
 
-// ---------------------------------------------------------------------------
 // Closure block-body return type inference
-// ---------------------------------------------------------------------------
 
 #[test]
 fn closure_block_body_return_type_inferred_from_return_stmt() {
@@ -2062,9 +2010,7 @@ fn unreachable_warning_note_carries_terminator_span() {
     assert!(notes[0].1.is_some(), "note should have a source span");
 }
 
-// ---------------------------------------------------------------------------
 // Single-overload function reference as first-class value
-// ---------------------------------------------------------------------------
 
 #[test]
 fn single_overload_fn_reference_typechecks_as_callable() {
@@ -2097,5 +2043,46 @@ def main() -> void {
     assert!(
         errs.is_empty(),
         "storing a single-overload fn ref should type-check: {errs:?}"
+    );
+}
+
+// Range literals
+
+#[test]
+fn range_literal_typechecks_as_range() {
+    let errs = run(r#"
+def main() -> void {
+    r: Range = 1..10
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "1..10 should type-check as Range: {errs:?}"
+    );
+}
+
+#[test]
+fn range_literal_with_expr_bounds() {
+    let errs = run(r#"
+def main() -> void {
+    n: int = 5
+    r: Range = 0..n
+}
+"#);
+    assert!(errs.is_empty(), "0..n should type-check as Range: {errs:?}");
+}
+
+#[test]
+fn range_literal_usable_in_for_loop() {
+    let errs = run(r#"
+def main() -> void {
+    for i <- 0..5 {
+        println(i)
+    }
+}
+"#);
+    assert!(
+        errs.is_empty(),
+        "range literal in for loop should type-check: {errs:?}"
     );
 }

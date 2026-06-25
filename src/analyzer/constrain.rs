@@ -8,9 +8,7 @@ use crate::analyzer::typed_ast::{
 use crate::diagnostics::Span;
 use crate::parser::ast::BinOp;
 
-// ---------------------------------------------------------------------------
 // Constraint type
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub enum ConstraintReason {
@@ -83,9 +81,7 @@ pub struct Constraint {
     pub reason: ConstraintReason,
 }
 
-// ---------------------------------------------------------------------------
 // Collection entry point
-// ---------------------------------------------------------------------------
 
 pub fn collect_constraints(file: &TypedFile) -> Vec<Constraint> {
     let mut out = Vec::new();

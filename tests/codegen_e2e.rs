@@ -166,9 +166,7 @@ fn kiln_run(src: &str) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
-// ---------------------------------------------------------------------------
 // Droppable / RAII drop tests
-// ---------------------------------------------------------------------------
 
 const DROP_PRELUDE: &str = r#"
 struct Tracked { id: int }

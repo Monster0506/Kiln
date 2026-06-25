@@ -8,9 +8,7 @@ fn parse_ok(src: &str) {
         .unwrap_or_else(|e| panic!("parse error: {e:?}"));
 }
 
-// ---------------------------------------------------------------------------
 // 7: Associated type projection in type position  (I.Item)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn assoc_type_projection_parses_in_return_position() {
@@ -36,9 +34,7 @@ interface Iter {
     );
 }
 
-// ---------------------------------------------------------------------------
 // 8: Associated type bindings (Name=Type) in generic arg lists
-// ---------------------------------------------------------------------------
 
 #[test]
 fn assoc_type_binding_parses_in_extends() {
@@ -58,9 +54,7 @@ interface Foo: SomeTrait[int, Output=str] {}
     );
 }
 
-// ---------------------------------------------------------------------------
 // 9: Variance annotations (+T, -T) in generic param lists
-// ---------------------------------------------------------------------------
 
 #[test]
 fn covariant_param_parses() {
@@ -98,9 +92,7 @@ struct Ordered[+T: Comparable] { val: T }
     );
 }
 
-// ---------------------------------------------------------------------------
 // 10: Unary + operator
-// ---------------------------------------------------------------------------
 
 #[test]
 fn unary_plus_parses_in_return() {
@@ -112,9 +104,7 @@ fn unary_plus_parses_in_assignment() {
     parse_ok("def f(x: float) -> float { y: float = +x return y }");
 }
 
-// ---------------------------------------------------------------------------
 // 11: @static hooks
-// ---------------------------------------------------------------------------
 
 #[test]
 fn static_hook_parses_in_impl_block() {
@@ -140,9 +130,7 @@ interface Zero {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Multi-bound generic parameter syntax
-// ---------------------------------------------------------------------------
 
 #[test]
 fn multi_bound_plus_syntax() {

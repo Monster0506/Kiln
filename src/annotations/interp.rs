@@ -4,9 +4,7 @@ use crate::parser::ast::{
 };
 use std::collections::HashMap;
 
-// ---------------------------------------------------------------------------
 // Runtime values for the processor interpreter
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -29,9 +27,7 @@ pub enum Value {
     },
 }
 
-// ---------------------------------------------------------------------------
 // Interpreter
-// ---------------------------------------------------------------------------
 
 /// What to do with the original item after a processor runs.
 #[derive(Debug)]
@@ -335,6 +331,17 @@ impl Interpreter {
             Expr::UnOp { op, operand, .. } => {
                 let v = self.eval_expr(operand)?;
                 eval_unop(op, v)
+            }
+            Expr::As { expr, ty, .. } => {
+                let v = self.eval_expr(expr)?;
+                let target = match ty {
+                    TypeExpr::Named { name, .. } => name.as_str(),
+                    _ => return Err(()),
+                };
+                match target {
+                    "str" | "string" => Ok(Value::Str(display_value(&v))),
+                    _ => Err(()),
+                }
             }
             _ => Err(()),
         }
@@ -676,9 +683,7 @@ impl Interpreter {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Free helpers (no &mut self access needed)
-// ---------------------------------------------------------------------------
 
 fn is_truthy(v: &Value) -> bool {
     match v {
@@ -1180,9 +1185,7 @@ fn decode_processor_result(val: Value) -> Option<(Replacement, Vec<Item>)> {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Unit tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

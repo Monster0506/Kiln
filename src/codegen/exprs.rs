@@ -888,9 +888,7 @@ fn lower_typed_expr_inner(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Gen block helpers
-// ---------------------------------------------------------------------------
 
 enum TypedStmtKind<'a> {
     Expr(&'a TypedExpr),
@@ -905,9 +903,7 @@ fn lower_typed_stmt_kind(stmt: &crate::analyzer::typed_ast::TypedStmt) -> TypedS
     }
 }
 
-// ---------------------------------------------------------------------------
 // Call helpers
-// ---------------------------------------------------------------------------
 
 fn indirect_call(
     fat_ptr: Value,
@@ -1021,9 +1017,7 @@ fn coerce_value(val: Value, target: Type, builder: &mut FunctionBuilder) -> Valu
     }
 }
 
-// ---------------------------------------------------------------------------
 // String helpers
-// ---------------------------------------------------------------------------
 
 fn lower_str_seg(
     seg: &TypedStringSegment,
@@ -1144,9 +1138,7 @@ fn emit_fmod(
     builder.inst_results(call)[0]
 }
 
-// ---------------------------------------------------------------------------
 // Coercion helpers (public for stmts/match)
-// ---------------------------------------------------------------------------
 
 pub fn coerce_to_i64(val: Value, builder: &mut FunctionBuilder) -> Value {
     let ty = builder.func.dfg.value_type(val);
@@ -1203,9 +1195,7 @@ fn coerce_binop_operands(lv: Value, rv: Value, builder: &mut FunctionBuilder) ->
     (lv, rv)
 }
 
-// ---------------------------------------------------------------------------
 // Binop lowering
-// ---------------------------------------------------------------------------
 
 pub fn lower_binop(
     op: &BinOp,
@@ -1320,9 +1310,7 @@ pub fn lower_binop(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Vtable dispatch (kept for interface method calls via StructLayouts)
-// ---------------------------------------------------------------------------
 
 pub fn lower_vtable_dispatch(
     obj: Value,

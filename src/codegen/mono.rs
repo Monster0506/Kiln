@@ -13,9 +13,7 @@ use crate::parser::ast::HookName;
 // e.g. ("Vec", "to_str", Vec(Named("Item")))
 type ImplHookReq = (String, String, Ty);
 
-// ---------------------------------------------------------------------------
 // Entry point
-// ---------------------------------------------------------------------------
 
 pub fn monomorphize(file: TypedFile, registry: &TypeRegistry) -> TypedFile {
     let mut generic_fns: HashMap<String, TypedFnDef> = HashMap::new();
@@ -218,9 +216,7 @@ pub fn monomorphize(file: TypedFile, registry: &TypeRegistry) -> TypedFile {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Generic impl hook helpers
-// ---------------------------------------------------------------------------
 
 fn hook_suffix(hook: &TypedHookDef) -> String {
     match &hook.name {
@@ -294,9 +290,7 @@ fn specialize_hook_as_fn(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Generic detection
-// ---------------------------------------------------------------------------
 
 fn is_generic_fn(f: &TypedFnDef) -> bool {
     if f.is_builtin {
@@ -320,9 +314,7 @@ fn contains_type_param(ty: &Ty) -> bool {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Naming helpers
-// ---------------------------------------------------------------------------
 
 pub fn type_mono_name(ty: &Ty) -> String {
     match ty {
@@ -365,9 +357,7 @@ fn make_done_key(fn_name: &str, subst: &HashMap<String, Ty>) -> (String, Vec<(St
     (fn_name.to_string(), pairs)
 }
 
-// ---------------------------------------------------------------------------
 // Seeding: scan for calls to generic functions
-// ---------------------------------------------------------------------------
 
 fn seed_block(
     block: &TypedBlock,
@@ -590,9 +580,7 @@ fn seed_expr(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Unification
-// ---------------------------------------------------------------------------
 
 fn unify_params(fn_def: &TypedFnDef, arg_tys: &[Ty]) -> HashMap<String, Ty> {
     let mut subst = HashMap::new();
@@ -625,9 +613,7 @@ fn unify_ty(pat: &Ty, concrete: &Ty, subst: &mut HashMap<String, Ty>) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Specialization
-// ---------------------------------------------------------------------------
 
 fn specialize_fn(
     f: &TypedFnDef,
@@ -669,9 +655,7 @@ fn specialize_fn(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Type substitution
-// ---------------------------------------------------------------------------
 
 fn subst_ty(ty: &Ty, subst: &HashMap<String, Ty>) -> Ty {
     match ty {
@@ -731,9 +715,7 @@ fn extend_with_assoc_bindings(
     result
 }
 
-// ---------------------------------------------------------------------------
 // AST traversal: substitute types and rewrite call sites
-// ---------------------------------------------------------------------------
 
 fn subst_block(
     block: &TypedBlock,
@@ -1188,9 +1170,7 @@ fn subst_expr(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Method function name rewriting
-// ---------------------------------------------------------------------------
 
 pub fn type_base_name(ty: &Ty) -> String {
     match ty {

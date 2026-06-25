@@ -598,6 +598,24 @@ pub fn infer_typed_expr(
             )
         }
 
+        Expr::Range { start, end, .. } => {
+            let ts = infer_typed_expr(start, env, registry, errors);
+            let te = infer_typed_expr(end, env, registry, errors);
+            let id = registry
+                .lookup_by_name("Range")
+                .map(|e| e.id.clone())
+                .unwrap_or(crate::analyzer::ty::TypeId(0));
+            let ty = Ty::Named(id, "Range".into(), vec![]);
+            mk(
+                TypedExprKind::StructLiteral {
+                    ty_name: "Range".into(),
+                    fields: vec![("start".into(), ts), ("end".into(), te)],
+                },
+                ty,
+                span,
+            )
+        }
+
         Expr::Spawn(inner, _) => {
             let ti = infer_typed_expr(inner, env, registry, errors);
             mk(TypedExprKind::Spawn(Box::new(ti)), Ty::Unknown, span)
@@ -680,9 +698,7 @@ pub fn infer_typed_expr(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Call resolution helpers
-// ---------------------------------------------------------------------------
 
 /// Resolve a single type-argument expression (in expression position) to a Ty.
 /// Used for `Type[TypeArg].method()` calls where the type arg is an identifier.
@@ -1162,9 +1178,7 @@ fn find_best_overload<'a>(
     None
 }
 
-// ---------------------------------------------------------------------------
 // Generic-param method dispatch helpers
-// ---------------------------------------------------------------------------
 
 /// Rewrite an interface method return type so that any `GenericParam(name)` that
 /// is an associated type of `iface_name` becomes `Ty::Projection { base: param, assoc: name }`.
@@ -1197,9 +1211,7 @@ fn project_return_ty(ty: &Ty, param: &str, iface_name: &str, registry: &TypeRegi
     }
 }
 
-// ---------------------------------------------------------------------------
 // Field type resolution
-// ---------------------------------------------------------------------------
 
 fn resolve_field_ty(obj_ty: &Ty, field: &str, registry: &TypeRegistry) -> Ty {
     let tname = match type_name_of(obj_ty) {
@@ -1263,9 +1275,7 @@ pub fn type_name_of(ty: &Ty) -> Option<String> {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Pattern lowering
-// ---------------------------------------------------------------------------
 
 fn lower_pattern(
     pat: &Pattern,
@@ -1324,9 +1334,7 @@ fn lower_pattern(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Shallow stmt lowering (for closure/gen blocks where env is immutable)
-// ---------------------------------------------------------------------------
 
 fn lower_stmt_shallow(
     stmt: &crate::parser::ast::Stmt,
@@ -1539,9 +1547,7 @@ fn block_return_ty(block: &crate::analyzer::typed_ast::TypedBlock) -> Ty {
     Ty::Void
 }
 
-// ---------------------------------------------------------------------------
 // Binop type inference
-// ---------------------------------------------------------------------------
 
 fn infer_binop(
     op: BinOp,
@@ -1612,9 +1618,7 @@ fn infer_binop(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Generic substitution (replaces GenericParam wildcards with a concrete type)
-// ---------------------------------------------------------------------------
 
 pub fn substitute_t(ty: &Ty, concrete: &Ty) -> Ty {
     match ty {
@@ -1633,9 +1637,7 @@ pub fn substitute_t(ty: &Ty, concrete: &Ty) -> Ty {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Assignability check (used by check.rs)
-// ---------------------------------------------------------------------------
 
 pub fn check_assignable(expected: &Ty, found: &Ty, span: &Span, errors: &mut Vec<AnalysisError>) {
     if !types_compatible(expected, found) {
@@ -1742,9 +1744,7 @@ pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Constructor helper
-// ---------------------------------------------------------------------------
 
 fn mk(kind: TypedExprKind, ty: Ty, span: Span) -> TypedExpr {
     TypedExpr { kind, ty, span }

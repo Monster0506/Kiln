@@ -479,6 +479,12 @@ pub enum Expr {
         body: ClosureBody,
         span: Span,
     },
+    /// `start..end` integer range literal
+    Range {
+        start: Box<Expr>,
+        end: Box<Expr>,
+        span: Span,
+    },
     /// `spawn expr`
     Spawn(Box<Expr>, Span),
     /// `&expr` or `&mut expr`
@@ -521,6 +527,7 @@ impl Expr {
             Expr::As { span, .. } => *span,
             Expr::Match { span, .. } => *span,
             Expr::Closure { span, .. } => *span,
+            Expr::Range { span, .. } => *span,
             Expr::Spawn(_, s) => *s,
             Expr::Ref { span, .. } => *span,
             Expr::Gen { span, .. } => *span,

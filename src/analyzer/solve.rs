@@ -112,9 +112,7 @@ fn operator_shorthand_to_with(iface: &str) -> Option<&'static str> {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Solver
-// ---------------------------------------------------------------------------
 
 /// Solve all constraints, returning a `BoundViolation` or `ProjectedBoundViolation` for each failure.
 /// Never short-circuits -- all constraints are checked.

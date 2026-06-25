@@ -1,11 +1,9 @@
-use kiln_compiler::annotations::{default_registry, run_user_processors};
+use kiln_compiler::annotations::run_user_processors;
 use kiln_compiler::lexer::Lexer;
 use kiln_compiler::parser::ast::{Block, Expr, Item, Stmt, StringSegment};
 use kiln_compiler::parser::Parser;
 
-// ---------------------------------------------------------------------------
 // AST inspection helpers
-// ---------------------------------------------------------------------------
 
 fn expr_contains_gen_splice(e: &Expr) -> bool {
     match e {
@@ -115,9 +113,8 @@ fn fn_body_clean(ast: &kiln_compiler::parser::ast::SourceFile, name: &str) -> bo
 fn parse_and_run(src: &str) -> kiln_compiler::parser::ast::SourceFile {
     let tokens = Lexer::new(src).tokenize().expect("lex failed");
     let mut ast = Parser::new(tokens).parse_file().expect("parse failed");
-    let registry = default_registry();
     let mut _proc_errors = vec![];
-    run_user_processors(&mut ast, &registry, &mut _proc_errors);
+    run_user_processors(&mut ast, &mut _proc_errors);
     ast
 }
 
@@ -148,9 +145,7 @@ fn fn_body_stmt_count(ast: &kiln_compiler::parser::ast::SourceFile, name: &str) 
         .unwrap_or(0)
 }
 
-// ---------------------------------------------------------------------------
 // Noop processor: returns (None, []) -- keeps original, emits nothing
-// ---------------------------------------------------------------------------
 
 #[test]
 fn noop_processor_leaves_source_unchanged() {
@@ -176,10 +171,8 @@ def main() -> void { }
     assert_eq!(names.len(), 2, "no extra items emitted: {names:?}");
 }
 
-// ---------------------------------------------------------------------------
 // Body-wrapping processor: replaces body with gen { <<target.body>> }
 // (effectively a no-op transform, but exercises gen splice)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn wrap_processor_preserves_body_statement_count() {
@@ -208,9 +201,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // Prepend processor: adds a statement before the original body
-// ---------------------------------------------------------------------------
 
 #[test]
 fn prepend_processor_adds_statement_to_body() {
@@ -235,9 +226,7 @@ def main() -> void { }
     assert_eq!(count, 2, "prepend processor must add 1 stmt, got {count}");
 }
 
-// ---------------------------------------------------------------------------
 // CompoundAssign inside gen block: <<splice>> in rhs must be substituted
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gen_block_compound_assign_splice_is_substituted() {
@@ -264,9 +253,7 @@ def main() -> void { }
     assert_eq!(count, 2, "expected x:int=0 + x+=7, got {count} stmts");
 }
 
-// ---------------------------------------------------------------------------
 // String interpolation with GenSplice inside gen block must be substituted
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gen_block_string_interp_splice_is_substituted() {
@@ -290,9 +277,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // For loop inside gen block: splice in iterable must be substituted
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gen_block_for_loop_splice_is_substituted() {
@@ -318,9 +303,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // DoWhile inside gen block: splice in cond must be substituted
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gen_block_do_while_splice_is_substituted() {
@@ -347,9 +330,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // TryCatch handler body inside gen block: splice in handler must be substituted
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gen_block_try_catch_handler_splice_is_substituted() {
@@ -381,9 +362,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // Struct literal with splice inside gen block must be substituted
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gen_block_struct_literal_splice_is_substituted() {
@@ -408,9 +387,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // Array literal with splice inside gen block must be substituted
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gen_block_array_literal_splice_is_substituted() {
@@ -434,9 +411,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // target.params is accessible (populated in the FnDecl struct value)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn processor_can_access_target_params_len() {
@@ -466,9 +441,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // Stacked annotations must compose: each processor sees the previous output
-// ---------------------------------------------------------------------------
 
 #[test]
 fn stacked_annotations_compose_in_order() {
@@ -506,9 +479,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // BinOp arithmetic in processor body is evaluated
-// ---------------------------------------------------------------------------
 
 #[test]
 fn processor_binop_adds_param_count_to_base() {
@@ -537,9 +508,7 @@ def main() -> void { }
     assert_eq!(count, 1, "expected result:int=7 as only stmt, got {count}");
 }
 
-// ---------------------------------------------------------------------------
 // If-branch in processor body selects different generated code
-// ---------------------------------------------------------------------------
 
 #[test]
 fn processor_if_branch_selects_different_body() {
@@ -579,9 +548,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // Processor emits extra declaration via the Vec[Decl] return slot
-// ---------------------------------------------------------------------------
 
 #[test]
 fn processor_emits_cloned_function_as_extra() {
@@ -608,9 +575,7 @@ def main() -> void { }
     assert_eq!(names.len(), 3, "exactly greet, greet_copy, main: {names:?}");
 }
 
-// ---------------------------------------------------------------------------
 // with_name produces a renamed function keeping the original body
-// ---------------------------------------------------------------------------
 
 #[test]
 fn processor_with_name_renames_function() {
@@ -643,9 +608,7 @@ def main() -> void { }
     );
 }
 
-// ---------------------------------------------------------------------------
 // For loop in processor body iterates over params and counts them
-// ---------------------------------------------------------------------------
 
 #[test]
 fn processor_for_loop_counts_params() {
@@ -676,9 +639,7 @@ def main() -> void { }
     assert_eq!(count, 1, "expected counted:int=3 as only stmt, got {count}");
 }
 
-// ---------------------------------------------------------------------------
 // CompoundAssign in processor body updates the binding
-// ---------------------------------------------------------------------------
 
 #[test]
 fn processor_compound_assign_in_body() {

@@ -324,6 +324,24 @@ mod tests {
         assert!(result.contains("\x1b]8;;"), "OSC 8 hyperlink present");
     }
 
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' && chars.peek() == Some(&'[') {
+                chars.next();
+                for c in chars.by_ref() {
+                    if c.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
     #[test]
     fn render_rich_gutter_width_aligns() {
         let src = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\n";
@@ -338,10 +356,11 @@ mod tests {
             context_after: 1,
         };
         let result = map.render_rich(src, span, "test.kn", &opts);
-        let first_line = result.lines().next().unwrap_or("");
+        let first_line = strip_ansi(result.lines().next().unwrap_or(""));
         assert!(
             first_line.starts_with("   -->"),
-            "gutter width=3 pads arrow"
+            "gutter width=3 pads arrow: got {:?}",
+            first_line
         );
     }
 

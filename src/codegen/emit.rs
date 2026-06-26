@@ -3,7 +3,7 @@ use cranelift_object::ObjectProduct;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-/// Kiln runtime object file, pre-compiled from kiln_rt.c during `cargo build`.
+/// Kiln runtime object file, pre-compiled from kiln_rt.cpp during `cargo build`.
 /// Empty slice means build.rs could not find a C compiler; linking will warn.
 static RUNTIME_OBJ: &[u8] = include_bytes!(env!("KILN_RT_OBJ_PATH"));
 
@@ -59,16 +59,23 @@ pub fn link_executable(
                 is_msvc_style: true,
                 leading_flags: &[],
             },
-            // MinGW gcc: -mconsole must come before objects so ld selects
-            // crtexe.o (console) instead of crtexewin.o (GUI/WinMain).
+            LinkerSpec {
+                name: "g++",
+                is_msvc_style: false,
+                leading_flags: &["-mconsole", "-Wl,--subsystem,console", "-Wl,-e,mainCRTStartup"],
+            },
             LinkerSpec {
                 name: "gcc",
                 is_msvc_style: false,
-                leading_flags: &["-mconsole", "-Wl,--subsystem,console"],
+                leading_flags: &["-mconsole", "-Wl,--subsystem,console", "-Wl,-e,mainCRTStartup"],
             },
         ]
     } else {
         &[LinkerSpec {
+            name: "c++",
+            is_msvc_style: false,
+            leading_flags: &[],
+        }, LinkerSpec {
             name: "cc",
             is_msvc_style: false,
             leading_flags: &[],

@@ -1,0 +1,326 @@
+# string_methods_test.kn -- @test suite for StringMethods
+
+# ---- Batch 1: length, byte_length, is_empty, char_at, byte_at ----------------
+
+@test
+def test_length_ascii() -> void {
+    assert("hello".length() == 5)
+}
+
+@test
+def test_length_empty() -> void {
+    assert("".length() == 0)
+}
+
+@test
+def test_length_single_char() -> void {
+    assert("x".length() == 1)
+}
+
+@test
+def test_byte_length_ascii() -> void {
+    assert("hello".byte_length() == 5)
+}
+
+@test
+def test_byte_length_empty() -> void {
+    assert("".byte_length() == 0)
+}
+
+@test
+def test_is_empty_true() -> void {
+    assert("".is_empty())
+}
+
+@test
+def test_is_empty_false() -> void {
+    assert(!"hello".is_empty())
+}
+
+@test
+def test_char_at_first() -> void {
+    assert("hello".char_at(0) == "h")
+}
+
+@test
+def test_char_at_last() -> void {
+    assert("hello".char_at(4) == "o")
+}
+
+@test
+def test_char_at_middle() -> void {
+    assert("hello".char_at(2) == "l")
+}
+
+@test
+def test_byte_at_h() -> void {
+    assert("hello".byte_at(0) == 104)
+}
+
+@test
+def test_byte_at_e() -> void {
+    assert("hello".byte_at(1) == 101)
+}
+
+# ---- Batch 2: slice, starts_with, ends_with, contains, find, find_from -------
+
+@test
+def test_slice_middle() -> void {
+    assert("hello".slice(1, 3) == "el")
+}
+
+@test
+def test_slice_full() -> void {
+    assert("hello".slice(0, 5) == "hello")
+}
+
+@test
+def test_slice_empty_range() -> void {
+    assert("hello".slice(2, 2) == "")
+}
+
+@test
+def test_starts_with_true() -> void {
+    assert("hello".starts_with("hel"))
+}
+
+@test
+def test_starts_with_false() -> void {
+    assert(!"hello".starts_with("ell"))
+}
+
+@test
+def test_starts_with_empty() -> void {
+    assert("hello".starts_with(""))
+}
+
+@test
+def test_ends_with_true() -> void {
+    assert("hello".ends_with("llo"))
+}
+
+@test
+def test_ends_with_false() -> void {
+    assert(!"hello".ends_with("hel"))
+}
+
+@test
+def test_contains_true() -> void {
+    assert("hello world".contains("world"))
+}
+
+@test
+def test_contains_false() -> void {
+    assert(!"hello".contains("xyz"))
+}
+
+@test
+def test_find_found() -> void {
+    assert("hello".find("ll") == 2)
+}
+
+@test
+def test_find_not_found() -> void {
+    assert("hello".find("xyz") == -1)
+}
+
+@test
+def test_find_from_found() -> void {
+    assert("abcabc".find_from("bc", 3) == 4)
+}
+
+@test
+def test_find_from_skip() -> void {
+    assert("abcabc".find_from("bc", 3) != 1)
+}
+
+# ---- Batch 3: to_upper, to_lower, reverse, trim, trim_start, trim_end --------
+
+@test
+def test_to_upper_basic() -> void {
+    assert("hello".to_upper() == "HELLO")
+}
+
+@test
+def test_to_upper_mixed() -> void {
+    assert("hElLo".to_upper() == "HELLO")
+}
+
+@test
+def test_to_lower_basic() -> void {
+    assert("HELLO".to_lower() == "hello")
+}
+
+@test
+def test_to_lower_mixed() -> void {
+    assert("HeLLo".to_lower() == "hello")
+}
+
+@test
+def test_reverse_basic() -> void {
+    assert("hello".reverse() == "olleh")
+}
+
+@test
+def test_reverse_empty() -> void {
+    assert("".reverse() == "")
+}
+
+@test
+def test_trim_both() -> void {
+    assert("  hello  ".trim() == "hello")
+}
+
+@test
+def test_trim_none() -> void {
+    assert("hello".trim() == "hello")
+}
+
+@test
+def test_trim_start_only() -> void {
+    assert("  hello".trim_start() == "hello")
+}
+
+@test
+def test_trim_end_only() -> void {
+    assert("hello  ".trim_end() == "hello")
+}
+
+# ---- Batch 4: replace, repeat, split, split_whitespace, chars, bytes ---------
+
+@test
+def test_replace_basic() -> void {
+    assert("hello world".replace("world", "there") == "hello there")
+}
+
+@test
+def test_replace_no_match() -> void {
+    assert("hello".replace("xyz", "abc") == "hello")
+}
+
+@test
+def test_repeat_basic() -> void {
+    assert("ab".repeat(3) == "ababab")
+}
+
+@test
+def test_repeat_zero() -> void {
+    assert("ab".repeat(0) == "")
+}
+
+@test
+def test_split_basic() -> void {
+    parts: Vec[str] = "a,b,c".split(",")
+    assert(parts.len() == 3)
+}
+
+@test
+def test_split_no_match() -> void {
+    parts: Vec[str] = "hello".split(",")
+    assert(parts.len() == 1)
+}
+
+@test
+def test_split_whitespace_basic() -> void {
+    parts: Vec[str] = "a b  c".split_whitespace()
+    assert(parts.len() == 3)
+}
+
+@test
+def test_chars_length() -> void {
+    chars: Vec[str] = "hello".chars()
+    assert(chars.len() == 5)
+}
+
+@test
+def test_chars_values() -> void {
+    chars: Vec[str] = "hi".chars()
+    assert(chars.get(0) == "h")
+    assert(chars.get(1) == "i")
+}
+
+@test
+def test_bytes_length() -> void {
+    bs: Vec[int] = "hi".bytes()
+    assert(bs.len() == 2)
+}
+
+@test
+def test_bytes_values() -> void {
+    bs: Vec[int] = "hi".bytes()
+    assert(bs.get(0) == 104)
+    assert(bs.get(1) == 105)
+}
+
+# ---- Batch 5: pad_start, pad_end, remove_prefix, remove_suffix, parse_int, parse_float
+
+@test
+def test_pad_start_basic() -> void {
+    assert("hi".pad_start(5, " ") == "   hi")
+}
+
+@test
+def test_pad_start_no_op() -> void {
+    assert("hello".pad_start(3, " ") == "hello")
+}
+
+@test
+def test_pad_end_basic() -> void {
+    assert("hi".pad_end(5, ".") == "hi...")
+}
+
+@test
+def test_remove_prefix_match() -> void {
+    assert("hello world".remove_prefix("hello ") == "world")
+}
+
+@test
+def test_remove_prefix_no_match() -> void {
+    assert("hello".remove_prefix("xyz") == "hello")
+}
+
+@test
+def test_remove_suffix_match() -> void {
+    assert("hello world".remove_suffix(" world") == "hello")
+}
+
+@test
+def test_remove_suffix_no_match() -> void {
+    assert("hello".remove_suffix("xyz") == "hello")
+}
+
+@test
+def test_parse_int_valid() -> void {
+    result: Option[int] = "42".parse_int()
+    match result {
+        Some { value: v } => assert(v == 42)
+        None => assert(false)
+    }
+}
+
+@test
+def test_parse_int_invalid() -> void {
+    result: Option[int] = "abc".parse_int()
+    match result {
+        Some { value: v } => assert(false)
+        None => assert(true)
+    }
+}
+
+@test
+def test_parse_float_valid() -> void {
+    result: Option[float] = "3.14".parse_float()
+    match result {
+        Some { value: v } => assert(v > 3.0)
+        None => assert(false)
+    }
+}
+
+@test
+def test_parse_float_invalid() -> void {
+    result: Option[float] = "nope".parse_float()
+    match result {
+        Some { value: v } => assert(false)
+        None => assert(true)
+    }
+}

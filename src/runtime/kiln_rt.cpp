@@ -6,13 +6,137 @@
 #include <errno.h>
 
 typedef struct { const char* ptr; int64_t len; } KilnStr;
+typedef struct { int64_t* data; int64_t len; int64_t cap; } KilnVec;
 
 static KilnStr* alloc_str_struct(const char* ptr, int64_t len) {
     KilnStr* s = (KilnStr*)malloc(sizeof(KilnStr));
-    s->ptr = ptr;
-    s->len = len;
+    s->ptr = ptr; s->len = len;
     return s;
 }
+
+static int utf8_cp_len(unsigned char b) {
+    if ((b & 0x80) == 0) return 1;
+    if ((b & 0xE0) == 0xC0) return 2;
+    if ((b & 0xF0) == 0xE0) return 3;
+    if ((b & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+static int is_ws(unsigned char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+static int64_t make_option_none() {
+    int32_t* box = (int32_t*)malloc(8);
+    box[0] = 0; box[1] = 0;
+    return (int64_t)box;
+}
+static int64_t make_option_some_i64(int64_t val) {
+    int32_t* box = (int32_t*)malloc(16);
+    box[0] = 1; box[1] = 0;
+    *(int64_t*)(box + 2) = val;
+    return (int64_t)box;
+}
+static int64_t make_option_some_f64(double val) {
+    int32_t* box = (int32_t*)malloc(16);
+    int64_t bits; memcpy(&bits, &val, 8);
+    box[0] = 1; box[1] = 0;
+    *(int64_t*)(box + 2) = bits;
+    return (int64_t)box;
+}
+
+#define KILN_JMP_BUF_WORDS 8
+#define MAX_EXC_DEPTH      64
+
+static uint64_t* exc_ptrs[MAX_EXC_DEPTH];
+static int       exc_depth = 0;
+static int64_t   current_exc_val = 0;
+
+#if defined(_WIN64) && (defined(__MINGW32__) || defined(__MINGW64__))
+__asm__(
+    ".globl __kiln_setjmp\n"
+    "__kiln_setjmp:\n"
+    "  movq   (%rsp), %rax\n"
+    "  movq   %rax,  0(%rcx)\n"
+    "  leaq   8(%rsp), %rax\n"
+    "  movq   %rax,  8(%rcx)\n"
+    "  movq   %rbx, 16(%rcx)\n"
+    "  movq   %rbp, 24(%rcx)\n"
+    "  movq   %r12, 32(%rcx)\n"
+    "  movq   %r13, 40(%rcx)\n"
+    "  movq   %r14, 48(%rcx)\n"
+    "  movq   %r15, 56(%rcx)\n"
+    "  xorl   %eax, %eax\n"
+    "  retq\n"
+    "\n"
+    ".globl __kiln_longjmp\n"
+    "__kiln_longjmp:\n"
+    "  movq    0(%rcx), %r8\n"
+    "  movq    8(%rcx), %rsp\n"
+    "  movq   16(%rcx), %rbx\n"
+    "  movq   24(%rcx), %rbp\n"
+    "  movq   32(%rcx), %r12\n"
+    "  movq   40(%rcx), %r13\n"
+    "  movq   48(%rcx), %r14\n"
+    "  movq   56(%rcx), %r15\n"
+    "  movl   %edx, %eax\n"
+    "  testl  %eax, %eax\n"
+    "  jnz    1f\n"
+    "  movl   $1, %eax\n"
+    "1:\n"
+    "  jmpq   *%r8\n"
+);
+extern "C" {
+extern int32_t __kiln_setjmp(uint64_t* buf);
+extern void    __kiln_longjmp(uint64_t* buf, int32_t val);
+}
+#elif defined(__x86_64__)
+__asm__(
+    ".globl __kiln_setjmp\n"
+    "__kiln_setjmp:\n"
+    "  movq   (%rsp), %rax\n"
+    "  movq   %rax,  0(%rdi)\n"
+    "  leaq   8(%rsp), %rax\n"
+    "  movq   %rax,  8(%rdi)\n"
+    "  movq   %rbx, 16(%rdi)\n"
+    "  movq   %rbp, 24(%rdi)\n"
+    "  movq   %r12, 32(%rdi)\n"
+    "  movq   %r13, 40(%rdi)\n"
+    "  movq   %r14, 48(%rdi)\n"
+    "  movq   %r15, 56(%rdi)\n"
+    "  xorl   %eax, %eax\n"
+    "  retq\n"
+    "\n"
+    ".globl __kiln_longjmp\n"
+    "__kiln_longjmp:\n"
+    "  movq    0(%rdi), %r8\n"
+    "  movq    8(%rdi), %rsp\n"
+    "  movq   16(%rdi), %rbx\n"
+    "  movq   24(%rdi), %rbp\n"
+    "  movq   32(%rdi), %r12\n"
+    "  movq   40(%rdi), %r13\n"
+    "  movq   48(%rdi), %r14\n"
+    "  movq   56(%rdi), %r15\n"
+    "  movl   %esi, %eax\n"
+    "  testl  %eax, %eax\n"
+    "  jnz    1f\n"
+    "  movl   $1, %eax\n"
+    "1:\n"
+    "  jmpq   *%r8\n"
+);
+extern "C" {
+extern int32_t __kiln_setjmp(uint64_t* buf);
+extern void    __kiln_longjmp(uint64_t* buf, int32_t val);
+}
+#else
+#include <setjmp.h>
+extern "C" {
+int32_t __kiln_setjmp(uint64_t* buf) { (void)buf; return 0; }
+void    __kiln_longjmp(uint64_t* buf, int32_t val) { (void)buf; (void)val; abort(); }
+}
+#endif
+
+extern "C" {
 
 void __kiln_print(int64_t str_val) {
     if (str_val == 0) return;
@@ -72,146 +196,12 @@ void __kiln_rc_dec(int64_t ptr) {
     if (--(*rc) <= 0) free((void*)ptr);
 }
 
-/* ---- Exception runtime -------------------------------------------------------
- *
- * Design: the jmp_buf lives in the *caller's* (Cranelift-generated) stack
- * frame as a 64-byte StackSlot, not in a C helper function.  Cranelift calls
- * __kiln_exc_push(buf_ptr) to register the frame, then calls __kiln_setjmp
- * directly.  __kiln_raise calls __kiln_longjmp which restores registers and
- * jumps back to the instruction after the __kiln_setjmp call inside the
- * Cranelift function (whose frame is still live on the stack).
- *
- * The custom __kiln_setjmp / __kiln_longjmp bypass the C-library
- * setjmp/longjmp entirely, which on Windows 64-bit would call RtlUnwindEx and
- * crash when Cranelift-generated frames (lacking .pdata tables) are on the
- * call stack.
- *
- * jmp_buf layout (8 x uint64_t = 64 bytes):
- *   [0]  rip  -- return address from __kiln_setjmp (= next insn in caller)
- *   [1]  rsp  -- caller's rsp after the call instruction ret-pops rip
- *   [2]  rbx
- *   [3]  rbp
- *   [4]  r12
- *   [5]  r13
- *   [6]  r14
- *   [7]  r15
- * --------------------------------------------------------------------------- */
-
-#define KILN_JMP_BUF_WORDS 8
-#define MAX_EXC_DEPTH      64
-
-static uint64_t* exc_ptrs[MAX_EXC_DEPTH];
-static int       exc_depth = 0;
-static int64_t   current_exc_val = 0;
-
-/* Custom setjmp/longjmp in global assembly.
- * We define them here and provide extern declarations below.
- * On Windows x64 the first integer argument is in RCX, second in RDX.
- * On System V x64 (Linux/macOS) the first is in RDI, second in RSI.      */
-
-#if defined(_WIN64) && (defined(__MINGW32__) || defined(__MINGW64__))
-
-__asm__(
-    ".globl __kiln_setjmp\n"
-    "__kiln_setjmp:\n"
-    "  movq   (%rsp), %rax\n"      /* return address (= next insn in caller) */
-    "  movq   %rax,  0(%rcx)\n"    /* buf[0] = rip */
-    "  leaq   8(%rsp), %rax\n"     /* caller rsp after the call's ret pops rip */
-    "  movq   %rax,  8(%rcx)\n"    /* buf[1] = rsp */
-    "  movq   %rbx, 16(%rcx)\n"
-    "  movq   %rbp, 24(%rcx)\n"
-    "  movq   %r12, 32(%rcx)\n"
-    "  movq   %r13, 40(%rcx)\n"
-    "  movq   %r14, 48(%rcx)\n"
-    "  movq   %r15, 56(%rcx)\n"
-    "  xorl   %eax, %eax\n"        /* return 0 */
-    "  retq\n"
-    "\n"
-    ".globl __kiln_longjmp\n"
-    "__kiln_longjmp:\n"
-    "  movq    0(%rcx), %r8\n"     /* saved rip */
-    "  movq    8(%rcx), %rsp\n"    /* restore caller rsp */
-    "  movq   16(%rcx), %rbx\n"
-    "  movq   24(%rcx), %rbp\n"
-    "  movq   32(%rcx), %r12\n"
-    "  movq   40(%rcx), %r13\n"
-    "  movq   48(%rcx), %r14\n"
-    "  movq   56(%rcx), %r15\n"
-    "  movl   %edx, %eax\n"        /* return val */
-    "  testl  %eax, %eax\n"
-    "  jnz    1f\n"
-    "  movl   $1, %eax\n"          /* longjmp(buf,0) acts like longjmp(buf,1) */
-    "1:\n"
-    "  jmpq   *%r8\n"              /* jump to saved rip in caller */
-);
-
-extern int32_t __kiln_setjmp(uint64_t* buf);
-extern void    __kiln_longjmp(uint64_t* buf, int32_t val);
-
-#elif defined(__x86_64__)
-
-/* System V AMD64 ABI: first arg in RDI, second in RSI. */
-__asm__(
-    ".globl __kiln_setjmp\n"
-    "__kiln_setjmp:\n"
-    "  movq   (%rsp), %rax\n"
-    "  movq   %rax,  0(%rdi)\n"
-    "  leaq   8(%rsp), %rax\n"
-    "  movq   %rax,  8(%rdi)\n"
-    "  movq   %rbx, 16(%rdi)\n"
-    "  movq   %rbp, 24(%rdi)\n"
-    "  movq   %r12, 32(%rdi)\n"
-    "  movq   %r13, 40(%rdi)\n"
-    "  movq   %r14, 48(%rdi)\n"
-    "  movq   %r15, 56(%rdi)\n"
-    "  xorl   %eax, %eax\n"
-    "  retq\n"
-    "\n"
-    ".globl __kiln_longjmp\n"
-    "__kiln_longjmp:\n"
-    "  movq    0(%rdi), %r8\n"
-    "  movq    8(%rdi), %rsp\n"
-    "  movq   16(%rdi), %rbx\n"
-    "  movq   24(%rdi), %rbp\n"
-    "  movq   32(%rdi), %r12\n"
-    "  movq   40(%rdi), %r13\n"
-    "  movq   48(%rdi), %r14\n"
-    "  movq   56(%rdi), %r15\n"
-    "  movl   %esi, %eax\n"
-    "  testl  %eax, %eax\n"
-    "  jnz    1f\n"
-    "  movl   $1, %eax\n"
-    "1:\n"
-    "  jmpq   *%r8\n"
-);
-
-extern int32_t __kiln_setjmp(uint64_t* buf);
-extern void    __kiln_longjmp(uint64_t* buf, int32_t val);
-
-#else
-/* Fallback for other architectures: use C-library setjmp/longjmp.
-   May crash if the C library's longjmp calls OS unwinding APIs that require
-   unwind tables in the Cranelift-generated code. */
-#include <setjmp.h>
-typedef jmp_buf kiln_fallback_buf;
-static kiln_fallback_buf fallback_exc_stack[MAX_EXC_DEPTH];
-/* These are stubs; the actual calling convention differs on other arches. */
-int32_t __kiln_setjmp(uint64_t* buf) {
-    (void)buf; return 0;
-}
-void __kiln_longjmp(uint64_t* buf, int32_t val) {
-    (void)buf; (void)val; abort();
-}
-#endif
-
-/* Register a jmp_buf (allocated by the Cranelift caller) as the active frame. */
 void __kiln_exc_push(uint64_t* buf) {
     if (exc_depth >= MAX_EXC_DEPTH) abort();
     exc_ptrs[exc_depth++] = buf;
 }
 
-/* Unregister the innermost exception frame. */
-void __kiln_exc_pop(void) {
+void __kiln_exc_pop() {
     if (exc_depth > 0) exc_depth--;
 }
 
@@ -225,21 +215,11 @@ void __kiln_raise(int64_t exc_ptr) {
     abort();
 }
 
-int64_t __kiln_current_exc(void) { return current_exc_val; }
+int64_t __kiln_current_exc() { return current_exc_val; }
 
-/* ---- Vec ------------------------------------------------------------------ */
-
-typedef struct {
-    int64_t* data;
-    int64_t len;
-    int64_t cap;
-} KilnVec;
-
-int64_t Vec_new(void) {
+int64_t Vec_new() {
     KilnVec* v = (KilnVec*)malloc(sizeof(KilnVec));
-    v->data = NULL;
-    v->len = 0;
-    v->cap = 0;
+    v->data = NULL; v->len = 0; v->cap = 0;
     return (int64_t)v;
 }
 
@@ -253,9 +233,7 @@ void Vec_add(int64_t vec_ptr, int64_t item) {
     v->data[v->len++] = item;
 }
 
-int64_t Vec_len(int64_t vec_ptr) {
-    return ((KilnVec*)vec_ptr)->len;
-}
+int64_t Vec_len(int64_t vec_ptr) { return ((KilnVec*)vec_ptr)->len; }
 
 int64_t Vec_get(int64_t vec_ptr, int64_t index) {
     KilnVec* v = (KilnVec*)vec_ptr;
@@ -269,54 +247,26 @@ void Vec_set(int64_t vec_ptr, int64_t index, int64_t item) {
     v->data[index] = item;
 }
 
-void Vec_clear(int64_t vec_ptr) {
-    ((KilnVec*)vec_ptr)->len = 0;
-}
+void Vec_clear(int64_t vec_ptr) { ((KilnVec*)vec_ptr)->len = 0; }
 
 int64_t Vec_remove(int64_t vec_ptr, int64_t index) {
     KilnVec* v = (KilnVec*)vec_ptr;
     int64_t val = v->data[index];
-    for (int64_t i = index; i < v->len - 1; i++) {
-        v->data[i] = v->data[i + 1];
-    }
+    for (int64_t i = index; i < v->len - 1; i++) v->data[i] = v->data[i + 1];
     v->len--;
     return val;
 }
 
-/* Generic to_str dispatcher for values of unknown type (used in generic hooks).
-   Without runtime type tags a perfect implementation is not possible; this
-   handles the common primitive cases and falls back to int formatting.
-   Vec[int] elements will render correctly; Vec[str] elements will render as
-   addresses until proper type tagging is added. */
 int64_t __kiln_to_str_dispatch(int64_t val) {
-    if (val == 0) {
-        return (int64_t)alloc_str_struct("null", 4);
-    }
-    /* Heuristic: try to detect a KilnStr pointer by checking that the
-       pointed-to region looks plausible (ptr != NULL, 0 <= len < 64 MB).
-       This works reliably when the Vec element type is str; for other
-       heap-allocated types the output will be a decimal address, which is
-       still safe (no crash). */
+    if (val == 0) return (int64_t)alloc_str_struct("null", 4);
     KilnStr* maybe = (KilnStr*)val;
-    if (maybe->ptr != NULL && maybe->len >= 0 && maybe->len < (1 << 26)) {
-        return val;
-    }
+    if (maybe->ptr != NULL && maybe->len >= 0 && maybe->len < (1 << 26)) return val;
     return __kiln_int_to_str(val);
 }
 
 int64_t __kiln_spawn(int64_t fn_ptr, int64_t env_ptr) {
     typedef int64_t (*FnPtr)(int64_t);
     return ((FnPtr)fn_ptr)(env_ptr);
-}
-
-/* ---- String methods -------------------------------------------------------- */
-
-static int utf8_cp_len(unsigned char b) {
-    if ((b & 0x80) == 0) return 1;
-    if ((b & 0xE0) == 0xC0) return 2;
-    if ((b & 0xF0) == 0xE0) return 3;
-    if ((b & 0xF8) == 0xF0) return 4;
-    return 1;
 }
 
 int64_t __kiln_str_byte_len(int64_t str_val) {
@@ -346,8 +296,7 @@ int64_t __kiln_str_char_at(int64_t str_val, int64_t idx) {
             buf[cp_len] = '\0';
             return (int64_t)alloc_str_struct(buf, (int64_t)cp_len);
         }
-        i += cp_len;
-        count++;
+        i += cp_len; count++;
     }
     return (int64_t)alloc_str_struct("", 0);
 }
@@ -359,7 +308,6 @@ int64_t __kiln_str_byte_at(int64_t str_val, int64_t idx) {
     return (int64_t)(unsigned char)s->ptr[idx];
 }
 
-/* slice(start_cp, end_cp) -> str: byte slice by codepoint indices */
 int64_t __kiln_str_slice(int64_t str_val, int64_t start_cp, int64_t end_cp) {
     if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
     KilnStr* s = (KilnStr*)str_val;
@@ -367,10 +315,9 @@ int64_t __kiln_str_slice(int64_t str_val, int64_t start_cp, int64_t end_cp) {
     int64_t byte_start = -1, byte_end = -1, count = 0, i = 0;
     while (i <= s->len) {
         if (count == start_cp) byte_start = i;
-        if (count == end_cp)   { byte_end = i; break; }
+        if (count == end_cp) { byte_end = i; break; }
         if (i == s->len) break;
-        i += utf8_cp_len(p[i]);
-        count++;
+        i += utf8_cp_len(p[i]); count++;
     }
     if (byte_start < 0) byte_start = s->len;
     if (byte_end < 0)   byte_end   = s->len;
@@ -382,7 +329,6 @@ int64_t __kiln_str_slice(int64_t str_val, int64_t start_cp, int64_t end_cp) {
     return (int64_t)alloc_str_struct(buf, len);
 }
 
-/* starts_with(prefix) -> bool (1/0) */
 int64_t __kiln_str_starts_with(int64_t str_val, int64_t pfx_val) {
     if (str_val == 0 || pfx_val == 0) return 0;
     KilnStr* s = (KilnStr*)str_val;
@@ -392,7 +338,6 @@ int64_t __kiln_str_starts_with(int64_t str_val, int64_t pfx_val) {
     return memcmp(s->ptr, p->ptr, (size_t)p->len) == 0 ? 1 : 0;
 }
 
-/* ends_with(suffix) -> bool (1/0) */
 int64_t __kiln_str_ends_with(int64_t str_val, int64_t sfx_val) {
     if (str_val == 0 || sfx_val == 0) return 0;
     KilnStr* s = (KilnStr*)str_val;
@@ -402,7 +347,6 @@ int64_t __kiln_str_ends_with(int64_t str_val, int64_t sfx_val) {
     return memcmp(s->ptr + s->len - sfx->len, sfx->ptr, (size_t)sfx->len) == 0 ? 1 : 0;
 }
 
-/* find_from(needle, start_byte) -> codepoint index or -1 */
 int64_t __kiln_str_find_from(int64_t str_val, int64_t needle_val, int64_t start_cp) {
     if (str_val == 0 || needle_val == 0) return -1;
     KilnStr* s = (KilnStr*)str_val;
@@ -410,30 +354,22 @@ int64_t __kiln_str_find_from(int64_t str_val, int64_t needle_val, int64_t start_
     if (n->len == 0) return start_cp;
     const unsigned char* sp = (const unsigned char*)s->ptr;
     int64_t count = 0, i = 0;
-    /* advance to start_cp */
-    while (i < s->len && count < start_cp) {
-        i += utf8_cp_len(sp[i]);
-        count++;
-    }
+    while (i < s->len && count < start_cp) { i += utf8_cp_len(sp[i]); count++; }
     while (i + n->len <= s->len) {
         if (memcmp(sp + i, n->ptr, (size_t)n->len) == 0) return count;
-        i += utf8_cp_len(sp[i]);
-        count++;
+        i += utf8_cp_len(sp[i]); count++;
     }
     return -1;
 }
 
-/* find(needle) -> codepoint index or -1 */
 int64_t __kiln_str_find(int64_t str_val, int64_t needle_val) {
     return __kiln_str_find_from(str_val, needle_val, 0);
 }
 
-/* contains(needle) -> bool */
 int64_t __kiln_str_contains(int64_t str_val, int64_t needle_val) {
     return __kiln_str_find(str_val, needle_val) >= 0 ? 1 : 0;
 }
 
-/* to_upper / to_lower: ASCII-only case fold */
 int64_t __kiln_str_to_upper(int64_t str_val) {
     if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
     KilnStr* s = (KilnStr*)str_val;
@@ -452,22 +388,18 @@ int64_t __kiln_str_to_lower(int64_t str_val) {
     return (int64_t)alloc_str_struct(buf, s->len);
 }
 
-/* reverse: reverses codepoint order (not byte order) */
 int64_t __kiln_str_reverse(int64_t str_val) {
     if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
     KilnStr* s = (KilnStr*)str_val;
     if (s->len == 0) return (int64_t)alloc_str_struct("", 0);
     const unsigned char* p = (const unsigned char*)s->ptr;
-    /* collect codepoint byte spans */
-    int64_t starts[s->len + 1]; /* at most s->len codepoints */
-    int     lens[s->len + 1];
+    int64_t* starts = (int64_t*)malloc((size_t)(s->len + 1) * sizeof(int64_t));
+    int*     lens   = (int*)malloc((size_t)(s->len + 1) * sizeof(int));
     int64_t ncp = 0, i = 0;
     while (i < s->len) {
         int cplen = utf8_cp_len(p[i]);
-        starts[ncp] = i;
-        lens[ncp] = cplen;
-        i += cplen;
-        ncp++;
+        starts[ncp] = i; lens[ncp] = cplen;
+        i += cplen; ncp++;
     }
     char* buf = (char*)malloc((size_t)(s->len + 1));
     int64_t out = 0;
@@ -476,10 +408,9 @@ int64_t __kiln_str_reverse(int64_t str_val) {
         out += lens[k];
     }
     buf[s->len] = '\0';
+    free(starts); free(lens);
     return (int64_t)alloc_str_struct(buf, s->len);
 }
-
-static int is_ws(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
 
 int64_t __kiln_str_trim_start(int64_t str_val) {
     if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
@@ -510,16 +441,14 @@ int64_t __kiln_str_trim(int64_t str_val) {
     return __kiln_str_trim_end(__kiln_str_trim_start(str_val));
 }
 
-/* replace(from, to) -> str (replaces first occurrence) */
 int64_t __kiln_str_replace(int64_t str_val, int64_t from_val, int64_t to_val) {
     if (str_val == 0 || from_val == 0) return str_val;
     KilnStr* s = (KilnStr*)str_val;
     KilnStr* f = (KilnStr*)from_val;
-    KilnStr* t = (to_val != 0) ? (KilnStr*)to_val : NULL;
+    KilnStr* t = to_val ? (KilnStr*)to_val : NULL;
     const char* tp = t ? t->ptr : "";
     int64_t tlen = t ? t->len : 0;
     if (f->len == 0) return str_val;
-    /* find first occurrence */
     const char* pos = NULL;
     for (int64_t i = 0; i <= s->len - f->len; i++) {
         if (memcmp(s->ptr + i, f->ptr, (size_t)f->len) == 0) { pos = s->ptr + i; break; }
@@ -537,7 +466,6 @@ int64_t __kiln_str_replace(int64_t str_val, int64_t from_val, int64_t to_val) {
     return (int64_t)alloc_str_struct(buf, new_len);
 }
 
-/* repeat(n) -> str */
 int64_t __kiln_str_repeat(int64_t str_val, int64_t n) {
     if (str_val == 0 || n <= 0) return (int64_t)alloc_str_struct("", 0);
     KilnStr* s = (KilnStr*)str_val;
@@ -548,16 +476,12 @@ int64_t __kiln_str_repeat(int64_t str_val, int64_t n) {
     return (int64_t)alloc_str_struct(buf, new_len);
 }
 
-/* split(sep) -> Vec[str] */
 int64_t __kiln_str_split(int64_t str_val, int64_t sep_val) {
     int64_t vec = Vec_new();
     if (str_val == 0) return vec;
     KilnStr* s = (KilnStr*)str_val;
     KilnStr* sep = (KilnStr*)sep_val;
-    if (!sep || sep->len == 0) {
-        Vec_add(vec, str_val);
-        return vec;
-    }
+    if (!sep || sep->len == 0) { Vec_add(vec, str_val); return vec; }
     int64_t start = 0;
     for (int64_t i = 0; i <= s->len - sep->len; ) {
         if (memcmp(s->ptr + i, sep->ptr, (size_t)sep->len) == 0) {
@@ -566,13 +490,9 @@ int64_t __kiln_str_split(int64_t str_val, int64_t sep_val) {
             memcpy(buf, s->ptr + start, (size_t)part_len);
             buf[part_len] = '\0';
             Vec_add(vec, (int64_t)alloc_str_struct(buf, part_len));
-            i += sep->len;
-            start = i;
-        } else {
-            i++;
-        }
+            i += sep->len; start = i;
+        } else { i++; }
     }
-    /* last segment */
     int64_t last_len = s->len - start;
     char* buf = (char*)malloc((size_t)(last_len + 1));
     memcpy(buf, s->ptr + start, (size_t)last_len);
@@ -581,7 +501,6 @@ int64_t __kiln_str_split(int64_t str_val, int64_t sep_val) {
     return vec;
 }
 
-/* split_whitespace() -> Vec[str] */
 int64_t __kiln_str_split_whitespace(int64_t str_val) {
     int64_t vec = Vec_new();
     if (str_val == 0) return vec;
@@ -602,7 +521,6 @@ int64_t __kiln_str_split_whitespace(int64_t str_val) {
     return vec;
 }
 
-/* chars() -> Vec[str]: one str per codepoint */
 int64_t __kiln_str_chars(int64_t str_val) {
     int64_t vec = Vec_new();
     if (str_val == 0) return vec;
@@ -620,18 +538,14 @@ int64_t __kiln_str_chars(int64_t str_val) {
     return vec;
 }
 
-/* bytes() -> Vec[int] */
 int64_t __kiln_str_bytes_vec(int64_t str_val) {
     int64_t vec = Vec_new();
     if (str_val == 0) return vec;
     KilnStr* s = (KilnStr*)str_val;
-    for (int64_t i = 0; i < s->len; i++) {
-        Vec_add(vec, (int64_t)(unsigned char)s->ptr[i]);
-    }
+    for (int64_t i = 0; i < s->len; i++) Vec_add(vec, (int64_t)(unsigned char)s->ptr[i]);
     return vec;
 }
 
-/* pad_start(width, pad_char) -> str */
 int64_t __kiln_str_pad_start(int64_t str_val, int64_t width, int64_t pad_val) {
     if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
     KilnStr* s = (KilnStr*)str_val;
@@ -649,7 +563,6 @@ int64_t __kiln_str_pad_start(int64_t str_val, int64_t width, int64_t pad_val) {
     return (int64_t)alloc_str_struct(buf, total);
 }
 
-/* pad_end(width, pad_char) -> str */
 int64_t __kiln_str_pad_end(int64_t str_val, int64_t width, int64_t pad_val) {
     if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
     KilnStr* s = (KilnStr*)str_val;
@@ -668,7 +581,6 @@ int64_t __kiln_str_pad_end(int64_t str_val, int64_t width, int64_t pad_val) {
     return (int64_t)alloc_str_struct(buf, total);
 }
 
-/* remove_prefix(prefix) -> str */
 int64_t __kiln_str_remove_prefix(int64_t str_val, int64_t pfx_val) {
     if (!str_val || !pfx_val) return str_val ? str_val : (int64_t)alloc_str_struct("", 0);
     KilnStr* s = (KilnStr*)str_val;
@@ -682,7 +594,6 @@ int64_t __kiln_str_remove_prefix(int64_t str_val, int64_t pfx_val) {
     return (int64_t)alloc_str_struct(buf, new_len);
 }
 
-/* remove_suffix(suffix) -> str */
 int64_t __kiln_str_remove_suffix(int64_t str_val, int64_t sfx_val) {
     if (!str_val || !sfx_val) return str_val ? str_val : (int64_t)alloc_str_struct("", 0);
     KilnStr* s = (KilnStr*)str_val;
@@ -697,28 +608,6 @@ int64_t __kiln_str_remove_suffix(int64_t str_val, int64_t sfx_val) {
     return (int64_t)alloc_str_struct(buf, new_len);
 }
 
-/* Kiln enum layout: int32 disc at offset 0, 4 bytes pad, payload at offset 8.
-   Option None = disc 0 (no payload), Some = disc 1 + 8-byte value at offset 8. */
-static int64_t make_option_none(void) {
-    int32_t* box = (int32_t*)malloc(8);
-    box[0] = 0; box[1] = 0;
-    return (int64_t)box;
-}
-static int64_t make_option_some_i64(int64_t val) {
-    int32_t* box = (int32_t*)malloc(16);
-    box[0] = 1; box[1] = 0;
-    *(int64_t*)(box + 2) = val;
-    return (int64_t)box;
-}
-static int64_t make_option_some_f64(double val) {
-    int32_t* box = (int32_t*)malloc(16);
-    int64_t bits; memcpy(&bits, &val, 8);
-    box[0] = 1; box[1] = 0;
-    *(int64_t*)(box + 2) = bits;
-    return (int64_t)box;
-}
-
-/* parse_int() -> Option[int] */
 int64_t __kiln_str_parse_int(int64_t str_val) {
     if (!str_val) return make_option_none();
     KilnStr* s = (KilnStr*)str_val;
@@ -733,7 +622,6 @@ int64_t __kiln_str_parse_int(int64_t str_val) {
     return ok ? make_option_some_i64((int64_t)v) : make_option_none();
 }
 
-/* parse_float() -> Option[float] */
 int64_t __kiln_str_parse_float(int64_t str_val) {
     if (!str_val) return make_option_none();
     KilnStr* s = (KilnStr*)str_val;
@@ -747,3 +635,5 @@ int64_t __kiln_str_parse_float(int64_t str_val) {
     free(buf);
     return ok ? make_option_some_f64(v) : make_option_none();
 }
+
+} // extern "C"

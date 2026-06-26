@@ -132,6 +132,12 @@ impl StringMethods for str {
     def is_empty() -> bool { return __kiln_str_byte_len(self) == 0 }
     def char_at(i: int) -> str { return __kiln_str_char_at(self, i) }
     def byte_at(i: int) -> int { return __kiln_str_byte_at(self, i) }
+    def slice(start: int, end: int) -> str { return __kiln_str_slice(self, start, end) }
+    def starts_with(prefix: str) -> bool { return __kiln_str_starts_with(self, prefix) }
+    def ends_with(suffix: str) -> bool { return __kiln_str_ends_with(self, suffix) }
+    def contains(needle: str) -> bool { return __kiln_str_contains(self, needle) }
+    def find(needle: str) -> int { return __kiln_str_find(self, needle) }
+    def find_from(needle: str, start: int) -> int { return __kiln_str_find_from(self, needle, start) }
 }
 
 # ---- Conformance: Vec[T] ----------------------------------------------------

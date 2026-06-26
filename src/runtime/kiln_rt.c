@@ -356,3 +356,77 @@ int64_t __kiln_str_byte_at(int64_t str_val, int64_t idx) {
     if (idx < 0 || idx >= s->len) return 0;
     return (int64_t)(unsigned char)s->ptr[idx];
 }
+
+/* slice(start_cp, end_cp) -> str: byte slice by codepoint indices */
+int64_t __kiln_str_slice(int64_t str_val, int64_t start_cp, int64_t end_cp) {
+    if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    const unsigned char* p = (const unsigned char*)s->ptr;
+    int64_t byte_start = -1, byte_end = -1, count = 0, i = 0;
+    while (i <= s->len) {
+        if (count == start_cp) byte_start = i;
+        if (count == end_cp)   { byte_end = i; break; }
+        if (i == s->len) break;
+        i += utf8_cp_len(p[i]);
+        count++;
+    }
+    if (byte_start < 0) byte_start = s->len;
+    if (byte_end < 0)   byte_end   = s->len;
+    int64_t len = byte_end - byte_start;
+    if (len <= 0) return (int64_t)alloc_str_struct("", 0);
+    char* buf = (char*)malloc((size_t)(len + 1));
+    memcpy(buf, p + byte_start, (size_t)len);
+    buf[len] = '\0';
+    return (int64_t)alloc_str_struct(buf, len);
+}
+
+/* starts_with(prefix) -> bool (1/0) */
+int64_t __kiln_str_starts_with(int64_t str_val, int64_t pfx_val) {
+    if (str_val == 0 || pfx_val == 0) return 0;
+    KilnStr* s = (KilnStr*)str_val;
+    KilnStr* p = (KilnStr*)pfx_val;
+    if (p->len == 0) return 1;
+    if (p->len > s->len) return 0;
+    return memcmp(s->ptr, p->ptr, (size_t)p->len) == 0 ? 1 : 0;
+}
+
+/* ends_with(suffix) -> bool (1/0) */
+int64_t __kiln_str_ends_with(int64_t str_val, int64_t sfx_val) {
+    if (str_val == 0 || sfx_val == 0) return 0;
+    KilnStr* s = (KilnStr*)str_val;
+    KilnStr* sfx = (KilnStr*)sfx_val;
+    if (sfx->len == 0) return 1;
+    if (sfx->len > s->len) return 0;
+    return memcmp(s->ptr + s->len - sfx->len, sfx->ptr, (size_t)sfx->len) == 0 ? 1 : 0;
+}
+
+/* find_from(needle, start_byte) -> codepoint index or -1 */
+int64_t __kiln_str_find_from(int64_t str_val, int64_t needle_val, int64_t start_cp) {
+    if (str_val == 0 || needle_val == 0) return -1;
+    KilnStr* s = (KilnStr*)str_val;
+    KilnStr* n = (KilnStr*)needle_val;
+    if (n->len == 0) return start_cp;
+    const unsigned char* sp = (const unsigned char*)s->ptr;
+    int64_t count = 0, i = 0;
+    /* advance to start_cp */
+    while (i < s->len && count < start_cp) {
+        i += utf8_cp_len(sp[i]);
+        count++;
+    }
+    while (i + n->len <= s->len) {
+        if (memcmp(sp + i, n->ptr, (size_t)n->len) == 0) return count;
+        i += utf8_cp_len(sp[i]);
+        count++;
+    }
+    return -1;
+}
+
+/* find(needle) -> codepoint index or -1 */
+int64_t __kiln_str_find(int64_t str_val, int64_t needle_val) {
+    return __kiln_str_find_from(str_val, needle_val, 0);
+}
+
+/* contains(needle) -> bool */
+int64_t __kiln_str_contains(int64_t str_val, int64_t needle_val) {
+    return __kiln_str_find(str_val, needle_val) >= 0 ? 1 : 0;
+}

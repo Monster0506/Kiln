@@ -292,6 +292,12 @@ interface StringMethods {
     def is_empty() -> bool {}
     def char_at(i: int) -> str {}
     def byte_at(i: int) -> int {}
+    def slice(start: int, end: int) -> str {}
+    def starts_with(prefix: str) -> bool {}
+    def ends_with(suffix: str) -> bool {}
+    def contains(needle: str) -> bool {}
+    def find(needle: str) -> int {}
+    def find_from(needle: str, start: int) -> int {}
 }
 
 export {

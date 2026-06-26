@@ -64,6 +64,62 @@ pub fn declare_str_runtime(module: &mut ObjectModule) -> HashMap<String, FuncId>
     };
     ids.insert("__kiln_str_byte_at".into(), id);
 
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_slice", sig)
+    };
+    ids.insert("__kiln_str_slice".into(), id);
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_starts_with", sig)
+    };
+    ids.insert("__kiln_str_starts_with".into(), id);
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_ends_with", sig)
+    };
+    ids.insert("__kiln_str_ends_with".into(), id);
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_contains", sig)
+    };
+    ids.insert("__kiln_str_contains".into(), id);
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_find", sig)
+    };
+    ids.insert("__kiln_str_find".into(), id);
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_find_from", sig)
+    };
+    ids.insert("__kiln_str_find_from".into(), id);
+
     ids
 }
 

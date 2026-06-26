@@ -150,8 +150,9 @@ fn kiln_run(src: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static CTR: AtomicU64 = AtomicU64::new(0);
     let id = CTR.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
     let tmp_dir = std::env::temp_dir();
-    let src_path = tmp_dir.join(format!("kiln_run_test_{id}.kn"));
+    let src_path = tmp_dir.join(format!("kiln_run_test_{pid}_{id}.kn"));
     std::fs::write(&src_path, src).expect("write src");
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_kiln"))
         .args(["run", src_path.to_str().unwrap()])

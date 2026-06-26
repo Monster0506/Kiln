@@ -32,7 +32,7 @@ pub fn link_executable(
     let tmp_dir = obj_path.parent().unwrap_or(Path::new("."));
 
     let runtime_path: Option<std::path::PathBuf> = if !RUNTIME_OBJ.is_empty() {
-        let rt = tmp_dir.join("kiln_rt.o");
+        let rt = tmp_dir.join(format!("kiln_rt_{}.o", std::process::id()));
         std::fs::write(&rt, RUNTIME_OBJ).map_err(|e| format!("write runtime .o: {e}"))?;
         Some(rt)
     } else {
@@ -128,7 +128,12 @@ pub fn link_executable(
         };
 
         match status {
-            Ok(s) if s.success() => return Ok(()),
+            Ok(s) if s.success() => {
+                if let Some(ref rt) = runtime_path {
+                    let _ = std::fs::remove_file(rt);
+                }
+                return Ok(());
+            }
             Ok(s) => {
                 any_found = true;
                 let mut msg = format!("'{}' exited with {}", spec.name, s);

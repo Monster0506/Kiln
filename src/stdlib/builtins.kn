@@ -38,6 +38,18 @@ def __kiln_bool_to_str(b: bool) -> str
 def __kiln_str_concat(a: str, b: str) -> str
 
 @builtin
+def __kiln_str_byte_len(s: str) -> int
+
+@builtin
+def __kiln_str_codepoint_len(s: str) -> int
+
+@builtin
+def __kiln_str_char_at(s: str, i: int) -> str
+
+@builtin
+def __kiln_str_byte_at(s: str, i: int) -> int
+
+@builtin
 def len(x: str) -> int
 
 @builtin
@@ -81,6 +93,8 @@ export {
     __kiln_print, __kiln_println,
     __kiln_int_to_str, __kiln_float_to_str, __kiln_bool_to_str,
     __kiln_str_concat,
+    __kiln_str_byte_len, __kiln_str_codepoint_len,
+    __kiln_str_char_at, __kiln_str_byte_at,
     len, panic, assert, clock_ms,
     Exception,
     Mutex,

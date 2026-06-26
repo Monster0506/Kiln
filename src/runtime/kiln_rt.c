@@ -306,3 +306,53 @@ int64_t __kiln_spawn(int64_t fn_ptr, int64_t env_ptr) {
     typedef int64_t (*FnPtr)(int64_t);
     return ((FnPtr)fn_ptr)(env_ptr);
 }
+
+/* ---- String methods -------------------------------------------------------- */
+
+static int utf8_cp_len(unsigned char b) {
+    if ((b & 0x80) == 0) return 1;
+    if ((b & 0xE0) == 0xC0) return 2;
+    if ((b & 0xF0) == 0xE0) return 3;
+    if ((b & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+int64_t __kiln_str_byte_len(int64_t str_val) {
+    if (str_val == 0) return 0;
+    return ((KilnStr*)str_val)->len;
+}
+
+int64_t __kiln_str_codepoint_len(int64_t str_val) {
+    if (str_val == 0) return 0;
+    KilnStr* s = (KilnStr*)str_val;
+    const unsigned char* p = (const unsigned char*)s->ptr;
+    int64_t count = 0, i = 0;
+    while (i < s->len) { i += utf8_cp_len(p[i]); count++; }
+    return count;
+}
+
+int64_t __kiln_str_char_at(int64_t str_val, int64_t idx) {
+    if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    const unsigned char* p = (const unsigned char*)s->ptr;
+    int64_t count = 0, i = 0;
+    while (i < s->len) {
+        int cp_len = utf8_cp_len(p[i]);
+        if (count == idx) {
+            char* buf = (char*)malloc((size_t)(cp_len + 1));
+            memcpy(buf, p + i, (size_t)cp_len);
+            buf[cp_len] = '\0';
+            return (int64_t)alloc_str_struct(buf, (int64_t)cp_len);
+        }
+        i += cp_len;
+        count++;
+    }
+    return (int64_t)alloc_str_struct("", 0);
+}
+
+int64_t __kiln_str_byte_at(int64_t str_val, int64_t idx) {
+    if (str_val == 0) return 0;
+    KilnStr* s = (KilnStr*)str_val;
+    if (idx < 0 || idx >= s->len) return 0;
+    return (int64_t)(unsigned char)s->ptr[idx];
+}

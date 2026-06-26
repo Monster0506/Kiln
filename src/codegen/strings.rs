@@ -40,7 +40,29 @@ pub fn declare_str_runtime(module: &mut ObjectModule) -> HashMap<String, FuncId>
     let id = declare_import_i64_i64(module, "__kiln_bool_to_str");
     ids.insert("__kiln_bool_to_str".into(), id);
 
-    // __kiln_ordering_to_str removed - Ordering uses auto-generated Display like all enums
+    let id = declare_import_i64_i64(module, "__kiln_str_byte_len");
+    ids.insert("__kiln_str_byte_len".into(), id);
+
+    let id = declare_import_i64_i64(module, "__kiln_str_codepoint_len");
+    ids.insert("__kiln_str_codepoint_len".into(), id);
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_char_at", sig)
+    };
+    ids.insert("__kiln_str_char_at".into(), id);
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_byte_at", sig)
+    };
+    ids.insert("__kiln_str_byte_at".into(), id);
 
     ids
 }

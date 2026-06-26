@@ -126,6 +126,14 @@ impl Monoid for str {}
 impl IndexableWith[int] for str { hook [](index: int) -> str {} }
 impl Indexable for str {}
 
+impl StringMethods for str {
+    def length() -> int { return __kiln_str_codepoint_len(self) }
+    def byte_length() -> int { return __kiln_str_byte_len(self) }
+    def is_empty() -> bool { return __kiln_str_byte_len(self) == 0 }
+    def char_at(i: int) -> str { return __kiln_str_char_at(self, i) }
+    def byte_at(i: int) -> int { return __kiln_str_byte_at(self, i) }
+}
+
 # ---- Conformance: Vec[T] ----------------------------------------------------
 
 impl[T: Clone] Clone for Vec[T] { hook clone() -> Vec[T] {} }

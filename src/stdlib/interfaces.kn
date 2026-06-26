@@ -286,6 +286,14 @@ interface VecMethods {
     def is_empty() -> bool {}
 }
 
+interface StringMethods {
+    def length() -> int {}
+    def byte_length() -> int {}
+    def is_empty() -> bool {}
+    def char_at(i: int) -> str {}
+    def byte_at(i: int) -> int {}
+}
+
 export {
     Try, Option, None, Some, Ordering,
     Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd,
@@ -301,5 +309,6 @@ export {
     Zero, One, Abs, Signum, Bitwise,
     Semigroup, Monoid, Group, Ring, Field, Numeric, Integral, Fractional,
     Callable, Iterator, Iterable, Foldable, Collection, Sequence,
-    Predicate, Mapper, Into, From, Indexable, VecMethods
+    Predicate, Mapper, Into, From, Indexable, VecMethods,
+    StringMethods
 }

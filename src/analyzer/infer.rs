@@ -888,6 +888,62 @@ fn infer_call_field(
             );
         }
 
+        // For multi-arg generic types (e.g. Map[K,V]) unify method param types
+        // against actual arg types to concretize the return type. This handles
+        // calls like m.get_or(key, default) where V appears in both a param and
+        // the return type but is not recoverable from the single-arg substitute_t path.
+        if elem_ty.is_none() {
+            if let Some(method) = registry.find_method(tname, field) {
+                let method = method.clone();
+                let has_param = |ty: &Ty| -> bool {
+                    fn go(ty: &Ty) -> bool {
+                        match ty {
+                            Ty::GenericParam(_) => true,
+                            Ty::Named(_, _, args) => args.iter().any(go),
+                            _ => false,
+                        }
+                    }
+                    go(ty)
+                };
+                if has_param(&method.ret) && !typed_args.is_empty() {
+                    let mut unif: std::collections::HashMap<String, Ty> =
+                        std::collections::HashMap::new();
+                    for ((_, pt), arg) in method.params.iter().zip(typed_args.iter()) {
+                        fn unify(
+                            pat: &Ty,
+                            con: &Ty,
+                            s: &mut std::collections::HashMap<String, Ty>,
+                        ) {
+                            match (pat, con) {
+                                (Ty::GenericParam(n), _) => {
+                                    s.entry(n.clone()).or_insert_with(|| con.clone());
+                                }
+                                (Ty::Named(_, pn, pa), Ty::Named(_, cn, ca)) if pn == cn => {
+                                    for (p, c) in pa.iter().zip(ca.iter()) {
+                                        unify(p, c, s);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        unify(pt, &arg.ty, &mut unif);
+                    }
+                    let concrete_ret = subst_generic_ty(&method.ret, &unif);
+                    if !has_param(&concrete_ret) {
+                        return mk(
+                            TypedExprKind::MethodCall {
+                                object: Box::new(to),
+                                method_fn: qfn,
+                                args: typed_args,
+                            },
+                            concrete_ret,
+                            span,
+                        );
+                    }
+                }
+            }
+        }
+
         let r = registry
             .find_method(tname, field)
             .map(|m| m.ret.clone())
@@ -1419,6 +1475,7 @@ fn lower_stmt_shallow(
             let declared = resolve_type_expr(ty, env, errors);
             let typed_val = infer_typed_expr(value, env, registry, errors);
             let typed_val = specialize_prim_ref(typed_val, &declared);
+            let typed_val = coerce_generic_to_declared(typed_val, &declared);
             TypedStmt::VarDecl {
                 name: name.clone(),
                 ty: declared,
@@ -1798,6 +1855,34 @@ pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
 
 fn mk(kind: TypedExprKind, ty: Ty, span: Span) -> TypedExpr {
     TypedExpr { kind, ty, span }
+}
+
+/// Propagate a fully-concrete declared type onto an expr whose type still has
+/// GenericParam args (e.g. `d: Deque[int] = Deque.new()` where `Deque.new()`
+/// returns `Deque[GenericParam("T")]`).
+pub fn coerce_generic_to_declared(expr: TypedExpr, declared: &Ty) -> TypedExpr {
+    fn has_param(ty: &Ty) -> bool {
+        match ty {
+            Ty::GenericParam(_) => true,
+            Ty::Named(_, _, args) => args.iter().any(has_param),
+            _ => false,
+        }
+    }
+    if let (Ty::Named(_, decl_name, decl_args), Ty::Named(_, expr_name, expr_args)) =
+        (declared, &expr.ty)
+    {
+        if decl_name == expr_name
+            && decl_args.len() == expr_args.len()
+            && !decl_args.iter().any(has_param)
+            && expr_args.iter().any(has_param)
+        {
+            return TypedExpr {
+                ty: declared.clone(),
+                ..expr
+            };
+        }
+    }
+    expr
 }
 
 /// If `expr` is an unspecialized PrimTypeRef and `expected` is a matching

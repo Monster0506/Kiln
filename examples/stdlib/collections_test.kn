@@ -1,0 +1,252 @@
+# Collections stdlib tests: Map[K,V], Set[T], Deque[T], Heap[T]
+
+import collections { Map, Set, Deque, Heap }
+
+@test
+def test_sized_str() -> void {
+    s: str = 'hello'
+    assert(len(s) == 5)
+    assert(s.len() == 5)
+}
+
+@test
+def test_map_basic() -> void {
+    m: Map[str, int] = Map.new()
+    m.set('a', 1)
+    m.set('b', 2)
+    m.set('c', 3)
+    assert(m.len() == 3)
+}
+
+@test
+def test_map_get() -> void {
+    m: Map[str, int] = Map.new()
+    m.set('x', 42)
+    result: Option[int] = m.get('x')
+    match result {
+        Some { value: v } => assert(v == 42),
+        None => panic('expected Some')
+    }
+}
+
+@test
+def test_map_get_missing() -> void {
+    m: Map[str, int] = Map.new()
+    result: Option[int] = m.get('missing')
+    match result {
+        Some { value: _ } => panic('expected None'),
+        None => assert(true)
+    }
+}
+
+@test
+def test_map_overwrite() -> void {
+    m: Map[str, int] = Map.new()
+    m.set('k', 1)
+    m.set('k', 99)
+    assert(m.len() == 1)
+    result: Option[int] = m.get('k')
+    match result {
+        Some { value: v } => assert(v == 99),
+        None => panic('expected Some')
+    }
+}
+
+@test
+def test_map_contains() -> void {
+    m: Map[str, int] = Map.new()
+    m.set('yes', 1)
+    assert(m.contains('yes'))
+    assert(m.contains('no') == false)
+}
+
+@test
+def test_map_remove() -> void {
+    m: Map[str, int] = Map.new()
+    m.set('a', 1)
+    m.set('b', 2)
+    m.remove('a')
+    assert(m.len() == 1)
+    assert(m.contains('a') == false)
+    assert(m.contains('b'))
+}
+
+@test
+def test_map_insertion_order() -> void {
+    m: Map[str, int] = Map.new()
+    m.set('first', 1)
+    m.set('second', 2)
+    m.set('third', 3)
+    keys: Vec[str] = m.keys()
+    assert(keys.get(0) == 'first')
+    assert(keys.get(1) == 'second')
+    assert(keys.get(2) == 'third')
+}
+
+@test
+def test_map_is_empty() -> void {
+    m: Map[str, int] = Map.new()
+    assert(m.is_empty())
+    m.set('k', 1)
+    assert(m.is_empty() == false)
+}
+
+@test
+def test_map_get_or() -> void {
+    m: Map[str, int] = Map.new()
+    m.set('k', 7)
+    assert(m.get_or('k', 0) == 7)
+    assert(m.get_or('missing', 99) == 99)
+}
+
+@test
+def test_map_int_keys() -> void {
+    m: Map[int, str] = Map.new()
+    m.set(1, 'one')
+    m.set(2, 'two')
+    assert(m.len() == 2)
+    r: Option[str] = m.get(1)
+    match r {
+        Some { value: v } => assert(v == 'one'),
+        None => panic('expected Some')
+    }
+}
+
+@test
+def test_set_basic() -> void {
+    s: Set[int] = Set.new()
+    s.add(1)
+    s.add(2)
+    s.add(3)
+    assert(s.len() == 3)
+}
+
+@test
+def test_set_no_duplicates() -> void {
+    s: Set[int] = Set.new()
+    s.add(42)
+    s.add(42)
+    assert(s.len() == 1)
+}
+
+@test
+def test_set_contains() -> void {
+    s: Set[int] = Set.new()
+    s.add(10)
+    assert(s.contains(10))
+    assert(s.contains(99) == false)
+}
+
+@test
+def test_set_remove() -> void {
+    s: Set[int] = Set.new()
+    s.add(1)
+    s.add(2)
+    s.remove(1)
+    assert(s.len() == 1)
+    assert(s.contains(1) == false)
+}
+
+@test
+def test_set_insertion_order() -> void {
+    s: Set[str] = Set.new()
+    s.add('a')
+    s.add('b')
+    s.add('c')
+    elems: Vec[str] = s.to_vec()
+    assert(elems.get(0) == 'a')
+    assert(elems.get(1) == 'b')
+    assert(elems.get(2) == 'c')
+}
+
+@test
+def test_deque_basic() -> void {
+    d: Deque[int] = Deque.new()
+    d.push_back(1)
+    d.push_back(2)
+    d.push_front(0)
+    assert(d.len() == 3)
+}
+
+@test
+def test_deque_pop_front() -> void {
+    d: Deque[int] = Deque.new()
+    d.push_back(10)
+    d.push_back(20)
+    r: Option[int] = d.pop_front()
+    match r {
+        Some { value: v } => assert(v == 10),
+        None => panic('expected Some')
+    }
+    assert(d.len() == 1)
+}
+
+@test
+def test_deque_pop_back() -> void {
+    d: Deque[int] = Deque.new()
+    d.push_back(10)
+    d.push_back(20)
+    r: Option[int] = d.pop_back()
+    match r {
+        Some { value: v } => assert(v == 20),
+        None => panic('expected Some')
+    }
+    assert(d.len() == 1)
+}
+
+@test
+def test_deque_peek() -> void {
+    d: Deque[int] = Deque.new()
+    d.push_back(5)
+    d.push_back(6)
+    f: Option[int] = d.peek_front()
+    b: Option[int] = d.peek_back()
+    match f {
+        Some { value: v } => assert(v == 5),
+        None => panic('expected Some')
+    }
+    match b {
+        Some { value: v } => assert(v == 6),
+        None => panic('expected Some')
+    }
+}
+
+@test
+def test_heap_basic() -> void {
+    h: Heap[int] = Heap.new()
+    h.push(3)
+    h.push(1)
+    h.push(2)
+    assert(h.len() == 3)
+}
+
+@test
+def test_heap_min_order() -> void {
+    h: Heap[int] = Heap.new()
+    h.push(5)
+    h.push(1)
+    h.push(3)
+    r1: Option[int] = h.pop()
+    match r1 {
+        Some { value: v } => assert(v == 1),
+        None => panic('expected Some')
+    }
+    r2: Option[int] = h.pop()
+    match r2 {
+        Some { value: v } => assert(v == 3),
+        None => panic('expected Some')
+    }
+}
+
+@test
+def test_heap_peek() -> void {
+    h: Heap[int] = Heap.new()
+    h.push(7)
+    h.push(2)
+    r: Option[int] = h.peek()
+    match r {
+        Some { value: v } => assert(v == 2),
+        None => panic('expected Some')
+    }
+    assert(h.len() == 2)
+}

@@ -20,8 +20,6 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, FuncOrDataId, Linkage, Module};
 use std::collections::{HashMap, HashSet};
 
-
-
 fn hook_qualified_name(type_name: &str, hook: &TypedHookDef) -> String {
     use crate::codegen::names;
     let suffix = match &hook.name {

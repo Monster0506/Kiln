@@ -110,6 +110,10 @@ impl Default for bool { @static hook default() -> bool {} }
 
 # ---- Conformance: str -------------------------------------------------------
 
+impl Sized for str {
+    def len() -> int { return __kiln_str_codepoint_len(self) }
+}
+
 impl Clone for str { hook clone() -> str {} }
 impl Eq for str {}
 impl PartialEq for str { hook ==(other: str) -> bool {} }

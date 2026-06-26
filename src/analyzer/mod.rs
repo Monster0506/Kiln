@@ -594,7 +594,8 @@ fn resolve_one_import(
     let wildcard_import = import.symbols.iter().any(|s| s == "*");
 
     // Filter module items to only those the module exports.
-    // Nameless items (impl blocks) are included when the module uses export { * }.
+    // Impl blocks are keyed by their for_type name, so they pass through
+    // alongside the type they implement.
     let exported_items: Vec<Item> = module_items
         .into_iter()
         .filter(|i| match item_top_name(i) {
@@ -607,28 +608,30 @@ fn resolve_one_import(
         // Bring in all exported items.
         out.extend(exported_items);
     } else {
-        // Selective import: bring in only the requested symbols, error on missing.
+        // Selective import: bring in all items matching each requested symbol.
+        // Using filter (not find) so impl blocks alongside their type are included.
         let module_name = import.path.join(".");
         for sym in &import.symbols {
-            let found = exported_items
+            let found: Vec<Item> = exported_items
                 .iter()
-                .find(|i| item_top_name(i) == Some(sym.as_str()));
-            match found {
-                Some(i) => out.push(i.clone()),
-                None => {
-                    errors.push(AnalysisError::SymbolNotExported {
-                        symbol: sym.clone(),
-                        module: module_name.clone(),
-                        span: import.span,
-                    });
-                }
+                .filter(|i| item_top_name(i) == Some(sym.as_str()))
+                .cloned()
+                .collect();
+            if found.is_empty() {
+                errors.push(AnalysisError::SymbolNotExported {
+                    symbol: sym.clone(),
+                    module: module_name.clone(),
+                    span: import.span,
+                });
+            } else {
+                out.extend(found);
             }
         }
     }
 }
 
-/// Return the top-level name of an item, if it has one (functions, structs, enums, interfaces,
-/// type aliases, globals). Returns None for impl blocks and other nameless items.
+/// Return the top-level name of an item. Impl blocks use their for_type base
+/// name so they travel alongside the type when selectively imported.
 fn item_top_name(item: &Item) -> Option<&str> {
     match item {
         Item::Function(f) => Some(&f.name),
@@ -637,6 +640,13 @@ fn item_top_name(item: &Item) -> Option<&str> {
         Item::Interface(i) => Some(&i.name),
         Item::TypeAlias(t) => Some(&t.name),
         Item::Global(g) => Some(&g.name),
+        Item::ImplBlock(b) => {
+            if let crate::parser::ast::TypeExpr::Named { name, .. } = &b.for_type {
+                Some(name.as_str())
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }

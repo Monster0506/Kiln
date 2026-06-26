@@ -335,6 +335,10 @@ interface IntMath {
     def perm(k: int) -> int {}
 }
 
+interface Sized {
+    def len() -> int {}
+}
+
 interface VecMethods {
     def pop() -> void {}
     def is_empty() -> bool {}
@@ -387,7 +391,7 @@ export {
     Zero, One, Abs, Signum, Bitwise,
     Semigroup, Monoid, Group, Ring, Field, Numeric, Integral, Fractional,
     Callable, Iterator, Iterable, Foldable, Collection, Sequence,
-    Predicate, Mapper, Into, From, Indexable, VecMethods,
+    Predicate, Mapper, Into, From, Indexable, Sized, VecMethods,
     StringMethods,
     FloatMath, IntMath
 }

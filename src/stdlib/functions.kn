@@ -26,4 +26,8 @@ def range(stop: int) -> Vec[int] {
     return range(0, stop, 1)
 }
 
-export { print, println, range }
+def len[T: Sized](x: T) -> int {
+    return x.len()
+}
+
+export { print, println, range, len }

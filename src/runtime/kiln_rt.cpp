@@ -258,6 +258,72 @@ int64_t Vec_remove(int64_t vec_ptr, int64_t index) {
     return val;
 }
 
+// Map: interleaved [key0, val0, key1, val1, ...] stored in a KilnVec.
+int64_t Map_new() {
+    KilnVec* v = (KilnVec*)malloc(sizeof(KilnVec));
+    v->data = NULL; v->len = 0; v->cap = 0;
+    return (int64_t)v;
+}
+int64_t __kiln_map_len(int64_t m)              { return ((KilnVec*)m)->len / 2; }
+int64_t __kiln_map_key_at(int64_t m, int64_t i){ return ((KilnVec*)m)->data[i * 2]; }
+int64_t __kiln_map_val_at(int64_t m, int64_t i){ return ((KilnVec*)m)->data[i * 2 + 1]; }
+void    __kiln_map_set_val(int64_t m, int64_t i, int64_t v) {
+    ((KilnVec*)m)->data[i * 2 + 1] = v;
+}
+void __kiln_map_append(int64_t map_ptr, int64_t key, int64_t val) {
+    KilnVec* v = (KilnVec*)map_ptr;
+    if (v->len + 2 > v->cap) {
+        int64_t nc = v->cap == 0 ? 8 : v->cap * 2;
+        v->data = (int64_t*)realloc(v->data, (size_t)nc * sizeof(int64_t));
+        v->cap = nc;
+    }
+    v->data[v->len++] = key;
+    v->data[v->len++] = val;
+}
+void __kiln_map_remove_at(int64_t map_ptr, int64_t i) {
+    KilnVec* v = (KilnVec*)map_ptr;
+    int64_t pos = i * 2;
+    for (int64_t j = pos; j < v->len - 2; j++) v->data[j] = v->data[j + 2];
+    v->len -= 2;
+}
+void    Map_clear(int64_t m)  { ((KilnVec*)m)->len = 0; }
+int64_t Map_keys(int64_t map_ptr) {
+    KilnVec* m = (KilnVec*)map_ptr;
+    int64_t out = Vec_new();
+    for (int64_t i = 0; i < m->len; i += 2) Vec_add(out, m->data[i]);
+    return out;
+}
+int64_t Map_values(int64_t map_ptr) {
+    KilnVec* m = (KilnVec*)map_ptr;
+    int64_t out = Vec_new();
+    for (int64_t i = 0; i < m->len; i += 2) Vec_add(out, m->data[i + 1]);
+    return out;
+}
+
+// Set: ordered unique elements stored in a KilnVec.
+int64_t Set_new() {
+    KilnVec* v = (KilnVec*)malloc(sizeof(KilnVec));
+    v->data = NULL; v->len = 0; v->cap = 0;
+    return (int64_t)v;
+}
+int64_t __kiln_set_len(int64_t s)              { return ((KilnVec*)s)->len; }
+int64_t __kiln_set_elem_at(int64_t s, int64_t i){ return ((KilnVec*)s)->data[i]; }
+void __kiln_set_append(int64_t set_ptr, int64_t elem) {
+    Vec_add(set_ptr, elem);
+}
+void __kiln_set_remove_at(int64_t set_ptr, int64_t i) {
+    KilnVec* v = (KilnVec*)set_ptr;
+    for (int64_t j = i; j < v->len - 1; j++) v->data[j] = v->data[j + 1];
+    v->len--;
+}
+void    Set_clear(int64_t s) { ((KilnVec*)s)->len = 0; }
+int64_t Set_to_vec(int64_t set_ptr) {
+    KilnVec* s = (KilnVec*)set_ptr;
+    int64_t out = Vec_new();
+    for (int64_t i = 0; i < s->len; i++) Vec_add(out, s->data[i]);
+    return out;
+}
+
 int64_t __kiln_to_str_dispatch(int64_t val) {
     if (val == 0) return (int64_t)alloc_str_struct("null", 4);
     KilnStr* maybe = (KilnStr*)val;

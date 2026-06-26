@@ -1,0 +1,418 @@
+# Kiln stdlib: collections -- Map[K,V], Set[T], Deque[T], Heap[T]
+# Parametric methods use `hook` so the monomorphizer emits concrete specializations.
+
+# ---- Raw C accessors for Map ---------------------------------------------------
+
+@builtin
+def __kiln_map_len(m: Map[K, V]) -> int
+
+@builtin
+def __kiln_map_key_at(m: Map[K, V], i: int) -> K
+
+@builtin
+def __kiln_map_val_at(m: Map[K, V], i: int) -> V
+
+@builtin
+def __kiln_map_set_val(m: Map[K, V], i: int, val: V) -> void
+
+@builtin
+def __kiln_map_append(m: Map[K, V], key: K, val: V) -> void
+
+@builtin
+def __kiln_map_remove_at(m: Map[K, V], i: int) -> void
+
+@builtin
+def Map_clear(m: Map[K, V]) -> void
+
+@builtin
+def Map_keys(m: Map[K, V]) -> Vec[K]
+
+@builtin
+def Map_values(m: Map[K, V]) -> Vec[V]
+
+# ---- Map[K,V] ------------------------------------------------------------------
+
+@builtin
+struct Map[K, V] {
+    def new() -> Map[K, V]
+}
+
+interface MapMethods[K, V] {
+    hook set(key: K, value: V) -> void {}
+    hook get(key: K) -> Option[V] {}
+    hook get_or(key: K, default: V) -> V {}
+    hook contains(key: K) -> bool {}
+    hook remove(key: K) -> void {}
+    hook keys() -> Vec[K] {}
+    hook values() -> Vec[V] {}
+    def len() -> int {}
+    def is_empty() -> bool {}
+    def clear() -> void {}
+}
+
+impl[K: PartialEq, V] MapMethods[K, V] for Map[K, V] {
+    hook set(key: K, value: V) -> void {
+        mut i: int = 0
+        n: int = __kiln_map_len(self)
+        while i < n {
+            k: K = __kiln_map_key_at(self, i)
+            if k == key {
+                __kiln_map_set_val(self, i, value)
+                return
+            }
+            i = i + 1
+        }
+        __kiln_map_append(self, key, value)
+    }
+
+    hook get(key: K) -> Option[V] {
+        mut i: int = 0
+        n: int = __kiln_map_len(self)
+        while i < n {
+            k: K = __kiln_map_key_at(self, i)
+            if k == key {
+                v: V = __kiln_map_val_at(self, i)
+                return Option:Some { value: v }
+            }
+            i = i + 1
+        }
+        return Option:None
+    }
+
+    hook get_or(key: K, default: V) -> V {
+        mut i: int = 0
+        n: int = __kiln_map_len(self)
+        while i < n {
+            k: K = __kiln_map_key_at(self, i)
+            if k == key {
+                return __kiln_map_val_at(self, i)
+            }
+            i = i + 1
+        }
+        return default
+    }
+
+    hook contains(key: K) -> bool {
+        mut i: int = 0
+        n: int = __kiln_map_len(self)
+        while i < n {
+            k: K = __kiln_map_key_at(self, i)
+            if k == key { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    hook remove(key: K) -> void {
+        mut i: int = 0
+        n: int = __kiln_map_len(self)
+        while i < n {
+            k: K = __kiln_map_key_at(self, i)
+            if k == key {
+                __kiln_map_remove_at(self, i)
+                return
+            }
+            i = i + 1
+        }
+    }
+
+    hook keys() -> Vec[K] {
+        return Map_keys(self)
+    }
+
+    hook values() -> Vec[V] {
+        return Map_values(self)
+    }
+
+    def len() -> int {
+        return __kiln_map_len(self)
+    }
+
+    def is_empty() -> bool {
+        return __kiln_map_len(self) == 0
+    }
+
+    def clear() -> void {
+        Map_clear(self)
+    }
+}
+
+# ---- Raw C accessors for Set ---------------------------------------------------
+
+@builtin
+def __kiln_set_len(s: Set[T]) -> int
+
+@builtin
+def __kiln_set_elem_at(s: Set[T], i: int) -> T
+
+@builtin
+def __kiln_set_append(s: Set[T], elem: T) -> void
+
+@builtin
+def __kiln_set_remove_at(s: Set[T], i: int) -> void
+
+@builtin
+def Set_clear(s: Set[T]) -> void
+
+@builtin
+def Set_to_vec(s: Set[T]) -> Vec[T]
+
+# ---- Set[T] --------------------------------------------------------------------
+
+@builtin
+struct Set[T] {
+    def new() -> Set[T]
+}
+
+interface SetMethods[T] {
+    hook add(elem: T) -> void {}
+    hook contains(elem: T) -> bool {}
+    hook remove(elem: T) -> void {}
+    hook to_vec() -> Vec[T] {}
+    def len() -> int {}
+    def is_empty() -> bool {}
+    def clear() -> void {}
+}
+
+impl[T: PartialEq] SetMethods[T] for Set[T] {
+    hook add(elem: T) -> void {
+        mut i: int = 0
+        n: int = __kiln_set_len(self)
+        while i < n {
+            e: T = __kiln_set_elem_at(self, i)
+            if e == elem { return }
+            i = i + 1
+        }
+        __kiln_set_append(self, elem)
+    }
+
+    hook contains(elem: T) -> bool {
+        mut i: int = 0
+        n: int = __kiln_set_len(self)
+        while i < n {
+            e: T = __kiln_set_elem_at(self, i)
+            if e == elem { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    hook remove(elem: T) -> void {
+        mut i: int = 0
+        n: int = __kiln_set_len(self)
+        while i < n {
+            e: T = __kiln_set_elem_at(self, i)
+            if e == elem {
+                __kiln_set_remove_at(self, i)
+                return
+            }
+            i = i + 1
+        }
+    }
+
+    hook to_vec() -> Vec[T] {
+        return Set_to_vec(self)
+    }
+
+    def len() -> int {
+        return __kiln_set_len(self)
+    }
+
+    def is_empty() -> bool {
+        return __kiln_set_len(self) == 0
+    }
+
+    def clear() -> void {
+        Set_clear(self)
+    }
+}
+
+# ---- Deque[T] (two-stack deque) -----------------------------------------------
+# _front stores items in reverse order; _back stores items in forward order.
+
+struct Deque[T] {
+    _front: Vec[T]
+    _back: Vec[T]
+}
+
+interface DequeMethods[T] {
+    @static
+    hook new() -> Deque[T] {}
+    hook push_front(item: T) -> void {}
+    hook push_back(item: T) -> void {}
+    hook pop_front() -> Option[T] {}
+    hook pop_back() -> Option[T] {}
+    hook peek_front() -> Option[T] {}
+    hook peek_back() -> Option[T] {}
+    def len() -> int {}
+    def is_empty() -> bool {}
+}
+
+impl[T] DequeMethods[T] for Deque[T] {
+    @static
+    hook new() -> Deque[T] {
+        return Deque { _front: Vec.new(), _back: Vec.new() }
+    }
+
+    hook push_front(item: T) -> void {
+        self._front.add(item)
+    }
+
+    hook push_back(item: T) -> void {
+        self._back.add(item)
+    }
+
+    hook pop_front() -> Option[T] {
+        if self._front.len() > 0 {
+            v: T = self._front.remove(self._front.len() - 1)
+            return Option:Some { value: v }
+        }
+        if self._back.len() == 0 { return Option:None }
+        v: T = self._back.remove(0)
+        return Option:Some { value: v }
+    }
+
+    hook pop_back() -> Option[T] {
+        if self._back.len() > 0 {
+            v: T = self._back.remove(self._back.len() - 1)
+            return Option:Some { value: v }
+        }
+        if self._front.len() == 0 { return Option:None }
+        v: T = self._front.remove(0)
+        return Option:Some { value: v }
+    }
+
+    hook peek_front() -> Option[T] {
+        if self._front.len() > 0 {
+            v: T = self._front.get(self._front.len() - 1)
+            return Option:Some { value: v }
+        }
+        if self._back.len() == 0 { return Option:None }
+        v: T = self._back.get(0)
+        return Option:Some { value: v }
+    }
+
+    hook peek_back() -> Option[T] {
+        if self._back.len() > 0 {
+            v: T = self._back.get(self._back.len() - 1)
+            return Option:Some { value: v }
+        }
+        if self._front.len() == 0 { return Option:None }
+        v: T = self._front.get(0)
+        return Option:Some { value: v }
+    }
+
+    def len() -> int {
+        return self._front.len() + self._back.len()
+    }
+
+    def is_empty() -> bool {
+        return self._front.len() + self._back.len() == 0
+    }
+}
+
+# ---- Heap[T] (min-heap) -------------------------------------------------------
+
+struct Heap[T] {
+    _data: Vec[T]
+}
+
+interface HeapMethods[T] {
+    @static
+    hook new() -> Heap[T] {}
+    hook push(item: T) -> void {}
+    hook pop() -> Option[T] {}
+    hook peek() -> Option[T] {}
+    def len() -> int {}
+    def is_empty() -> bool {}
+}
+
+impl[T: PartialOrd] HeapMethods[T] for Heap[T] {
+    @static
+    hook new() -> Heap[T] {
+        return Heap { _data: Vec.new() }
+    }
+
+    hook push(item: T) -> void {
+        self._data.add(item)
+        mut i: int = self._data.len() - 1
+        while i > 0 {
+            parent: int = (i - 1) / 2
+            pi: T = self._data.get(parent)
+            ci: T = self._data.get(i)
+            mut swapped: bool = false
+            if ci < pi {
+                self._data.set(i, pi)
+                self._data.set(parent, ci)
+                i = parent
+                swapped = true
+            }
+            if swapped == false { i = 0 }
+        }
+    }
+
+    hook pop() -> Option[T] {
+        n: int = self._data.len()
+        if n == 0 { return Option:None }
+        top: T = self._data.get(0)
+        if n == 1 {
+            self._data.remove(0)
+            return Option:Some { value: top }
+        }
+        last: T = self._data.remove(n - 1)
+        self._data.set(0, last)
+        mut i: int = 0
+        mut done: bool = false
+        while done == false {
+            left: int = i * 2 + 1
+            hl: int = self._data.len()
+            if left >= hl { done = true }
+            if done == false {
+                mut smallest: int = i
+                sl: T = self._data.get(left)
+                si: T = self._data.get(smallest)
+                if sl < si { smallest = left }
+                right: int = i * 2 + 2
+                if right < hl {
+                    sr: T = self._data.get(right)
+                    ss: T = self._data.get(smallest)
+                    if sr < ss { smallest = right }
+                }
+                if smallest == i { done = true }
+                if done == false {
+                    tmp: T = self._data.get(i)
+                    self._data.set(i, self._data.get(smallest))
+                    self._data.set(smallest, tmp)
+                    i = smallest
+                }
+            }
+        }
+        return Option:Some { value: top }
+    }
+
+    hook peek() -> Option[T] {
+        if self._data.len() == 0 { return Option:None }
+        v: T = self._data.get(0)
+        return Option:Some { value: v }
+    }
+
+    def len() -> int {
+        return self._data.len()
+    }
+
+    def is_empty() -> bool {
+        return self._data.len() == 0
+    }
+}
+
+export {
+    Map, MapMethods,
+    Set, SetMethods,
+    Deque, DequeMethods,
+    Heap, HeapMethods,
+    __kiln_map_len, __kiln_map_key_at, __kiln_map_val_at,
+    __kiln_map_set_val, __kiln_map_append, __kiln_map_remove_at,
+    Map_clear, Map_keys, Map_values,
+    __kiln_set_len, __kiln_set_elem_at, __kiln_set_append,
+    __kiln_set_remove_at, Set_clear, Set_to_vec
+}

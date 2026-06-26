@@ -9,6 +9,7 @@ pub const INTERFACES_SRC: &str = include_str!("interfaces.kn");
 pub const IMPLS_SRC: &str = include_str!("impls.kn");
 pub const FUNCTIONS_SRC: &str = include_str!("functions.kn");
 pub const MATH_CONSTANTS_SRC: &str = include_str!("math_constants.kn");
+pub const COLLECTIONS_SRC: &str = include_str!("collections.kn");
 
 fn parse_src(src: &str, label: &str) -> SourceFile {
     let tokens = Lexer::new(src).tokenize().unwrap_or_else(|e| {
@@ -33,6 +34,7 @@ pub fn stdlib_virtual_fs() -> std::collections::HashMap<String, String> {
         ("impls", IMPLS_SRC),
         ("functions", FUNCTIONS_SRC),
         ("math.constants", MATH_CONSTANTS_SRC),
+        ("collections", COLLECTIONS_SRC),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))

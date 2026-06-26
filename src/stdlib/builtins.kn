@@ -122,9 +122,6 @@ def __kiln_str_parse_int(s: str) -> Option[int]
 def __kiln_str_parse_float(s: str) -> Option[float]
 
 @builtin
-def len(x: str) -> int
-
-@builtin
 @impure
 def panic(msg: str) -> void
 
@@ -321,7 +318,7 @@ export {
     __kiln_str_pad_start, __kiln_str_pad_end,
     __kiln_str_remove_prefix, __kiln_str_remove_suffix,
     __kiln_str_parse_int, __kiln_str_parse_float,
-    len, panic, assert, clock_ms,
+    panic, assert, clock_ms,
     Exception,
     Mutex,
     RangeIter, Range,

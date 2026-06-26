@@ -74,3 +74,8 @@ fn stdlib_string_methods() {
 fn stdlib_math() {
     run_kiln_tests("examples/stdlib/math_test.kn");
 }
+
+#[test]
+fn stdlib_collections() {
+    run_kiln_tests("examples/stdlib/collections_test.kn");
+}

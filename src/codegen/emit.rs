@@ -32,7 +32,10 @@ pub fn link_executable(
     let tmp_dir = obj_path.parent().unwrap_or(Path::new("."));
 
     let runtime_path: Option<std::path::PathBuf> = if !RUNTIME_OBJ.is_empty() {
-        let rt = tmp_dir.join(format!("kiln_rt_{}.o", std::process::id()));
+        let stem = obj_path
+            .file_stem()
+            .unwrap_or_else(|| std::ffi::OsStr::new("kiln_rt"));
+        let rt = tmp_dir.join(format!("{}_rt.o", stem.to_string_lossy()));
         std::fs::write(&rt, RUNTIME_OBJ).map_err(|e| format!("write runtime .o: {e}"))?;
         Some(rt)
     } else {

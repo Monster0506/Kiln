@@ -112,6 +112,8 @@ fn check_typed_stmt(
         } => {
             let declared = resolve_type_expr(ty, env, errors);
             let typed_val = infer_typed_expr(value, env, registry, errors);
+            let typed_val =
+                crate::analyzer::infer::coerce_generic_to_declared(typed_val, &declared);
             if let Ty::Interface(_, iface_name) = &declared {
                 // Verify the assigned type implements the interface. Unknown is
                 // allowed to avoid double-reporting after earlier errors.

@@ -144,6 +144,12 @@ impl StringMethods for str {
     def trim() -> str { return __kiln_str_trim(self) }
     def trim_start() -> str { return __kiln_str_trim_start(self) }
     def trim_end() -> str { return __kiln_str_trim_end(self) }
+    def replace(from: str, to: str) -> str { return __kiln_str_replace(self, from, to) }
+    def repeat(n: int) -> str { return __kiln_str_repeat(self, n) }
+    def split(sep: str) -> Vec[str] { return __kiln_str_split(self, sep) }
+    def split_whitespace() -> Vec[str] { return __kiln_str_split_whitespace(self) }
+    def chars() -> Vec[str] { return __kiln_str_chars(self) }
+    def bytes() -> Vec[int] { return __kiln_str_bytes_vec(self) }
 }
 
 # ---- Conformance: Vec[T] ----------------------------------------------------

@@ -127,10 +127,41 @@ pub fn declare_str_runtime(module: &mut ObjectModule) -> HashMap<String, FuncId>
         "__kiln_str_trim",
         "__kiln_str_trim_start",
         "__kiln_str_trim_end",
+        "__kiln_str_split_whitespace",
+        "__kiln_str_chars",
+        "__kiln_str_bytes_vec",
     ] {
         let id = declare_import_i64_i64(module, name);
         ids.insert((*name).into(), id);
     }
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_repeat", sig)
+    };
+    ids.insert("__kiln_str_repeat".into(), id);
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_replace", sig)
+    };
+    ids.insert("__kiln_str_replace".into(), id);
+
+    let id = {
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        import_fn(module, "__kiln_str_split", sig)
+    };
+    ids.insert("__kiln_str_split".into(), id);
 
     ids
 }

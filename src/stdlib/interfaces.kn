@@ -304,6 +304,12 @@ interface StringMethods {
     def trim() -> str {}
     def trim_start() -> str {}
     def trim_end() -> str {}
+    def replace(from: str, to: str) -> str {}
+    def repeat(n: int) -> str {}
+    def split(sep: str) -> Vec[str] {}
+    def split_whitespace() -> Vec[str] {}
+    def chars() -> Vec[str] {}
+    def bytes() -> Vec[int] {}
 }
 
 export {

@@ -86,6 +86,24 @@ def __kiln_str_trim_start(s: str) -> str
 def __kiln_str_trim_end(s: str) -> str
 
 @builtin
+def __kiln_str_replace(s: str, from: str, to: str) -> str
+
+@builtin
+def __kiln_str_repeat(s: str, n: int) -> str
+
+@builtin
+def __kiln_str_split(s: str, sep: str) -> Vec[str]
+
+@builtin
+def __kiln_str_split_whitespace(s: str) -> Vec[str]
+
+@builtin
+def __kiln_str_chars(s: str) -> Vec[str]
+
+@builtin
+def __kiln_str_bytes_vec(s: str) -> Vec[int]
+
+@builtin
 def len(x: str) -> int
 
 @builtin
@@ -135,6 +153,9 @@ export {
     __kiln_str_contains, __kiln_str_find, __kiln_str_find_from,
     __kiln_str_to_upper, __kiln_str_to_lower, __kiln_str_reverse,
     __kiln_str_trim, __kiln_str_trim_start, __kiln_str_trim_end,
+    __kiln_str_replace, __kiln_str_repeat,
+    __kiln_str_split, __kiln_str_split_whitespace,
+    __kiln_str_chars, __kiln_str_bytes_vec,
     len, panic, assert, clock_ms,
     Exception,
     Mutex,

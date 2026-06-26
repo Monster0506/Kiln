@@ -508,3 +508,124 @@ int64_t __kiln_str_trim_end(int64_t str_val) {
 int64_t __kiln_str_trim(int64_t str_val) {
     return __kiln_str_trim_end(__kiln_str_trim_start(str_val));
 }
+
+/* replace(from, to) -> str (replaces first occurrence) */
+int64_t __kiln_str_replace(int64_t str_val, int64_t from_val, int64_t to_val) {
+    if (str_val == 0 || from_val == 0) return str_val;
+    KilnStr* s = (KilnStr*)str_val;
+    KilnStr* f = (KilnStr*)from_val;
+    KilnStr* t = (to_val != 0) ? (KilnStr*)to_val : NULL;
+    const char* tp = t ? t->ptr : "";
+    int64_t tlen = t ? t->len : 0;
+    if (f->len == 0) return str_val;
+    /* find first occurrence */
+    const char* pos = NULL;
+    for (int64_t i = 0; i <= s->len - f->len; i++) {
+        if (memcmp(s->ptr + i, f->ptr, (size_t)f->len) == 0) { pos = s->ptr + i; break; }
+    }
+    if (!pos) return str_val;
+    int64_t before = pos - s->ptr;
+    int64_t after_start = before + f->len;
+    int64_t after = s->len - after_start;
+    int64_t new_len = before + tlen + after;
+    char* buf = (char*)malloc((size_t)(new_len + 1));
+    memcpy(buf, s->ptr, (size_t)before);
+    memcpy(buf + before, tp, (size_t)tlen);
+    memcpy(buf + before + tlen, s->ptr + after_start, (size_t)after);
+    buf[new_len] = '\0';
+    return (int64_t)alloc_str_struct(buf, new_len);
+}
+
+/* repeat(n) -> str */
+int64_t __kiln_str_repeat(int64_t str_val, int64_t n) {
+    if (str_val == 0 || n <= 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    int64_t new_len = s->len * n;
+    char* buf = (char*)malloc((size_t)(new_len + 1));
+    for (int64_t i = 0; i < n; i++) memcpy(buf + i * s->len, s->ptr, (size_t)s->len);
+    buf[new_len] = '\0';
+    return (int64_t)alloc_str_struct(buf, new_len);
+}
+
+/* split(sep) -> Vec[str] */
+int64_t __kiln_str_split(int64_t str_val, int64_t sep_val) {
+    int64_t vec = Vec_new();
+    if (str_val == 0) return vec;
+    KilnStr* s = (KilnStr*)str_val;
+    KilnStr* sep = (KilnStr*)sep_val;
+    if (!sep || sep->len == 0) {
+        Vec_add(vec, str_val);
+        return vec;
+    }
+    int64_t start = 0;
+    for (int64_t i = 0; i <= s->len - sep->len; ) {
+        if (memcmp(s->ptr + i, sep->ptr, (size_t)sep->len) == 0) {
+            int64_t part_len = i - start;
+            char* buf = (char*)malloc((size_t)(part_len + 1));
+            memcpy(buf, s->ptr + start, (size_t)part_len);
+            buf[part_len] = '\0';
+            Vec_add(vec, (int64_t)alloc_str_struct(buf, part_len));
+            i += sep->len;
+            start = i;
+        } else {
+            i++;
+        }
+    }
+    /* last segment */
+    int64_t last_len = s->len - start;
+    char* buf = (char*)malloc((size_t)(last_len + 1));
+    memcpy(buf, s->ptr + start, (size_t)last_len);
+    buf[last_len] = '\0';
+    Vec_add(vec, (int64_t)alloc_str_struct(buf, last_len));
+    return vec;
+}
+
+/* split_whitespace() -> Vec[str] */
+int64_t __kiln_str_split_whitespace(int64_t str_val) {
+    int64_t vec = Vec_new();
+    if (str_val == 0) return vec;
+    KilnStr* s = (KilnStr*)str_val;
+    const unsigned char* p = (const unsigned char*)s->ptr;
+    int64_t i = 0;
+    while (i < s->len) {
+        while (i < s->len && is_ws(p[i])) i++;
+        if (i >= s->len) break;
+        int64_t start = i;
+        while (i < s->len && !is_ws(p[i])) i++;
+        int64_t part_len = i - start;
+        char* buf = (char*)malloc((size_t)(part_len + 1));
+        memcpy(buf, p + start, (size_t)part_len);
+        buf[part_len] = '\0';
+        Vec_add(vec, (int64_t)alloc_str_struct(buf, part_len));
+    }
+    return vec;
+}
+
+/* chars() -> Vec[str]: one str per codepoint */
+int64_t __kiln_str_chars(int64_t str_val) {
+    int64_t vec = Vec_new();
+    if (str_val == 0) return vec;
+    KilnStr* s = (KilnStr*)str_val;
+    const unsigned char* p = (const unsigned char*)s->ptr;
+    int64_t i = 0;
+    while (i < s->len) {
+        int cplen = utf8_cp_len(p[i]);
+        char* buf = (char*)malloc((size_t)(cplen + 1));
+        memcpy(buf, p + i, (size_t)cplen);
+        buf[cplen] = '\0';
+        Vec_add(vec, (int64_t)alloc_str_struct(buf, (int64_t)cplen));
+        i += cplen;
+    }
+    return vec;
+}
+
+/* bytes() -> Vec[int] */
+int64_t __kiln_str_bytes_vec(int64_t str_val) {
+    int64_t vec = Vec_new();
+    if (str_val == 0) return vec;
+    KilnStr* s = (KilnStr*)str_val;
+    for (int64_t i = 0; i < s->len; i++) {
+        Vec_add(vec, (int64_t)(unsigned char)s->ptr[i]);
+    }
+    return vec;
+}

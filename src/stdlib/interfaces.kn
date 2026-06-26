@@ -281,6 +281,60 @@ interface From[T] {
 
 interface Indexable: IndexableWith[int] {}
 
+interface FloatMath {
+    def floor() -> float {}
+    def ceil() -> float {}
+    def round() -> float {}
+    def trunc() -> float {}
+    def fract() -> float {}
+    def sqrt() -> float {}
+    def cbrt() -> float {}
+    def pow(exp: float) -> float {}
+    def powi(exp: int) -> float {}
+    def hypot(other: float) -> float {}
+    def exp() -> float {}
+    def exp2() -> float {}
+    def ln() -> float {}
+    def log2() -> float {}
+    def log10() -> float {}
+    def log(base: float) -> float {}
+    def sin() -> float {}
+    def cos() -> float {}
+    def tan() -> float {}
+    def asin() -> float {}
+    def acos() -> float {}
+    def atan() -> float {}
+    def atan2(x: float) -> float {}
+    def sinh() -> float {}
+    def cosh() -> float {}
+    def tanh() -> float {}
+    def asinh() -> float {}
+    def acosh() -> float {}
+    def atanh() -> float {}
+    def to_degrees() -> float {}
+    def to_radians() -> float {}
+    def fabs() -> float {}
+    def fmin(other: float) -> float {}
+    def fmax(other: float) -> float {}
+    def fclamp(lo: float, hi: float) -> float {}
+    def is_nan() -> bool {}
+    def is_infinite() -> bool {}
+    def is_finite() -> bool {}
+    def isclose(other: float, rel_tol: float, abs_tol: float) -> bool {}
+}
+
+interface IntMath {
+    def ipow(exp: int) -> int {}
+    def gcd(other: int) -> int {}
+    def lcm(other: int) -> int {}
+    def imin(other: int) -> int {}
+    def imax(other: int) -> int {}
+    def iclamp(lo: int, hi: int) -> int {}
+    def factorial() -> int {}
+    def comb(k: int) -> int {}
+    def perm(k: int) -> int {}
+}
+
 interface VecMethods {
     def pop() -> void {}
     def is_empty() -> bool {}
@@ -334,5 +388,6 @@ export {
     Semigroup, Monoid, Group, Ring, Field, Numeric, Integral, Fractional,
     Callable, Iterator, Iterable, Foldable, Collection, Sequence,
     Predicate, Mapper, Into, From, Indexable, VecMethods,
-    StringMethods
+    StringMethods,
+    FloatMath, IntMath
 }

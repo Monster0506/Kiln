@@ -10,8 +10,8 @@ use std::path::PathBuf;
 
 fn run_kiln_tests(path: &str) {
     let file = PathBuf::from(path);
-    let src = std::fs::read_to_string(&file)
-        .unwrap_or_else(|e| panic!("failed to read {path}: {e}"));
+    let src =
+        std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("failed to read {path}: {e}"));
 
     let tokens = Lexer::new(&src)
         .tokenize()
@@ -25,14 +25,19 @@ fn run_kiln_tests(path: &str) {
     run_source_processors(&mut ast, &registry);
     let mut proc_errors = vec![];
     run_user_processors(&mut ast, &mut proc_errors);
-    assert!(proc_errors.is_empty(), "processor errors in {path}: {proc_errors:?}");
+    assert!(
+        proc_errors.is_empty(),
+        "processor errors in {path}: {proc_errors:?}"
+    );
 
     inject_harness(&mut ast);
 
-    let base = file.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    let (mut typed, type_registry, warns) =
-        analyze_with_base_and_registry(&ast, &base)
-            .unwrap_or_else(|errs| panic!("analyze errors in {path}: {errs:?}"));
+    let base = file
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let (mut typed, type_registry, warns) = analyze_with_base_and_registry(&ast, &base)
+        .unwrap_or_else(|errs| panic!("analyze errors in {path}: {errs:?}"));
     assert!(warns.is_empty(), "analysis warnings in {path}: {warns:?}");
 
     run_processors(&ast, &mut typed, &registry);
@@ -42,8 +47,7 @@ fn run_kiln_tests(path: &str) {
     compile(&typed, &mut cgx, false, 3, &type_registry)
         .unwrap_or_else(|e| panic!("codegen error in {path}: {e}"));
 
-    let obj_bytes = emit::emit_object(cgx)
-        .unwrap_or_else(|e| panic!("emit error in {path}: {e}"));
+    let obj_bytes = emit::emit_object(cgx).unwrap_or_else(|e| panic!("emit error in {path}: {e}"));
 
     let tmp = std::env::temp_dir();
     let obj_path = tmp.join(format!("kiln_test_{stem}.o"));
@@ -64,4 +68,9 @@ fn run_kiln_tests(path: &str) {
 #[test]
 fn stdlib_string_methods() {
     run_kiln_tests("examples/stdlib/string_methods.kn");
+}
+
+#[test]
+fn stdlib_math() {
+    run_kiln_tests("examples/stdlib/math_test.kn");
 }

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <errno.h>
+#include <math.h>
 
 typedef struct { const char* ptr; int64_t len; } KilnStr;
 typedef struct { int64_t* data; int64_t len; int64_t cap; } KilnVec;
@@ -634,6 +635,101 @@ int64_t __kiln_str_parse_float(int64_t str_val) {
     int ok = (errno == 0 && end != buf && *end == '\0');
     free(buf);
     return ok ? make_option_some_f64(v) : make_option_none();
+}
+
+
+double __kiln_math_floor(double x)   { return floor(x); }
+double __kiln_math_ceil(double x)    { return ceil(x); }
+double __kiln_math_round(double x)   { return round(x); }
+double __kiln_math_trunc(double x)   { return trunc(x); }
+double __kiln_math_fract(double x)   { return x - trunc(x); }
+double __kiln_math_sqrt(double x)    { return sqrt(x); }
+double __kiln_math_cbrt(double x)    { return cbrt(x); }
+double __kiln_math_pow(double x, double y)  { return pow(x, y); }
+double __kiln_math_powi(double x, int64_t n) {
+    double r = 1.0;
+    if (n < 0) { x = 1.0 / x; n = -n; }
+    while (n > 0) { if (n & 1) r *= x; x *= x; n >>= 1; }
+    return r;
+}
+double __kiln_math_hypot(double x, double y) { return hypot(x, y); }
+double __kiln_math_exp(double x)     { return exp(x); }
+double __kiln_math_exp2(double x)    { return exp2(x); }
+double __kiln_math_ln(double x)      { return log(x); }
+double __kiln_math_log2(double x)    { return log2(x); }
+double __kiln_math_log10(double x)   { return log10(x); }
+double __kiln_math_log(double x, double base) { return log(x) / log(base); }
+double __kiln_math_sin(double x)     { return sin(x); }
+double __kiln_math_cos(double x)     { return cos(x); }
+double __kiln_math_tan(double x)     { return tan(x); }
+double __kiln_math_asin(double x)    { return asin(x); }
+double __kiln_math_acos(double x)    { return acos(x); }
+double __kiln_math_atan(double x)    { return atan(x); }
+double __kiln_math_atan2(double y, double x) { return atan2(y, x); }
+double __kiln_math_sinh(double x)    { return sinh(x); }
+double __kiln_math_cosh(double x)    { return cosh(x); }
+double __kiln_math_tanh(double x)    { return tanh(x); }
+double __kiln_math_asinh(double x)   { return asinh(x); }
+double __kiln_math_acosh(double x)   { return acosh(x); }
+double __kiln_math_atanh(double x)   { return atanh(x); }
+double __kiln_math_to_degrees(double x) { return x * (180.0 / 3.141592653589793); }
+double __kiln_math_to_radians(double x) { return x * (3.141592653589793 / 180.0); }
+double __kiln_math_fabs(double x)    { return fabs(x); }
+double __kiln_math_fmin(double x, double y) { return x < y ? x : y; }
+double __kiln_math_fmax(double x, double y) { return x > y ? x : y; }
+double __kiln_math_fclamp(double x, double lo, double hi) {
+    return x < lo ? lo : (x > hi ? hi : x);
+}
+int64_t __kiln_math_is_nan(double x)      { return isnan(x) ? 1 : 0; }
+int64_t __kiln_math_is_infinite(double x) { return isinf(x) ? 1 : 0; }
+int64_t __kiln_math_is_finite(double x)   { return isfinite(x) ? 1 : 0; }
+int64_t __kiln_math_isclose(double a, double b, double rel_tol, double abs_tol) {
+    double diff = fabs(a - b);
+    double scale = fabs(a) > fabs(b) ? fabs(a) : fabs(b);
+    double tol = rel_tol * scale;
+    if (abs_tol > tol) tol = abs_tol;
+    return diff <= tol ? 1 : 0;
+}
+
+int64_t __kiln_math_ipow(int64_t base, int64_t exp) {
+    if (exp < 0) return 0;
+    int64_t r = 1;
+    while (exp > 0) { if (exp & 1) r *= base; base *= base; exp >>= 1; }
+    return r;
+}
+int64_t __kiln_math_gcd(int64_t a, int64_t b) {
+    if (a < 0) a = -a;
+    if (b < 0) b = -b;
+    while (b) { int64_t t = b; b = a % b; a = t; }
+    return a;
+}
+int64_t __kiln_math_lcm(int64_t a, int64_t b) {
+    int64_t g = __kiln_math_gcd(a, b);
+    return g == 0 ? 0 : (a / g) * b;
+}
+int64_t __kiln_math_imin(int64_t a, int64_t b) { return a < b ? a : b; }
+int64_t __kiln_math_imax(int64_t a, int64_t b) { return a > b ? a : b; }
+int64_t __kiln_math_iclamp(int64_t x, int64_t lo, int64_t hi) {
+    return x < lo ? lo : (x > hi ? hi : x);
+}
+int64_t __kiln_math_factorial(int64_t n) {
+    if (n <= 1) return 1;
+    int64_t r = 1;
+    for (int64_t i = 2; i <= n; i++) r *= i;
+    return r;
+}
+int64_t __kiln_math_comb(int64_t n, int64_t k) {
+    if (k < 0 || k > n) return 0;
+    if (k > n - k) k = n - k;
+    int64_t r = 1;
+    for (int64_t i = 0; i < k; i++) { r = r * (n - i) / (i + 1); }
+    return r;
+}
+int64_t __kiln_math_perm(int64_t n, int64_t k) {
+    if (k < 0 || k > n) return 0;
+    int64_t r = 1;
+    for (int64_t i = 0; i < k; i++) r *= (n - i);
+    return r;
 }
 
 } // extern "C"

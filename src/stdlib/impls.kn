@@ -280,4 +280,110 @@ impl Iterator for RangeIter {
 }
 
 
+# ---- FloatMath for float ------------------------------------------------------
+
+impl FloatMath for float {
+    def floor() -> float { return __kiln_math_floor(self) }
+    def ceil() -> float { return __kiln_math_ceil(self) }
+    def round() -> float { return __kiln_math_round(self) }
+    def trunc() -> float { return __kiln_math_trunc(self) }
+    def fract() -> float { return __kiln_math_fract(self) }
+    def sqrt() -> float { return __kiln_math_sqrt(self) }
+    def cbrt() -> float { return __kiln_math_cbrt(self) }
+    def pow(exp: float) -> float { return __kiln_math_pow(self, exp) }
+    def powi(exp: int) -> float { return __kiln_math_powi(self, exp) }
+    def hypot(other: float) -> float { return __kiln_math_hypot(self, other) }
+    def exp() -> float { return __kiln_math_exp(self) }
+    def exp2() -> float { return __kiln_math_exp2(self) }
+    def ln() -> float { return __kiln_math_ln(self) }
+    def log2() -> float { return __kiln_math_log2(self) }
+    def log10() -> float { return __kiln_math_log10(self) }
+    def log(base: float) -> float { return __kiln_math_log(self, base) }
+    def sin() -> float { return __kiln_math_sin(self) }
+    def cos() -> float { return __kiln_math_cos(self) }
+    def tan() -> float { return __kiln_math_tan(self) }
+    def asin() -> float { return __kiln_math_asin(self) }
+    def acos() -> float { return __kiln_math_acos(self) }
+    def atan() -> float { return __kiln_math_atan(self) }
+    def atan2(x: float) -> float { return __kiln_math_atan2(self, x) }
+    def sinh() -> float { return __kiln_math_sinh(self) }
+    def cosh() -> float { return __kiln_math_cosh(self) }
+    def tanh() -> float { return __kiln_math_tanh(self) }
+    def asinh() -> float { return __kiln_math_asinh(self) }
+    def acosh() -> float { return __kiln_math_acosh(self) }
+    def atanh() -> float { return __kiln_math_atanh(self) }
+    def to_degrees() -> float { return __kiln_math_to_degrees(self) }
+    def to_radians() -> float { return __kiln_math_to_radians(self) }
+    def fabs() -> float { return __kiln_math_fabs(self) }
+    def fmin(other: float) -> float { return __kiln_math_fmin(self, other) }
+    def fmax(other: float) -> float { return __kiln_math_fmax(self, other) }
+    def fclamp(lo: float, hi: float) -> float { return __kiln_math_fclamp(self, lo, hi) }
+    def is_nan() -> bool { return __kiln_math_is_nan(self) }
+    def is_infinite() -> bool { return __kiln_math_is_infinite(self) }
+    def is_finite() -> bool { return __kiln_math_is_finite(self) }
+    def isclose(other: float, rel_tol: float, abs_tol: float) -> bool {
+        return __kiln_math_isclose(self, other, rel_tol, abs_tol)
+    }
+}
+
+# ---- FloatMath for int (promotes self to float) --------------------------------
+
+impl FloatMath for int {
+    def floor() -> float { return __kiln_math_floor(float(self)) }
+    def ceil() -> float { return __kiln_math_ceil(float(self)) }
+    def round() -> float { return __kiln_math_round(float(self)) }
+    def trunc() -> float { return __kiln_math_trunc(float(self)) }
+    def fract() -> float { return __kiln_math_fract(float(self)) }
+    def sqrt() -> float { return __kiln_math_sqrt(float(self)) }
+    def cbrt() -> float { return __kiln_math_cbrt(float(self)) }
+    def pow(exp: float) -> float { return __kiln_math_pow(float(self), exp) }
+    def powi(exp: int) -> float { return __kiln_math_powi(float(self), exp) }
+    def hypot(other: float) -> float { return __kiln_math_hypot(float(self), other) }
+    def exp() -> float { return __kiln_math_exp(float(self)) }
+    def exp2() -> float { return __kiln_math_exp2(float(self)) }
+    def ln() -> float { return __kiln_math_ln(float(self)) }
+    def log2() -> float { return __kiln_math_log2(float(self)) }
+    def log10() -> float { return __kiln_math_log10(float(self)) }
+    def log(base: float) -> float { return __kiln_math_log(float(self), base) }
+    def sin() -> float { return __kiln_math_sin(float(self)) }
+    def cos() -> float { return __kiln_math_cos(float(self)) }
+    def tan() -> float { return __kiln_math_tan(float(self)) }
+    def asin() -> float { return __kiln_math_asin(float(self)) }
+    def acos() -> float { return __kiln_math_acos(float(self)) }
+    def atan() -> float { return __kiln_math_atan(float(self)) }
+    def atan2(x: float) -> float { return __kiln_math_atan2(float(self), x) }
+    def sinh() -> float { return __kiln_math_sinh(float(self)) }
+    def cosh() -> float { return __kiln_math_cosh(float(self)) }
+    def tanh() -> float { return __kiln_math_tanh(float(self)) }
+    def asinh() -> float { return __kiln_math_asinh(float(self)) }
+    def acosh() -> float { return __kiln_math_acosh(float(self)) }
+    def atanh() -> float { return __kiln_math_atanh(float(self)) }
+    def to_degrees() -> float { return __kiln_math_to_degrees(float(self)) }
+    def to_radians() -> float { return __kiln_math_to_radians(float(self)) }
+    def fabs() -> float { return __kiln_math_fabs(float(self)) }
+    def fmin(other: float) -> float { return __kiln_math_fmin(float(self), other) }
+    def fmax(other: float) -> float { return __kiln_math_fmax(float(self), other) }
+    def fclamp(lo: float, hi: float) -> float { return __kiln_math_fclamp(float(self), lo, hi) }
+    def is_nan() -> bool { return false }
+    def is_infinite() -> bool { return false }
+    def is_finite() -> bool { return true }
+    def isclose(other: float, rel_tol: float, abs_tol: float) -> bool {
+        return __kiln_math_isclose(float(self), other, rel_tol, abs_tol)
+    }
+}
+
+# ---- IntMath for int ----------------------------------------------------------
+
+impl IntMath for int {
+    def ipow(exp: int) -> int { return __kiln_math_ipow(self, exp) }
+    def gcd(other: int) -> int { return __kiln_math_gcd(self, other) }
+    def lcm(other: int) -> int { return __kiln_math_lcm(self, other) }
+    def imin(other: int) -> int { return __kiln_math_imin(self, other) }
+    def imax(other: int) -> int { return __kiln_math_imax(self, other) }
+    def iclamp(lo: int, hi: int) -> int { return __kiln_math_iclamp(self, lo, hi) }
+    def factorial() -> int { return __kiln_math_factorial(self) }
+    def comb(k: int) -> int { return __kiln_math_comb(self, k) }
+    def perm(k: int) -> int { return __kiln_math_perm(self, k) }
+}
+
 export { * }

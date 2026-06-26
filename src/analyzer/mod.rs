@@ -494,45 +494,6 @@ fn collect_import_paths_into(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::lexer::Lexer;
-    use crate::parser::Parser;
-
-    fn parse(src: &str) -> SourceFile {
-        let tokens = Lexer::new(src).tokenize().unwrap();
-        Parser::new(tokens).parse_file().unwrap()
-    }
-
-    #[test]
-    fn collect_imported_disk_paths_no_imports_returns_empty() {
-        let src = parse("def main() -> void {}");
-        let paths = collect_imported_disk_paths(&src, std::path::Path::new("."));
-        assert!(paths.is_empty());
-    }
-
-    #[test]
-    fn collect_imported_disk_paths_stdlib_import_excluded() {
-        let src = parse("import prelude { * }");
-        let paths = collect_imported_disk_paths(&src, std::path::Path::new("."));
-        assert!(
-            paths.is_empty(),
-            "stdlib imports should be excluded: {paths:?}"
-        );
-    }
-
-    #[test]
-    fn collect_imported_disk_paths_disk_import_included() {
-        let src = parse("import modules { * }");
-        let paths = collect_imported_disk_paths(&src, std::path::Path::new("examples"));
-        assert!(
-            paths.iter().any(|p| p.ends_with("modules.kn")),
-            "expected modules.kn in paths: {paths:?}"
-        );
-    }
-}
-
 /// Walk all items in `source`, inlining imported items and skipping export blocks.
 /// `vfs` is checked before disk for each import path (used for embedded stdlib modules).
 fn resolve_imports_into(
@@ -2821,5 +2782,44 @@ fn check_params_object_safe(
 ) {
     for p in params {
         check_ty_object_safe(&p.ty, non_object_safe, errors, span);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+
+    fn parse(src: &str) -> SourceFile {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_file().unwrap()
+    }
+
+    #[test]
+    fn collect_imported_disk_paths_no_imports_returns_empty() {
+        let src = parse("def main() -> void {}");
+        let paths = collect_imported_disk_paths(&src, std::path::Path::new("."));
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn collect_imported_disk_paths_stdlib_import_excluded() {
+        let src = parse("import prelude { * }");
+        let paths = collect_imported_disk_paths(&src, std::path::Path::new("."));
+        assert!(
+            paths.is_empty(),
+            "stdlib imports should be excluded: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn collect_imported_disk_paths_disk_import_included() {
+        let src = parse("import modules { * }");
+        let paths = collect_imported_disk_paths(&src, std::path::Path::new("examples"));
+        assert!(
+            paths.iter().any(|p| p.ends_with("modules.kn")),
+            "expected modules.kn in paths: {paths:?}"
+        );
     }
 }

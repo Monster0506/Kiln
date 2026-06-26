@@ -160,6 +160,150 @@ struct Range {
     end:   int
 }
 
+@builtin
+def __kiln_math_floor(x: float) -> float
+
+@builtin
+def __kiln_math_ceil(x: float) -> float
+
+@builtin
+def __kiln_math_round(x: float) -> float
+
+@builtin
+def __kiln_math_trunc(x: float) -> float
+
+@builtin
+def __kiln_math_fract(x: float) -> float
+
+@builtin
+def __kiln_math_sqrt(x: float) -> float
+
+@builtin
+def __kiln_math_cbrt(x: float) -> float
+
+@builtin
+def __kiln_math_pow(x: float, y: float) -> float
+
+@builtin
+def __kiln_math_powi(x: float, n: int) -> float
+
+@builtin
+def __kiln_math_hypot(x: float, y: float) -> float
+
+@builtin
+def __kiln_math_exp(x: float) -> float
+
+@builtin
+def __kiln_math_exp2(x: float) -> float
+
+@builtin
+def __kiln_math_ln(x: float) -> float
+
+@builtin
+def __kiln_math_log2(x: float) -> float
+
+@builtin
+def __kiln_math_log10(x: float) -> float
+
+@builtin
+def __kiln_math_log(x: float, base: float) -> float
+
+@builtin
+def __kiln_math_sin(x: float) -> float
+
+@builtin
+def __kiln_math_cos(x: float) -> float
+
+@builtin
+def __kiln_math_tan(x: float) -> float
+
+@builtin
+def __kiln_math_asin(x: float) -> float
+
+@builtin
+def __kiln_math_acos(x: float) -> float
+
+@builtin
+def __kiln_math_atan(x: float) -> float
+
+@builtin
+def __kiln_math_atan2(y: float, x: float) -> float
+
+@builtin
+def __kiln_math_sinh(x: float) -> float
+
+@builtin
+def __kiln_math_cosh(x: float) -> float
+
+@builtin
+def __kiln_math_tanh(x: float) -> float
+
+@builtin
+def __kiln_math_asinh(x: float) -> float
+
+@builtin
+def __kiln_math_acosh(x: float) -> float
+
+@builtin
+def __kiln_math_atanh(x: float) -> float
+
+@builtin
+def __kiln_math_to_degrees(x: float) -> float
+
+@builtin
+def __kiln_math_to_radians(x: float) -> float
+
+@builtin
+def __kiln_math_fabs(x: float) -> float
+
+@builtin
+def __kiln_math_fmin(x: float, y: float) -> float
+
+@builtin
+def __kiln_math_fmax(x: float, y: float) -> float
+
+@builtin
+def __kiln_math_fclamp(x: float, lo: float, hi: float) -> float
+
+@builtin
+def __kiln_math_is_nan(x: float) -> bool
+
+@builtin
+def __kiln_math_is_infinite(x: float) -> bool
+
+@builtin
+def __kiln_math_is_finite(x: float) -> bool
+
+@builtin
+def __kiln_math_isclose(a: float, b: float, rel_tol: float, abs_tol: float) -> bool
+
+@builtin
+def __kiln_math_ipow(base: int, exp: int) -> int
+
+@builtin
+def __kiln_math_gcd(a: int, b: int) -> int
+
+@builtin
+def __kiln_math_lcm(a: int, b: int) -> int
+
+@builtin
+def __kiln_math_imin(a: int, b: int) -> int
+
+@builtin
+def __kiln_math_imax(a: int, b: int) -> int
+
+@builtin
+def __kiln_math_iclamp(x: int, lo: int, hi: int) -> int
+
+@builtin
+def __kiln_math_factorial(n: int) -> int
+
+@builtin
+def __kiln_math_comb(n: int, k: int) -> int
+
+@builtin
+def __kiln_math_perm(n: int, k: int) -> int
+
 export {
     VecIter, Vec,
     __kiln_print, __kiln_println,
@@ -180,6 +324,19 @@ export {
     len, panic, assert, clock_ms,
     Exception,
     Mutex,
-    RangeIter, Range
+    RangeIter, Range,
+    __kiln_math_floor, __kiln_math_ceil, __kiln_math_round, __kiln_math_trunc, __kiln_math_fract,
+    __kiln_math_sqrt, __kiln_math_cbrt, __kiln_math_pow, __kiln_math_powi, __kiln_math_hypot,
+    __kiln_math_exp, __kiln_math_exp2, __kiln_math_ln, __kiln_math_log2, __kiln_math_log10, __kiln_math_log,
+    __kiln_math_sin, __kiln_math_cos, __kiln_math_tan,
+    __kiln_math_asin, __kiln_math_acos, __kiln_math_atan, __kiln_math_atan2,
+    __kiln_math_sinh, __kiln_math_cosh, __kiln_math_tanh,
+    __kiln_math_asinh, __kiln_math_acosh, __kiln_math_atanh,
+    __kiln_math_to_degrees, __kiln_math_to_radians,
+    __kiln_math_fabs, __kiln_math_fmin, __kiln_math_fmax, __kiln_math_fclamp,
+    __kiln_math_is_nan, __kiln_math_is_infinite, __kiln_math_is_finite, __kiln_math_isclose,
+    __kiln_math_ipow, __kiln_math_gcd, __kiln_math_lcm,
+    __kiln_math_imin, __kiln_math_imax, __kiln_math_iclamp,
+    __kiln_math_factorial, __kiln_math_comb, __kiln_math_perm
 }
 

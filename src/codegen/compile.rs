@@ -8,6 +8,7 @@ use crate::analyzer::TypedFile;
 use crate::codegen::context::CodegenContext;
 use crate::codegen::exceptions::declare_exception_runtime;
 use crate::codegen::exprs::{LowerCtx, VarEnv};
+use crate::codegen::math::declare_math_runtime;
 use crate::codegen::memory::declare_alloc_fns;
 use crate::codegen::stmts::{block_needs_term, lower_typed_block, LoopCtx};
 use crate::codegen::strings::declare_str_runtime;
@@ -19,74 +20,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, FuncOrDataId, Linkage, Module};
 use std::collections::{HashMap, HashSet};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::analyzer::ty::Ty;
-    use crate::analyzer::typed_ast::{TypedBlock, TypedHookDef, TypedParam};
-    use crate::diagnostics::Span;
-    use crate::parser::ast::HookName;
 
-    fn s() -> Span {
-        Span { start: 0, end: 0 }
-    }
-
-    fn hook_op(op: &str, params: Vec<TypedParam>) -> TypedHookDef {
-        TypedHookDef {
-            is_static: false,
-            is_impure: false,
-            name: HookName::Op(op.into()),
-            params,
-            return_type: Ty::Void,
-            body: TypedBlock {
-                stmts: vec![],
-                span: s(),
-            },
-            span: s(),
-        }
-    }
-
-    fn param(name: &str) -> TypedParam {
-        TypedParam {
-            name: name.into(),
-            ty: Ty::Int,
-            mutable: false,
-            span: s(),
-        }
-    }
-
-    #[test]
-    fn unary_and_binary_plus_get_distinct_names() {
-        let unary_pos = hook_op("+", vec![]);
-        let binary_add = hook_op("+", vec![param("rhs")]);
-        let unary_name = hook_qualified_name("Vec2", &unary_pos);
-        let binary_name = hook_qualified_name("Vec2", &binary_add);
-        assert_ne!(
-            unary_name, binary_name,
-            "unary and binary + must produce distinct hook names"
-        );
-        assert_eq!(binary_name, "Vec2_op_add");
-        assert_eq!(unary_name, "Vec2_pos");
-    }
-
-    #[test]
-    fn unary_and_binary_minus_get_distinct_names() {
-        let unary_neg = hook_op("-", vec![]);
-        let binary_sub = hook_op("-", vec![param("rhs")]);
-        assert_ne!(
-            hook_qualified_name("T", &unary_neg),
-            hook_qualified_name("T", &binary_sub),
-        );
-        assert_eq!(hook_qualified_name("T", &unary_neg), "T_neg");
-        assert_eq!(hook_qualified_name("T", &binary_sub), "T_op_sub");
-    }
-
-    #[test]
-    fn not_hook_encodes_to_not() {
-        let not_hook = hook_op("!", vec![]);
-        assert_eq!(hook_qualified_name("Flags", &not_hook), "Flags_not");
-    }
-}
 
 fn hook_qualified_name(type_name: &str, hook: &TypedHookDef) -> String {
     use crate::codegen::names;
@@ -225,7 +159,8 @@ pub fn compile(
 
     let typed_file = &optimized;
     declare_alloc_fns(&mut cgx.module);
-    let runtime_ids = declare_str_runtime(&mut cgx.module);
+    let mut runtime_ids = declare_str_runtime(&mut cgx.module);
+    runtime_ids.extend(declare_math_runtime(&mut cgx.module));
     declare_exception_runtime(&mut cgx.module);
 
     {
@@ -815,4 +750,73 @@ fn is_scalar_literal(expr: &TypedExpr) -> bool {
         &expr.kind,
         TypedExprKind::Int(_) | TypedExprKind::Float(_) | TypedExprKind::Bool(_)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analyzer::ty::Ty;
+    use crate::analyzer::typed_ast::{TypedBlock, TypedHookDef, TypedParam};
+    use crate::diagnostics::Span;
+    use crate::parser::ast::HookName;
+
+    fn s() -> Span {
+        Span { start: 0, end: 0 }
+    }
+
+    fn hook_op(op: &str, params: Vec<TypedParam>) -> TypedHookDef {
+        TypedHookDef {
+            is_static: false,
+            is_impure: false,
+            name: HookName::Op(op.into()),
+            params,
+            return_type: Ty::Void,
+            body: TypedBlock {
+                stmts: vec![],
+                span: s(),
+            },
+            span: s(),
+        }
+    }
+
+    fn param(name: &str) -> TypedParam {
+        TypedParam {
+            name: name.into(),
+            ty: Ty::Int,
+            mutable: false,
+            span: s(),
+        }
+    }
+
+    #[test]
+    fn unary_and_binary_plus_get_distinct_names() {
+        let unary_pos = hook_op("+", vec![]);
+        let binary_add = hook_op("+", vec![param("rhs")]);
+        let unary_name = hook_qualified_name("Vec2", &unary_pos);
+        let binary_name = hook_qualified_name("Vec2", &binary_add);
+        assert_ne!(
+            unary_name, binary_name,
+            "unary and binary + must produce distinct hook names"
+        );
+        assert_eq!(binary_name, "Vec2_op_add");
+        assert_eq!(unary_name, "Vec2_pos");
+    }
+
+    #[test]
+    fn unary_and_binary_minus_get_distinct_names() {
+        let unary_neg = hook_op("-", vec![]);
+        let binary_sub = hook_op("-", vec![param("rhs")]);
+        assert_ne!(
+            hook_qualified_name("T", &unary_neg),
+            hook_qualified_name("T", &binary_sub),
+        );
+        assert_eq!(hook_qualified_name("T", &unary_neg), "T_neg");
+        assert_eq!(hook_qualified_name("T", &binary_sub), "T_op_sub");
+    }
+
+    #[test]
+    fn not_hook_encodes_to_not() {
+        let not_hook = hook_op("!", vec![]);
+        assert_eq!(hook_qualified_name("Flags", &not_hook), "Flags_not");
+    }
 }

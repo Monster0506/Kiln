@@ -1,0 +1,15 @@
+def pi() -> float { return 3.141592653589793 }
+def e() -> float { return 2.718281828459045 }
+def sqrt2() -> float { return 1.4142135623730951 }
+def sqrt3() -> float { return 1.7320508075688772 }
+def ln_2() -> float { return 0.6931471805599453 }
+def ln_10() -> float { return 2.302585092994046 }
+def log2_e() -> float { return 1.4426950408889634 }
+def log10_e() -> float { return 0.4342944819032518 }
+def inv_pi() -> float { return 0.3183098861837907 }
+def inv_sqrtpi() -> float { return 0.5641895835477563 }
+def inv_sqrt3() -> float { return 0.5773502691896258 }
+def egamma() -> float { return 0.5772156649015329 }
+def phi() -> float { return 1.618033988749895 }
+
+export { pi, e, sqrt2, sqrt3, ln_2, ln_10, log2_e, log10_e, inv_pi, inv_sqrtpi, inv_sqrt3, egamma, phi }

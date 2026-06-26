@@ -6,6 +6,7 @@ pub mod exceptions;
 pub mod exprs;
 pub mod fns;
 pub mod match_;
+pub mod math;
 pub mod memory;
 pub mod mono;
 pub mod names;

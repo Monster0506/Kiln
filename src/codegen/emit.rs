@@ -62,24 +62,35 @@ pub fn link_executable(
             LinkerSpec {
                 name: "g++",
                 is_msvc_style: false,
-                leading_flags: &["-mconsole", "-Wl,--subsystem,console", "-Wl,-e,mainCRTStartup"],
+                leading_flags: &[
+                    "-mconsole",
+                    "-Wl,--subsystem,console",
+                    "-Wl,-e,mainCRTStartup",
+                ],
             },
             LinkerSpec {
                 name: "gcc",
                 is_msvc_style: false,
-                leading_flags: &["-mconsole", "-Wl,--subsystem,console", "-Wl,-e,mainCRTStartup"],
+                leading_flags: &[
+                    "-mconsole",
+                    "-Wl,--subsystem,console",
+                    "-Wl,-e,mainCRTStartup",
+                ],
             },
         ]
     } else {
-        &[LinkerSpec {
-            name: "c++",
-            is_msvc_style: false,
-            leading_flags: &[],
-        }, LinkerSpec {
-            name: "cc",
-            is_msvc_style: false,
-            leading_flags: &[],
-        }]
+        &[
+            LinkerSpec {
+                name: "c++",
+                is_msvc_style: false,
+                leading_flags: &[],
+            },
+            LinkerSpec {
+                name: "cc",
+                is_msvc_style: false,
+                leading_flags: &[],
+            },
+        ]
     };
 
     let mut last_err = String::new();

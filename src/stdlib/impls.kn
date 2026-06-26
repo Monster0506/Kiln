@@ -150,6 +150,12 @@ impl StringMethods for str {
     def split_whitespace() -> Vec[str] { return __kiln_str_split_whitespace(self) }
     def chars() -> Vec[str] { return __kiln_str_chars(self) }
     def bytes() -> Vec[int] { return __kiln_str_bytes_vec(self) }
+    def pad_start(width: int, pad: str) -> str { return __kiln_str_pad_start(self, width, pad) }
+    def pad_end(width: int, pad: str) -> str { return __kiln_str_pad_end(self, width, pad) }
+    def remove_prefix(prefix: str) -> str { return __kiln_str_remove_prefix(self, prefix) }
+    def remove_suffix(suffix: str) -> str { return __kiln_str_remove_suffix(self, suffix) }
+    def parse_int() -> Option[int] { return __kiln_str_parse_int(self) }
+    def parse_float() -> Option[float] { return __kiln_str_parse_float(self) }
 }
 
 # ---- Conformance: Vec[T] ----------------------------------------------------

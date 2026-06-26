@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
+#include <errno.h>
 
 typedef struct { const char* ptr; int64_t len; } KilnStr;
 
@@ -628,4 +629,121 @@ int64_t __kiln_str_bytes_vec(int64_t str_val) {
         Vec_add(vec, (int64_t)(unsigned char)s->ptr[i]);
     }
     return vec;
+}
+
+/* pad_start(width, pad_char) -> str */
+int64_t __kiln_str_pad_start(int64_t str_val, int64_t width, int64_t pad_val) {
+    if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    KilnStr* p = pad_val ? (KilnStr*)pad_val : NULL;
+    int64_t pad_len = p ? p->len : 1;
+    int64_t cp_len = __kiln_str_codepoint_len(str_val);
+    if (cp_len >= width) return str_val;
+    int64_t pad_cps = width - cp_len;
+    int64_t total = pad_cps * pad_len + s->len;
+    char* buf = (char*)malloc((size_t)(total + 1));
+    const char* pc = p ? p->ptr : " ";
+    for (int64_t i = 0; i < pad_cps; i++) memcpy(buf + i * pad_len, pc, (size_t)pad_len);
+    memcpy(buf + pad_cps * pad_len, s->ptr, (size_t)s->len);
+    buf[total] = '\0';
+    return (int64_t)alloc_str_struct(buf, total);
+}
+
+/* pad_end(width, pad_char) -> str */
+int64_t __kiln_str_pad_end(int64_t str_val, int64_t width, int64_t pad_val) {
+    if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    KilnStr* p = pad_val ? (KilnStr*)pad_val : NULL;
+    int64_t pad_len = p ? p->len : 1;
+    int64_t cp_len = __kiln_str_codepoint_len(str_val);
+    if (cp_len >= width) return str_val;
+    int64_t pad_cps = width - cp_len;
+    int64_t total = s->len + pad_cps * pad_len;
+    char* buf = (char*)malloc((size_t)(total + 1));
+    memcpy(buf, s->ptr, (size_t)s->len);
+    const char* pc = p ? p->ptr : " ";
+    for (int64_t i = 0; i < pad_cps; i++)
+        memcpy(buf + s->len + i * pad_len, pc, (size_t)pad_len);
+    buf[total] = '\0';
+    return (int64_t)alloc_str_struct(buf, total);
+}
+
+/* remove_prefix(prefix) -> str */
+int64_t __kiln_str_remove_prefix(int64_t str_val, int64_t pfx_val) {
+    if (!str_val || !pfx_val) return str_val ? str_val : (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    KilnStr* p = (KilnStr*)pfx_val;
+    if (p->len == 0 || p->len > s->len || memcmp(s->ptr, p->ptr, (size_t)p->len) != 0)
+        return str_val;
+    int64_t new_len = s->len - p->len;
+    char* buf = (char*)malloc((size_t)(new_len + 1));
+    memcpy(buf, s->ptr + p->len, (size_t)new_len);
+    buf[new_len] = '\0';
+    return (int64_t)alloc_str_struct(buf, new_len);
+}
+
+/* remove_suffix(suffix) -> str */
+int64_t __kiln_str_remove_suffix(int64_t str_val, int64_t sfx_val) {
+    if (!str_val || !sfx_val) return str_val ? str_val : (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    KilnStr* sfx = (KilnStr*)sfx_val;
+    if (sfx->len == 0 || sfx->len > s->len ||
+        memcmp(s->ptr + s->len - sfx->len, sfx->ptr, (size_t)sfx->len) != 0)
+        return str_val;
+    int64_t new_len = s->len - sfx->len;
+    char* buf = (char*)malloc((size_t)(new_len + 1));
+    memcpy(buf, s->ptr, (size_t)new_len);
+    buf[new_len] = '\0';
+    return (int64_t)alloc_str_struct(buf, new_len);
+}
+
+/* Kiln enum layout: int32 disc at offset 0, 4 bytes pad, payload at offset 8.
+   Option None = disc 0 (no payload), Some = disc 1 + 8-byte value at offset 8. */
+static int64_t make_option_none(void) {
+    int32_t* box = (int32_t*)malloc(8);
+    box[0] = 0; box[1] = 0;
+    return (int64_t)box;
+}
+static int64_t make_option_some_i64(int64_t val) {
+    int32_t* box = (int32_t*)malloc(16);
+    box[0] = 1; box[1] = 0;
+    *(int64_t*)(box + 2) = val;
+    return (int64_t)box;
+}
+static int64_t make_option_some_f64(double val) {
+    int32_t* box = (int32_t*)malloc(16);
+    int64_t bits; memcpy(&bits, &val, 8);
+    box[0] = 1; box[1] = 0;
+    *(int64_t*)(box + 2) = bits;
+    return (int64_t)box;
+}
+
+/* parse_int() -> Option[int] */
+int64_t __kiln_str_parse_int(int64_t str_val) {
+    if (!str_val) return make_option_none();
+    KilnStr* s = (KilnStr*)str_val;
+    char* buf = (char*)malloc((size_t)(s->len + 1));
+    memcpy(buf, s->ptr, (size_t)s->len);
+    buf[s->len] = '\0';
+    char* end = buf;
+    errno = 0;
+    long long v = strtoll(buf, &end, 10);
+    int ok = (errno == 0 && end != buf && *end == '\0');
+    free(buf);
+    return ok ? make_option_some_i64((int64_t)v) : make_option_none();
+}
+
+/* parse_float() -> Option[float] */
+int64_t __kiln_str_parse_float(int64_t str_val) {
+    if (!str_val) return make_option_none();
+    KilnStr* s = (KilnStr*)str_val;
+    char* buf = (char*)malloc((size_t)(s->len + 1));
+    memcpy(buf, s->ptr, (size_t)s->len);
+    buf[s->len] = '\0';
+    char* end = buf;
+    errno = 0;
+    double v = strtod(buf, &end);
+    int ok = (errno == 0 && end != buf && *end == '\0');
+    free(buf);
+    return ok ? make_option_some_f64(v) : make_option_none();
 }

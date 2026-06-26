@@ -163,6 +163,34 @@ pub fn declare_str_runtime(module: &mut ObjectModule) -> HashMap<String, FuncId>
     };
     ids.insert("__kiln_str_split".into(), id);
 
+    for name in &["__kiln_str_remove_prefix", "__kiln_str_remove_suffix"] {
+        let id = {
+            let mut sig = module.make_signature();
+            sig.params.push(AbiParam::new(types::I64));
+            sig.params.push(AbiParam::new(types::I64));
+            sig.returns.push(AbiParam::new(types::I64));
+            import_fn(module, name, sig)
+        };
+        ids.insert((*name).into(), id);
+    }
+
+    for name in &["__kiln_str_pad_start", "__kiln_str_pad_end"] {
+        let id = {
+            let mut sig = module.make_signature();
+            sig.params.push(AbiParam::new(types::I64));
+            sig.params.push(AbiParam::new(types::I64));
+            sig.params.push(AbiParam::new(types::I64));
+            sig.returns.push(AbiParam::new(types::I64));
+            import_fn(module, name, sig)
+        };
+        ids.insert((*name).into(), id);
+    }
+
+    for name in &["__kiln_str_parse_int", "__kiln_str_parse_float"] {
+        let id = declare_import_i64_i64(module, name);
+        ids.insert((*name).into(), id);
+    }
+
     ids
 }
 

@@ -310,6 +310,12 @@ interface StringMethods {
     def split_whitespace() -> Vec[str] {}
     def chars() -> Vec[str] {}
     def bytes() -> Vec[int] {}
+    def pad_start(width: int, pad: str) -> str {}
+    def pad_end(width: int, pad: str) -> str {}
+    def remove_prefix(prefix: str) -> str {}
+    def remove_suffix(suffix: str) -> str {}
+    def parse_int() -> Option[int] {}
+    def parse_float() -> Option[float] {}
 }
 
 export {

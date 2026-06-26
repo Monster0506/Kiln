@@ -104,6 +104,24 @@ def __kiln_str_chars(s: str) -> Vec[str]
 def __kiln_str_bytes_vec(s: str) -> Vec[int]
 
 @builtin
+def __kiln_str_pad_start(s: str, width: int, pad: str) -> str
+
+@builtin
+def __kiln_str_pad_end(s: str, width: int, pad: str) -> str
+
+@builtin
+def __kiln_str_remove_prefix(s: str, prefix: str) -> str
+
+@builtin
+def __kiln_str_remove_suffix(s: str, suffix: str) -> str
+
+@builtin
+def __kiln_str_parse_int(s: str) -> Option[int]
+
+@builtin
+def __kiln_str_parse_float(s: str) -> Option[float]
+
+@builtin
 def len(x: str) -> int
 
 @builtin
@@ -156,6 +174,9 @@ export {
     __kiln_str_replace, __kiln_str_repeat,
     __kiln_str_split, __kiln_str_split_whitespace,
     __kiln_str_chars, __kiln_str_bytes_vec,
+    __kiln_str_pad_start, __kiln_str_pad_end,
+    __kiln_str_remove_prefix, __kiln_str_remove_suffix,
+    __kiln_str_parse_int, __kiln_str_parse_float,
     len, panic, assert, clock_ms,
     Exception,
     Mutex,

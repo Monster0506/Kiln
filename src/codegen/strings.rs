@@ -120,6 +120,18 @@ pub fn declare_str_runtime(module: &mut ObjectModule) -> HashMap<String, FuncId>
     };
     ids.insert("__kiln_str_find_from".into(), id);
 
+    for name in &[
+        "__kiln_str_to_upper",
+        "__kiln_str_to_lower",
+        "__kiln_str_reverse",
+        "__kiln_str_trim",
+        "__kiln_str_trim_start",
+        "__kiln_str_trim_end",
+    ] {
+        let id = declare_import_i64_i64(module, name);
+        ids.insert((*name).into(), id);
+    }
+
     ids
 }
 

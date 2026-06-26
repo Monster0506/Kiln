@@ -298,6 +298,12 @@ interface StringMethods {
     def contains(needle: str) -> bool {}
     def find(needle: str) -> int {}
     def find_from(needle: str, start: int) -> int {}
+    def to_upper() -> str {}
+    def to_lower() -> str {}
+    def reverse() -> str {}
+    def trim() -> str {}
+    def trim_start() -> str {}
+    def trim_end() -> str {}
 }
 
 export {

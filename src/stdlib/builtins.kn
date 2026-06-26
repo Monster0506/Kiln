@@ -68,6 +68,24 @@ def __kiln_str_find(s: str, needle: str) -> int
 def __kiln_str_find_from(s: str, needle: str, start: int) -> int
 
 @builtin
+def __kiln_str_to_upper(s: str) -> str
+
+@builtin
+def __kiln_str_to_lower(s: str) -> str
+
+@builtin
+def __kiln_str_reverse(s: str) -> str
+
+@builtin
+def __kiln_str_trim(s: str) -> str
+
+@builtin
+def __kiln_str_trim_start(s: str) -> str
+
+@builtin
+def __kiln_str_trim_end(s: str) -> str
+
+@builtin
 def len(x: str) -> int
 
 @builtin
@@ -115,6 +133,8 @@ export {
     __kiln_str_char_at, __kiln_str_byte_at,
     __kiln_str_slice, __kiln_str_starts_with, __kiln_str_ends_with,
     __kiln_str_contains, __kiln_str_find, __kiln_str_find_from,
+    __kiln_str_to_upper, __kiln_str_to_lower, __kiln_str_reverse,
+    __kiln_str_trim, __kiln_str_trim_start, __kiln_str_trim_end,
     len, panic, assert, clock_ms,
     Exception,
     Mutex,

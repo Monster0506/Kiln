@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <ctype.h>
 
 typedef struct { const char* ptr; int64_t len; } KilnStr;
 
@@ -429,4 +430,81 @@ int64_t __kiln_str_find(int64_t str_val, int64_t needle_val) {
 /* contains(needle) -> bool */
 int64_t __kiln_str_contains(int64_t str_val, int64_t needle_val) {
     return __kiln_str_find(str_val, needle_val) >= 0 ? 1 : 0;
+}
+
+/* to_upper / to_lower: ASCII-only case fold */
+int64_t __kiln_str_to_upper(int64_t str_val) {
+    if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    char* buf = (char*)malloc((size_t)(s->len + 1));
+    for (int64_t i = 0; i < s->len; i++) buf[i] = (char)toupper((unsigned char)s->ptr[i]);
+    buf[s->len] = '\0';
+    return (int64_t)alloc_str_struct(buf, s->len);
+}
+
+int64_t __kiln_str_to_lower(int64_t str_val) {
+    if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    char* buf = (char*)malloc((size_t)(s->len + 1));
+    for (int64_t i = 0; i < s->len; i++) buf[i] = (char)tolower((unsigned char)s->ptr[i]);
+    buf[s->len] = '\0';
+    return (int64_t)alloc_str_struct(buf, s->len);
+}
+
+/* reverse: reverses codepoint order (not byte order) */
+int64_t __kiln_str_reverse(int64_t str_val) {
+    if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    if (s->len == 0) return (int64_t)alloc_str_struct("", 0);
+    const unsigned char* p = (const unsigned char*)s->ptr;
+    /* collect codepoint byte spans */
+    int64_t starts[s->len + 1]; /* at most s->len codepoints */
+    int     lens[s->len + 1];
+    int64_t ncp = 0, i = 0;
+    while (i < s->len) {
+        int cplen = utf8_cp_len(p[i]);
+        starts[ncp] = i;
+        lens[ncp] = cplen;
+        i += cplen;
+        ncp++;
+    }
+    char* buf = (char*)malloc((size_t)(s->len + 1));
+    int64_t out = 0;
+    for (int64_t k = ncp - 1; k >= 0; k--) {
+        memcpy(buf + out, p + starts[k], (size_t)lens[k]);
+        out += lens[k];
+    }
+    buf[s->len] = '\0';
+    return (int64_t)alloc_str_struct(buf, s->len);
+}
+
+static int is_ws(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
+
+int64_t __kiln_str_trim_start(int64_t str_val) {
+    if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    const unsigned char* p = (const unsigned char*)s->ptr;
+    int64_t start = 0;
+    while (start < s->len && is_ws(p[start])) start++;
+    int64_t len = s->len - start;
+    char* buf = (char*)malloc((size_t)(len + 1));
+    memcpy(buf, p + start, (size_t)len);
+    buf[len] = '\0';
+    return (int64_t)alloc_str_struct(buf, len);
+}
+
+int64_t __kiln_str_trim_end(int64_t str_val) {
+    if (str_val == 0) return (int64_t)alloc_str_struct("", 0);
+    KilnStr* s = (KilnStr*)str_val;
+    const unsigned char* p = (const unsigned char*)s->ptr;
+    int64_t end = s->len;
+    while (end > 0 && is_ws(p[end - 1])) end--;
+    char* buf = (char*)malloc((size_t)(end + 1));
+    memcpy(buf, p, (size_t)end);
+    buf[end] = '\0';
+    return (int64_t)alloc_str_struct(buf, end);
+}
+
+int64_t __kiln_str_trim(int64_t str_val) {
+    return __kiln_str_trim_end(__kiln_str_trim_start(str_val));
 }

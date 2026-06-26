@@ -138,6 +138,12 @@ impl StringMethods for str {
     def contains(needle: str) -> bool { return __kiln_str_contains(self, needle) }
     def find(needle: str) -> int { return __kiln_str_find(self, needle) }
     def find_from(needle: str, start: int) -> int { return __kiln_str_find_from(self, needle, start) }
+    def to_upper() -> str { return __kiln_str_to_upper(self) }
+    def to_lower() -> str { return __kiln_str_to_lower(self) }
+    def reverse() -> str { return __kiln_str_reverse(self) }
+    def trim() -> str { return __kiln_str_trim(self) }
+    def trim_start() -> str { return __kiln_str_trim_start(self) }
+    def trim_end() -> str { return __kiln_str_trim_end(self) }
 }
 
 # ---- Conformance: Vec[T] ----------------------------------------------------

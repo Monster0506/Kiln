@@ -12,7 +12,7 @@ use crate::codegen::structs::StructLayouts;
 use crate::parser::ast::{BinOp, UnOp};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
-    types, AbiParam, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type, Value,
+    types, AbiParam, BlockArg, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type, Value,
 };
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{DataId, FuncId, FuncOrDataId, Linkage, Module};
@@ -676,10 +676,56 @@ fn lower_typed_expr_inner(
         }
 
         TypedExprKind::Unwrap(inner) => {
-            let ptr = lower_typed_expr(inner, builder, vars, ctx);
-            // The payload of a Try/Option value lives at payload_offset (8).
-            // See option_layout_none_discriminant_and_some_value_offset test.
-            builder.ins().load(types::I64, MemFlags::new(), ptr, 8)
+            let inner_ty = inner.ty.clone();
+            let val = lower_typed_expr(inner, builder, vars, ctx);
+            match &inner_ty {
+                Ty::Named(_, name, _) if name == "Result" => {
+                    // Ok (disc=0) and Err (disc=1) are both heap pointers.
+                    // Early-return the Err pointer; otherwise yield the Ok payload.
+                    let ok_bb = builder.create_block();
+                    let err_bb = builder.create_block();
+                    let cont_bb = builder.create_block();
+                    builder.append_block_param(cont_bb, types::I64);
+                    let disc_raw = builder.ins().load(types::I32, MemFlags::new(), val, 0);
+                    let disc = builder.ins().uextend(types::I64, disc_raw);
+                    let ok_disc = builder.ins().iconst(types::I64, 0);
+                    let is_ok = builder.ins().icmp(IntCC::Equal, disc, ok_disc);
+                    builder.ins().brif(is_ok, ok_bb, &[], err_bb, &[]);
+                    builder.switch_to_block(ok_bb);
+                    builder.seal_block(ok_bb);
+                    let payload = builder.ins().load(types::I64, MemFlags::new(), val, 8);
+                    builder.ins().jump(cont_bb, &[BlockArg::Value(payload)]);
+                    builder.switch_to_block(err_bb);
+                    builder.seal_block(err_bb);
+                    builder.ins().return_(&[val]);
+                    builder.switch_to_block(cont_bb);
+                    builder.seal_block(cont_bb);
+                    builder.block_params(cont_bb)[0]
+                }
+                Ty::Named(_, name, _) if name == "Option" => {
+                    // None is raw disc integer (1); Some is a heap pointer.
+                    // Early-return None on None; otherwise yield the Some payload.
+                    let none_bb = builder.create_block();
+                    let some_bb = builder.create_block();
+                    let cont_bb = builder.create_block();
+                    builder.append_block_param(cont_bb, types::I64);
+                    let none_disc = builder.ins().iconst(types::I64, 1);
+                    let is_none = builder.ins().icmp(IntCC::Equal, val, none_disc);
+                    builder.ins().brif(is_none, none_bb, &[], some_bb, &[]);
+                    builder.switch_to_block(none_bb);
+                    builder.seal_block(none_bb);
+                    let none_ret = builder.ins().iconst(types::I64, 1);
+                    builder.ins().return_(&[none_ret]);
+                    builder.switch_to_block(some_bb);
+                    builder.seal_block(some_bb);
+                    let payload = builder.ins().load(types::I64, MemFlags::new(), val, 8);
+                    builder.ins().jump(cont_bb, &[BlockArg::Value(payload)]);
+                    builder.switch_to_block(cont_bb);
+                    builder.seal_block(cont_bb);
+                    builder.block_params(cont_bb)[0]
+                }
+                _ => builder.ins().load(types::I64, MemFlags::new(), val, 8),
+            }
         }
 
         TypedExprKind::As {

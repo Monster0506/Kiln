@@ -1,4 +1,4 @@
-# Result[T, E] tests: construction and pattern matching
+# Result[T, E] tests: construction, pattern matching, and ? propagation
 
 @test
 def test_ok_value() -> void {
@@ -33,5 +33,35 @@ def test_err_str() -> void {
     match r {
         Ok { value: _ } => panic('expected Err'),
         Err { error: e } => assert(e == 'fail')
+    }
+}
+
+def parse_positive(n: int) -> Result[int, str] {
+    if n > 0 {
+        return Result:Ok { value: n }
+    }
+    return Result:Err { error: 'not positive' }
+}
+
+def double_positive(n: int) -> Result[int, str] {
+    v: int = parse_positive(n)?
+    return Result:Ok { value: v * 2 }
+}
+
+@test
+def test_unwrap_ok_propagates() -> void {
+    r: Result[int, str] = double_positive(5)
+    match r {
+        Ok { value: v } => assert(v == 10),
+        Err { error: _ } => panic('expected Ok')
+    }
+}
+
+@test
+def test_unwrap_err_propagates() -> void {
+    r: Result[int, str] = double_positive(-1)
+    match r {
+        Ok { value: _ } => panic('expected Err'),
+        Err { error: e } => assert(e == 'not positive')
     }
 }

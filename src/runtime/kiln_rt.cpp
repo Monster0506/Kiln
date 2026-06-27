@@ -5,6 +5,18 @@
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <direct.h>
+#define stat _stat
+#define mkdir(p, m) _mkdir(p)
+#else
+#include <dirent.h>
+#include <unistd.h>
+#endif
 
 typedef struct { const char* ptr; int64_t len; } KilnStr;
 typedef struct { int64_t* data; int64_t len; int64_t cap; } KilnVec;
@@ -796,6 +808,345 @@ int64_t __kiln_math_perm(int64_t n, int64_t k) {
     int64_t r = 1;
     for (int64_t i = 0; i < k; i++) r *= (n - i);
     return r;
+}
+
+// --- Result / Option layout helpers -----------------------------------------
+// Ok:   heap ptr, i32 disc=0 at offset 0, payload at offset 8
+// Err:  heap ptr, i32 disc=1 at offset 0, payload at offset 8
+// Some: heap ptr, i32 disc=0 at offset 0, payload at offset 8
+// None: raw integer 1
+
+static int64_t kiln_result_ok(int64_t val) {
+    int32_t* box = (int32_t*)malloc(16);
+    box[0] = 0; box[1] = 0;
+    *(int64_t*)(box + 2) = val;
+    return (int64_t)box;
+}
+static int64_t kiln_result_err(int64_t err) {
+    int32_t* box = (int32_t*)malloc(16);
+    box[0] = 1; box[1] = 0;
+    *(int64_t*)(box + 2) = err;
+    return (int64_t)box;
+}
+static int64_t kiln_option_none() { return 1; }
+static int64_t kiln_option_some(int64_t val) {
+    int32_t* box = (int32_t*)malloc(16);
+    box[0] = 0; box[1] = 0;
+    *(int64_t*)(box + 2) = val;
+    return (int64_t)box;
+}
+
+static int64_t kiln_err_from_cstr(const char* msg) {
+    size_t len = strlen(msg);
+    char* copy = (char*)malloc(len + 1);
+    memcpy(copy, msg, len + 1);
+    return kiln_result_err((int64_t)alloc_str_struct(copy, (int64_t)len));
+}
+static int64_t kiln_err_from_errno(const char* prefix) {
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s: %s", prefix, strerror(errno));
+    return kiln_err_from_cstr(buf);
+}
+
+// --- Path helpers ------------------------------------------------------------
+// Path is stored as a KilnStr* (same as str at the C level).
+
+static const char* path_cstr(int64_t path) {
+    KilnStr* s = (KilnStr*)path;
+    if (!s) return "";
+    char* buf = (char*)malloc((size_t)(s->len + 1));
+    memcpy(buf, s->ptr, (size_t)s->len);
+    buf[s->len] = '\0';
+    return buf;
+}
+
+int64_t Path_new(int64_t p) { return p; }
+
+int64_t Path_read_text(int64_t path) {
+    const char* cpath = path_cstr(path);
+    FILE* f = fopen(cpath, "rb");
+    free((void*)cpath);
+    if (!f) return kiln_err_from_errno("read_text");
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    rewind(f);
+    char* buf = (char*)malloc((size_t)(sz + 1));
+    size_t rd = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    buf[rd] = '\0';
+    return kiln_result_ok((int64_t)alloc_str_struct(buf, (int64_t)rd));
+}
+
+int64_t Path_write_text(int64_t path, int64_t content) {
+    const char* cpath = path_cstr(path);
+    KilnStr* s = (KilnStr*)content;
+    FILE* f = fopen(cpath, "wb");
+    free((void*)cpath);
+    if (!f) return kiln_err_from_errno("write_text");
+    size_t written = s ? fwrite(s->ptr, 1, (size_t)s->len, f) : 0;
+    fclose(f);
+    return kiln_result_ok((int64_t)(int64_t)written);
+}
+
+int64_t Path_append_text(int64_t path, int64_t content) {
+    const char* cpath = path_cstr(path);
+    KilnStr* s = (KilnStr*)content;
+    FILE* f = fopen(cpath, "ab");
+    free((void*)cpath);
+    if (!f) return kiln_err_from_errno("append_text");
+    size_t written = s ? fwrite(s->ptr, 1, (size_t)s->len, f) : 0;
+    fclose(f);
+    return kiln_result_ok((int64_t)(int64_t)written);
+}
+
+int64_t Path_exists(int64_t path) {
+    const char* cpath = path_cstr(path);
+    struct stat st;
+    int r = stat(cpath, &st);
+    free((void*)cpath);
+    return r == 0 ? 1 : 0;
+}
+
+int64_t Path_is_file(int64_t path) {
+    const char* cpath = path_cstr(path);
+    struct stat st;
+    int r = stat(cpath, &st);
+    free((void*)cpath);
+    if (r != 0) return 0;
+    return (st.st_mode & S_IFMT) == S_IFREG ? 1 : 0;
+}
+
+int64_t Path_is_dir(int64_t path) {
+    const char* cpath = path_cstr(path);
+    struct stat st;
+    int r = stat(cpath, &st);
+    free((void*)cpath);
+    if (r != 0) return 0;
+    return (st.st_mode & S_IFMT) == S_IFDIR ? 1 : 0;
+}
+
+int64_t Path_delete(int64_t path) {
+    const char* cpath = path_cstr(path);
+    struct stat st;
+    int err = 0;
+    if (stat(cpath, &st) == 0) {
+        if ((st.st_mode & S_IFMT) == S_IFDIR)
+            err = rmdir(cpath);
+        else
+            err = remove(cpath);
+    }
+    free((void*)cpath);
+    if (err != 0) return kiln_err_from_errno("delete");
+    return kiln_result_ok(0);
+}
+
+int64_t Path_create_dir(int64_t path) {
+    const char* cpath = path_cstr(path);
+    int r = mkdir(cpath, 0755);
+    free((void*)cpath);
+    if (r != 0 && errno != EEXIST) return kiln_err_from_errno("create_dir");
+    return kiln_result_ok(0);
+}
+
+int64_t Path_create_dir_all(int64_t path) {
+    const char* cpath = path_cstr(path);
+    char* tmp = (char*)malloc(strlen(cpath) + 1);
+    strcpy(tmp, cpath);
+    free((void*)cpath);
+    for (char* p = tmp + 1; *p; p++) {
+        if (*p == '/' || *p == '\\') {
+            *p = '\0';
+            mkdir(tmp, 0755);
+            *p = '/';
+        }
+    }
+    int r = mkdir(tmp, 0755);
+    free(tmp);
+    if (r != 0 && errno != EEXIST) return kiln_err_from_errno("create_dir_all");
+    return kiln_result_ok(0);
+}
+
+int64_t Path_file_size(int64_t path) {
+    const char* cpath = path_cstr(path);
+    struct stat st;
+    int r = stat(cpath, &st);
+    free((void*)cpath);
+    if (r != 0) return kiln_err_from_errno("file_size");
+    return kiln_result_ok((int64_t)st.st_size);
+}
+
+int64_t Path_copy_to(int64_t path, int64_t dst) {
+    const char* csrc = path_cstr(path);
+    const char* cdst = path_cstr(dst);
+    FILE* in = fopen(csrc, "rb");
+    free((void*)csrc);
+    if (!in) { free((void*)cdst); return kiln_err_from_errno("copy_to src"); }
+    FILE* out = fopen(cdst, "wb");
+    free((void*)cdst);
+    if (!out) { fclose(in); return kiln_err_from_errno("copy_to dst"); }
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) fwrite(buf, 1, n, out);
+    fclose(in); fclose(out);
+    return kiln_result_ok(0);
+}
+
+int64_t Path_rename_to(int64_t path, int64_t dst) {
+    const char* csrc = path_cstr(path);
+    const char* cdst = path_cstr(dst);
+    int r = rename(csrc, cdst);
+    free((void*)csrc); free((void*)cdst);
+    if (r != 0) return kiln_err_from_errno("rename_to");
+    return kiln_result_ok(0);
+}
+
+int64_t Path_list_dir(int64_t path) {
+    const char* cpath = path_cstr(path);
+    int64_t vec = Vec_new();
+#ifdef _WIN32
+    char pattern[4096];
+    snprintf(pattern, sizeof(pattern), "%s\\*", cpath);
+    free((void*)cpath);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return kiln_result_err((int64_t)alloc_str_struct("list_dir failed", 15));
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        size_t len = strlen(fd.cFileName);
+        char* copy = (char*)malloc(len + 1);
+        memcpy(copy, fd.cFileName, len + 1);
+        Vec_add(vec, (int64_t)alloc_str_struct(copy, (int64_t)len));
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR* d = opendir(cpath);
+    free((void*)cpath);
+    if (!d) return kiln_result_err((int64_t)alloc_str_struct("list_dir failed", 15));
+    struct dirent* ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+        size_t len = strlen(ent->d_name);
+        char* copy = (char*)malloc(len + 1);
+        memcpy(copy, ent->d_name, len + 1);
+        Vec_add(vec, (int64_t)alloc_str_struct(copy, (int64_t)len));
+    }
+    closedir(d);
+#endif
+    return kiln_result_ok(vec);
+}
+
+// Path string operations (no I/O, pure transformations on the path string).
+
+int64_t Path_join(int64_t path, int64_t part) {
+    KilnStr* a = (KilnStr*)path;
+    KilnStr* b = (KilnStr*)part;
+    if (!a || a->len == 0) return part;
+    if (!b || b->len == 0) return path;
+    int64_t total = a->len + 1 + b->len;
+    char* buf = (char*)malloc((size_t)(total + 1));
+    memcpy(buf, a->ptr, (size_t)a->len);
+    buf[a->len] = '/';
+    memcpy(buf + a->len + 1, b->ptr, (size_t)b->len);
+    buf[total] = '\0';
+    return (int64_t)alloc_str_struct(buf, total);
+}
+
+int64_t Path_basename(int64_t path) {
+    KilnStr* s = (KilnStr*)path;
+    if (!s || s->len == 0) return (int64_t)alloc_str_struct("", 0);
+    int64_t i = s->len - 1;
+    while (i > 0 && s->ptr[i - 1] != '/' && s->ptr[i - 1] != '\\') i--;
+    int64_t len = s->len - i;
+    char* buf = (char*)malloc((size_t)(len + 1));
+    memcpy(buf, s->ptr + i, (size_t)len);
+    buf[len] = '\0';
+    return (int64_t)alloc_str_struct(buf, len);
+}
+
+int64_t Path_dirname(int64_t path) {
+    KilnStr* s = (KilnStr*)path;
+    if (!s || s->len == 0) return (int64_t)alloc_str_struct(".", 1);
+    int64_t i = s->len - 1;
+    while (i > 0 && s->ptr[i] != '/' && s->ptr[i] != '\\') i--;
+    if (i == 0) {
+        if (s->ptr[0] == '/' || s->ptr[0] == '\\')
+            return (int64_t)alloc_str_struct("/", 1);
+        return (int64_t)alloc_str_struct(".", 1);
+    }
+    char* buf = (char*)malloc((size_t)(i + 1));
+    memcpy(buf, s->ptr, (size_t)i);
+    buf[i] = '\0';
+    return (int64_t)alloc_str_struct(buf, i);
+}
+
+int64_t Path_extension(int64_t path) {
+    KilnStr* s = (KilnStr*)path;
+    if (!s || s->len == 0) return (int64_t)alloc_str_struct("", 0);
+    for (int64_t i = s->len - 1; i >= 0; i--) {
+        if (s->ptr[i] == '.') {
+            int64_t len = s->len - i - 1;
+            char* buf = (char*)malloc((size_t)(len + 1));
+            memcpy(buf, s->ptr + i + 1, (size_t)len);
+            buf[len] = '\0';
+            return (int64_t)alloc_str_struct(buf, len);
+        }
+        if (s->ptr[i] == '/' || s->ptr[i] == '\\') break;
+    }
+    return (int64_t)alloc_str_struct("", 0);
+}
+
+int64_t Path_stem(int64_t path) {
+    int64_t base = Path_basename(path);
+    KilnStr* s = (KilnStr*)base;
+    if (!s || s->len == 0) return (int64_t)alloc_str_struct("", 0);
+    for (int64_t i = s->len - 1; i > 0; i--) {
+        if (s->ptr[i] == '.') {
+            char* buf = (char*)malloc((size_t)(i + 1));
+            memcpy(buf, s->ptr, (size_t)i);
+            buf[i] = '\0';
+            return (int64_t)alloc_str_struct(buf, i);
+        }
+    }
+    return base;
+}
+
+int64_t Path_to_str(int64_t path) { return path; }
+
+int64_t path_cwd() {
+#ifdef _WIN32
+    char buf[4096];
+    if (!GetCurrentDirectoryA(sizeof(buf), buf)) return (int64_t)alloc_str_struct(".", 1);
+    size_t len = strlen(buf);
+    char* copy = (char*)malloc(len + 1);
+    memcpy(copy, buf, len + 1);
+    return (int64_t)alloc_str_struct(copy, (int64_t)len);
+#else
+    char buf[4096];
+    if (!getcwd(buf, sizeof(buf))) return (int64_t)alloc_str_struct(".", 1);
+    size_t len = strlen(buf);
+    char* copy = (char*)malloc(len + 1);
+    memcpy(copy, buf, len + 1);
+    return (int64_t)alloc_str_struct(copy, (int64_t)len);
+#endif
+}
+
+int64_t path_temp_dir() {
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    GetTempPathA(sizeof(buf), buf);
+    size_t len = strlen(buf);
+    if (len > 0 && (buf[len - 1] == '/' || buf[len - 1] == '\\')) { buf[--len] = '\0'; }
+    char* copy = (char*)malloc(len + 1);
+    memcpy(copy, buf, len + 1);
+    return (int64_t)alloc_str_struct(copy, (int64_t)len);
+#else
+    const char* tmp = getenv("TMPDIR");
+    if (!tmp) tmp = "/tmp";
+    size_t len = strlen(tmp);
+    char* copy = (char*)malloc(len + 1);
+    memcpy(copy, tmp, len + 1);
+    return (int64_t)alloc_str_struct(copy, (int64_t)len);
+#endif
 }
 
 } // extern "C"

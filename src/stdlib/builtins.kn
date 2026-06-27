@@ -157,6 +157,41 @@ struct Range {
     end:   int
 }
 
+# Path -- filesystem path with file I/O methods.
+# Internally stored as a str; Path_new is a no-op passthrough on the C side.
+@builtin
+@impure
+struct Path {
+    def new(p: str) -> Path
+    def read_text() -> Result[str, str]
+    def write_text(content: str) -> Result[int, str]
+    def append_text(content: str) -> Result[int, str]
+    def exists() -> bool
+    def is_file() -> bool
+    def is_dir() -> bool
+    def delete() -> Result[int, str]
+    def create_dir() -> Result[int, str]
+    def create_dir_all() -> Result[int, str]
+    def list_dir() -> Result[Vec[str], str]
+    def file_size() -> Result[int, str]
+    def copy_to(dst: str) -> Result[int, str]
+    def rename_to(dst: str) -> Result[int, str]
+    def join(part: str) -> Path
+    def basename() -> str
+    def dirname() -> Path
+    def extension() -> str
+    def stem() -> str
+    def to_str() -> str
+}
+
+@builtin
+@impure
+def path_cwd() -> str
+
+@builtin
+@impure
+def path_temp_dir() -> str
+
 @builtin
 def __kiln_math_floor(x: float) -> float
 
@@ -334,6 +369,7 @@ export {
     __kiln_math_is_nan, __kiln_math_is_infinite, __kiln_math_is_finite, __kiln_math_isclose,
     __kiln_math_ipow, __kiln_math_gcd, __kiln_math_lcm,
     __kiln_math_imin, __kiln_math_imax, __kiln_math_iclamp,
-    __kiln_math_factorial, __kiln_math_comb, __kiln_math_perm
+    __kiln_math_factorial, __kiln_math_comb, __kiln_math_perm,
+    Path, path_cwd, path_temp_dir
 }
 

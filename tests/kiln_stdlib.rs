@@ -84,3 +84,8 @@ fn stdlib_collections() {
 fn stdlib_result() {
     run_kiln_tests("examples/stdlib/result_test.kn");
 }
+
+#[test]
+fn stdlib_fileio() {
+    run_kiln_tests("examples/stdlib/fileio_test.kn");
+}

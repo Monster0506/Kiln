@@ -15,6 +15,11 @@ def None[T]() -> Option[T]
 @builtin
 def Some[T](value: T) -> Option[T]
 
+enum Result[T, E] {
+    Ok { value: T }
+    Err { error: E }
+}
+
 enum Ordering {
     Less
     Equal
@@ -377,7 +382,7 @@ interface StringMethods {
 }
 
 export {
-    Try, Option, None, Some, Ordering,
+    Try, Option, None, Some, Result, Ordering,
     Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd,
     Debug, Display, Default, Constructable, Empty, Invertible, Normalizeable,
     AddableWith, SubtractableWith, MultipliableWith, DividableWith, RemainderableWith,

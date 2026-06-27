@@ -210,6 +210,18 @@ impl Default for Option[T] { @static hook default() -> Option[T] {} }
 impl Iterable for Option[T] {}
 impl Foldable for Option[T] {}
 
+# ---- Conformance: Result[T, E] ----------------------------------------------
+
+impl[T, E] Try for Result[T, E] {}
+impl[T: Clone, E: Clone] Clone for Result[T, E] { hook clone() -> Result[T, E] {} }
+impl[T: Eq, E: Eq] Eq for Result[T, E] {}
+impl[T: PartialEq, E: PartialEq] PartialEq for Result[T, E] {
+    hook ==(other: Result[T, E]) -> bool {}
+}
+impl[T: Hash, E: Hash] Hash for Result[T, E] { hook hash() -> int {} }
+impl[T: Debug, E: Debug] Debug for Result[T, E] { hook debug_str() -> str {} }
+impl[T: Display, E: Display] Display for Result[T, E] { hook to_str() -> str {} }
+
 # ---- Conformance: Display ---------------------------------------------------
 
 impl Display for int {

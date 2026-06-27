@@ -79,3 +79,8 @@ fn stdlib_math() {
 fn stdlib_collections() {
     run_kiln_tests("examples/stdlib/collections_test.kn");
 }
+
+#[test]
+fn stdlib_result() {
+    run_kiln_tests("examples/stdlib/result_test.kn");
+}

@@ -1,0 +1,37 @@
+# Result[T, E] tests: construction and pattern matching
+
+@test
+def test_ok_value() -> void {
+    r: Result[int, str] = Result:Ok { value: 42 }
+    match r {
+        Ok { value: v } => assert(v == 42),
+        Err { error: _ } => panic('expected Ok')
+    }
+}
+
+@test
+def test_err_value() -> void {
+    r: Result[int, str] = Result:Err { error: 'oops' }
+    match r {
+        Ok { value: _ } => panic('expected Err'),
+        Err { error: e } => assert(e == 'oops')
+    }
+}
+
+@test
+def test_ok_zero() -> void {
+    r: Result[int, str] = Result:Ok { value: 0 }
+    match r {
+        Ok { value: v } => assert(v == 0),
+        Err { error: _ } => panic('expected Ok')
+    }
+}
+
+@test
+def test_err_str() -> void {
+    r: Result[int, str] = Result:Err { error: 'fail' }
+    match r {
+        Ok { value: _ } => panic('expected Err'),
+        Err { error: e } => assert(e == 'fail')
+    }
+}

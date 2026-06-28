@@ -117,9 +117,8 @@ pub fn lower_typed_match(
                         let cmp = builder.ins().icmp(IntCC::Equal, s64, expected);
                         builder.ins().brif(cmp, arm_bb, &[], next_bb, &[]);
                     } else {
-                        // Fielded variant: scrutinee is a heap pointer.
-                        // Guard: if the scrutinee equals any unit-variant discriminant it's
-                        // a raw integer (not a pointer), so this arm cannot match.
+                        // Fielded variant: if scrutinee equals any unit discriminant it is
+                        // a raw integer, not a pointer, so this arm cannot match.
                         let unit_discs: Vec<i64> = enum_info
                             .variants
                             .values()

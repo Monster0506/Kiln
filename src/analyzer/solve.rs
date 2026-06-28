@@ -4,11 +4,8 @@ use crate::analyzer::infer::type_name_of;
 use crate::analyzer::ty::{Ty, TypeRegistry};
 use crate::analyzer::types::DiagNotes;
 
-/// Returns `true` if `ty` satisfies `iface` according to the registry.
-///
-/// `Ty::Unknown` always passes to avoid double-reporting after earlier errors.
-/// For generic containers (Vec, Set, Map, Option), the check recurses over
-/// the element/key/value type against the entry's bounds.
+/// Returns `true` if `ty` satisfies `iface`. `Ty::Unknown` always passes to avoid
+/// double-reporting. Generic container checks recurse over element/key/value bounds.
 pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
     match ty {
         // These always pass: errors elsewhere already cover them.
@@ -33,9 +30,8 @@ pub fn satisfies(ty: &Ty, iface: &str, registry: &TypeRegistry) -> bool {
             }
             let entries = registry.get_conformances(name.as_str(), iface);
             if !entries.is_empty() {
-                // Resolve bounds by named parameter, not positional index.
-                // Uses generic_param_order to map param name -> arg index, so
-                // multi-bound params (T: Eq + Hash) and multi-arg types both work correctly.
+                // Resolve bounds by named param via generic_param_order, so multi-bound
+                // params (T: Eq + Hash) and multi-arg types both work correctly.
                 let param_order = registry.get_generic_param_order(name.as_str());
                 let ok = entries.iter().any(|entry| {
                     if entry.bounds.is_empty() || args.is_empty() {
@@ -197,11 +193,8 @@ pub fn solve(constraints: &[Constraint], registry: &TypeRegistry) -> Vec<Analysi
     errors
 }
 
-/// When a constraint `ty: iface` fails, check if `ty` satisfies any transitive
-/// superinterface of `iface`. If so, suggest relaxing the bound to that weaker interface.
-///
-/// Among all satisfied superinterfaces, returns the most specific one -- the one
-/// not implied by any other satisfied superinterface in the set.
+/// When `ty: iface` fails, suggest the most specific satisfied superinterface of `iface`
+/// (the one not implied by any other satisfied superinterface).
 fn weaker_bound_suggestion(ty: &Ty, iface: &str, registry: &TypeRegistry) -> Option<String> {
     let supers = registry.get_transitive_supers(iface)?;
     let satisfied: Vec<&str> = supers

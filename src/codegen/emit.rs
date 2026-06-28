@@ -13,14 +13,8 @@ pub fn emit_object(cgx: CodegenContext) -> Result<Vec<u8>, String> {
     product.emit().map_err(|e| e.to_string())
 }
 
-/// Write object bytes to `obj_path`, then invoke the system linker to
-/// produce a native executable at `output`.
-///
-/// On Windows we try `link.exe` (MSVC) first, then `lld-link`, then `gcc`.
-/// On Unix we use `cc`.
-///
-/// The Kiln runtime (pre-compiled from kiln_rt.c at cargo build time) is
-/// written to a temporary object file and linked automatically.
+/// Write object bytes to `obj_path` then invoke the system linker to produce a native executable.
+/// Tries link.exe, lld-link, gcc on Windows; cc on Unix. Links the pre-compiled Kiln runtime.
 pub fn link_executable(
     obj_bytes: &[u8],
     obj_path: &Path,
@@ -46,8 +40,9 @@ pub fn link_executable(
     struct LinkerSpec {
         name: &'static str,
         is_msvc_style: bool,
-        // Flags placed before the output and object arguments.
         leading_flags: &'static [&'static str],
+        // Libraries appended after all object files (for GNU ld order sensitivity).
+        trailing_libs: &'static [&'static str],
     }
 
     let linker_specs: &[LinkerSpec] = if cfg!(windows) {
@@ -56,11 +51,13 @@ pub fn link_executable(
                 name: "link",
                 is_msvc_style: true,
                 leading_flags: &[],
+                trailing_libs: &[],
             },
             LinkerSpec {
                 name: "lld-link",
                 is_msvc_style: true,
                 leading_flags: &[],
+                trailing_libs: &[],
             },
             LinkerSpec {
                 name: "g++",
@@ -70,6 +67,7 @@ pub fn link_executable(
                     "-Wl,--subsystem,console",
                     "-Wl,-e,mainCRTStartup",
                 ],
+                trailing_libs: &["-lws2_32"],
             },
             LinkerSpec {
                 name: "gcc",
@@ -79,6 +77,7 @@ pub fn link_executable(
                     "-Wl,--subsystem,console",
                     "-Wl,-e,mainCRTStartup",
                 ],
+                trailing_libs: &["-lws2_32"],
             },
         ]
     } else {
@@ -87,11 +86,13 @@ pub fn link_executable(
                 name: "c++",
                 is_msvc_style: false,
                 leading_flags: &[],
+                trailing_libs: &[],
             },
             LinkerSpec {
                 name: "cc",
                 is_msvc_style: false,
                 leading_flags: &[],
+                trailing_libs: &[],
             },
         ]
     };
@@ -121,6 +122,9 @@ pub fn link_executable(
             cmd.arg("-o").arg(output).arg(obj_path);
             if let Some(ref rt) = runtime_path {
                 cmd.arg(rt);
+            }
+            for lib in spec.trailing_libs {
+                cmd.arg(lib);
             }
         }
 
@@ -234,9 +238,7 @@ mod tests {
 
     #[test]
     fn runtime_obj_is_embedded() {
-        // RUNTIME_OBJ will be non-empty when a C compiler was available at
-        // cargo build time. Just assert the slice exists; its content is
-        // platform-specific and verified by the end-to-end link test.
+        // RUNTIME_OBJ is non-empty when a C compiler was available at build time.
         let _ = RUNTIME_OBJ;
     }
 }

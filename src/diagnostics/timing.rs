@@ -465,9 +465,7 @@ mod tests {
 
     #[test]
     fn no_timing_flag_produces_no_extra_output() {
-        // When report is never called (timing=false path in main), nothing extra prints.
-        // This is a structural test: verify report writes nothing when timer has no phases.
-        // The actual "timing=false means no call" is enforced in main.rs.
+        // Structural test: timer with no phases produces no phase rows.
         let t = PhaseTimer::new();
         let stats = BuildStats::default();
         let mut out = Vec::<u8>::new();
@@ -480,9 +478,7 @@ mod tests {
 
     #[test]
     fn timing_output_goes_to_stderr_not_stdout() {
-        // report() takes a &mut dyn Write; the production call site passes stderr().
-        // This test verifies the struct compiles with a Vec<u8> (stdout substitute)
-        // and that the API is designed for stderr injection.
+        // Verify the API accepts a Vec<u8> in place of stderr -- the production site passes stderr.
         let t = PhaseTimer::new();
         let stats = BuildStats::default();
         let mut buf: Vec<u8> = Vec::new();

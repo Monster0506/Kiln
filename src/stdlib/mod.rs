@@ -41,9 +41,7 @@ pub fn stdlib_virtual_fs() -> std::collections::HashMap<String, String> {
     .collect()
 }
 
-/// Parse prelude.kn (which imports its sections via normal import statements).
-/// The result is cached globally -- prelude source never changes at runtime.
-/// The caller is responsible for resolving those imports via stdlib_virtual_fs().
+/// Parse and cache prelude.kn. The caller resolves its imports via stdlib_virtual_fs().
 pub fn parse_prelude() -> SourceFile {
     PRELUDE_CACHE
         .get_or_init(|| parse_src(PRELUDE_SRC, "prelude.kn"))

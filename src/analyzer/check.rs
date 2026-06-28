@@ -479,9 +479,8 @@ fn check_typed_stmt(
                         Ty::Unknown
                     }
                 }
-                // Primitive types (int, bool, float) are not Ty::Named, so the arms above
-                // don't see them. Check whether a user-defined extension impl registered
-                // an iter() method under the primitive's type name.
+                // Primitives are not Ty::Named; check for a user-defined extension impl
+                // that registered iter() under the primitive's type name.
                 other => {
                     let prim_name: &str = match other {
                         Ty::Int => "int",
@@ -688,10 +687,8 @@ pub fn check_fn_def(
     }
 }
 
-/// For `Ty::Named` types with invariant type parameters, verify that
-/// the assigned type's corresponding argument matches exactly.
-/// This catches cases like `let m: Mutex[Animal] = mutex_of_dog` when
-/// Mutex is invariant in its parameter.
+/// For invariant type parameters on `Ty::Named`, verify the assigned type's
+/// corresponding argument matches exactly (e.g. rejects Mutex[Animal] = mutex_of_dog).
 fn check_variance_assignment(
     expected: &Ty,
     found: &Ty,
@@ -741,9 +738,8 @@ fn emit_unused_var_warnings(env: &Env, stmts: &[TypedStmt], errors: &mut Vec<Ana
     }
 }
 
-/// Collect the set of identifier names that appear in "read" (value) position
-/// within `stmts` and all nested blocks/expressions. Assignment targets that are
-/// bare `Ident` nodes are excluded -- they are pure writes, not reads.
+/// Collect identifier names read (not just assigned) within `stmts` and nested blocks.
+/// Bare `Ident` assignment targets are excluded as pure writes.
 fn collect_ident_reads(stmts: &[TypedStmt]) -> std::collections::HashSet<String> {
     let mut reads = std::collections::HashSet::new();
     for stmt in stmts {

@@ -180,8 +180,7 @@ impl Env {
     }
 
     /// Returns true when `name` is already visible in any enclosing scope.
-    /// Used to detect duplicate top-level names; NOT an error for VarDecl
-    /// (shadowing is allowed in Kiln).
+    /// Used only for duplicate top-level detection; VarDecl shadowing is allowed.
     pub fn would_shadow(&self, name: &str) -> bool {
         self.lookup(name).is_some()
     }
@@ -244,9 +243,8 @@ impl Env {
         }
     }
 
-    /// Returns all (name, symbol) pairs visible across all active scopes.
-    /// Innermost scope takes precedence (like lookup). Used to snapshot prelude
-    /// symbols for the cache.
+    /// Returns all (name, symbol) pairs visible across all active scopes,
+    /// innermost taking precedence. Used to snapshot prelude symbols for the cache.
     pub fn get_global_scope_symbols(&self) -> SymbolList {
         let mut seen = std::collections::HashSet::new();
         let mut result = Vec::new();

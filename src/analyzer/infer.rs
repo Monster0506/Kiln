@@ -477,9 +477,8 @@ pub fn infer_typed_expr(
                     } = &arm.pattern
                     {
                         arm_env.push_scope();
-                        // Build substitution from the scrutinee's concrete type args so
-                        // that match-bound vars like `v` in `Some { value: v }` get type
-                        // `int` instead of `Unknown` when the scrutinee is `Option[int]`.
+                        // Substitute the scrutinee's concrete args so match-bound vars
+                        // (e.g. `v` in `Some { value: v }`) get concrete types.
                         let subst: std::collections::HashMap<String, Ty> = {
                             let mut m = std::collections::HashMap::new();
                             if let Ty::Named(_, _, concrete_args) = &ts.ty {
@@ -754,9 +753,8 @@ fn infer_call_field(
     errors: &mut Vec<AnalysisError>,
     span: Span,
 ) -> TypedExpr {
-    // Type[TypeArg].method() -- type-qualified static call with explicit type argument.
-    // The parser sees this as Index(Ident(type_name), Ident(type_arg)).method(), so we
-    // intercept it here before falling through to the instance-call path.
+    // Type[TypeArg].method(): parser emits Index(Ident(type_name), Ident(type_arg)).method();
+    // intercept before falling through to the instance-call path.
     if let Expr::Index {
         object: type_obj,
         index: type_arg_expr,
@@ -857,9 +855,8 @@ fn infer_call_field(
     let (method_fn, ret) = if let Some(tname) = &obj_type {
         let qfn = format!("{}_{}", tname, field);
 
-        // For any single-argument generic type (Vec[X], Option[X], Set[X], ...),
-        // substitute the concrete element type for T throughout the method signature
-        // so argument types and the return type are concrete.
+        // For single-arg generic types, substitute the concrete element type for T
+        // throughout the method signature so argument and return types are concrete.
         let elem_ty: Option<Ty> = match &to.ty {
             Ty::Named(_, _, args) if args.len() == 1 => args.first().cloned(),
             _ => None,
@@ -888,10 +885,8 @@ fn infer_call_field(
             );
         }
 
-        // For multi-arg generic types (e.g. Map[K,V]) unify method param types
-        // against actual arg types to concretize the return type. This handles
-        // calls like m.get_or(key, default) where V appears in both a param and
-        // the return type but is not recoverable from the single-arg substitute_t path.
+        // For multi-arg generics (e.g. Map[K,V]), unify param types against actual
+        // args to concretize the return type when single-arg substitution cannot.
         if elem_ty.is_none() {
             if let Some(method) = registry.find_method(tname, field) {
                 let method = method.clone();
@@ -948,9 +943,8 @@ fn infer_call_field(
             .find_method(tname, field)
             .map(|m| m.ret.clone())
             .unwrap_or(Ty::Unknown);
-        // When the type name is a generic parameter (e.g. "T") and the registry has
-        // no entry for it, fall back to the interface-bound lookup so the return type
-        // is concrete (e.g. Str for to_str) rather than Unknown.
+        // For generic param type names with no registry entry, fall back to interface-bound
+        // lookup so the return type is concrete rather than Unknown.
         let r = if r == Ty::Unknown {
             if let Ty::GenericParam(param_name) = &to.ty {
                 let ifaces = env.get_param_ifaces(param_name);
@@ -978,9 +972,8 @@ fn infer_call_field(
             .unwrap_or(Ty::Unknown);
         (field.to_string(), ret)
     } else if let Ty::GenericParam(param_name) = &to.ty {
-        // Generic param dispatch: look up which interface declares this method
-        // through the param's bounds, then return a projection type for any
-        // associated-type return values.
+        // Generic param dispatch: find the interface that declares this method
+        // via the param's bounds and project any associated-type return values.
         let ifaces = env.get_param_ifaces(param_name);
         let mut found_ret = Ty::Unknown;
         for iface_name in &ifaces {
@@ -1285,9 +1278,8 @@ fn find_best_overload<'a>(
 
 // Generic-param method dispatch helpers
 
-/// Rewrite an interface method return type so that any `GenericParam(name)` that
-/// is an associated type of `iface_name` becomes `Ty::Projection { base: param, assoc: name }`.
-/// Everything else (regular generic params, concrete types) passes through unchanged.
+/// Rewrite a method return type: `GenericParam(name)` that is an associated type of
+/// `iface_name` becomes `Ty::Projection`; everything else passes through unchanged.
 fn project_return_ty(ty: &Ty, param: &str, iface_name: &str, registry: &TypeRegistry) -> Ty {
     match ty {
         Ty::GenericParam(name) if registry.is_assoc_type_of(name, iface_name) => Ty::Projection {
@@ -1392,9 +1384,8 @@ fn lower_pattern(
         Pattern::Wildcard(s) => TypedPattern::Wildcard(*s),
         Pattern::Literal(e) => TypedPattern::Literal(infer_typed_expr(e, env, registry, errors)),
         Pattern::TypeBinding { ty, name, span } => {
-            // A bare-ident pattern like `Less` (parsed as TypeBinding with ty="_")
-            // may actually be a unit enum variant. Promote it to a Struct pattern
-            // so the match codegen can do a proper discriminant comparison.
+            // Bare-ident pattern parsed as TypeBinding with ty="_" may be a unit enum
+            // variant; promote to Struct so codegen does a discriminant comparison.
             if ty == "_" && registry.is_enum_variant(name) {
                 TypedPattern::Struct {
                     variant: name.clone(),
@@ -1776,9 +1767,8 @@ pub fn check_assignable_with_decl_span(
     }
 }
 
-/// Like `check_assignable`, but normalizes both sides through the active projection
-/// pin table before comparing.  Call this whenever `env` is in scope and either
-/// side might contain `Ty::Projection` that has a concrete resolution.
+/// Like `check_assignable`, but normalizes both sides through the projection pin table
+/// first. Call this when either side might contain a resolved `Ty::Projection`.
 pub fn check_assignable_normalized(
     expected: &Ty,
     found: &Ty,
@@ -1813,9 +1803,8 @@ pub fn types_compatible(expected: &Ty, found: &Ty) -> bool {
         return true;
     }
     match (expected, found) {
-        // Interface and compound interface types are supertypes of any concrete type;
-        // runtime dispatch checks actual conformance. Specific conformance is
-        // verified separately by check.rs where the registry is available.
+        // Interface and compound types accept any concrete value; specific conformance
+        // is verified by check.rs where the registry is available.
         (Ty::Interface(_, _), _) | (Ty::Compound(_), _) => true,
         (_, Ty::Interface(_, _)) | (_, Ty::Compound(_)) => true,
 
@@ -1857,9 +1846,8 @@ fn mk(kind: TypedExprKind, ty: Ty, span: Span) -> TypedExpr {
     TypedExpr { kind, ty, span }
 }
 
-/// Propagate a fully-concrete declared type onto an expr whose type still has
-/// GenericParam args (e.g. `d: Deque[int] = Deque.new()` where `Deque.new()`
-/// returns `Deque[GenericParam("T")]`).
+/// Propagate a concrete declared type onto an expr whose type still has GenericParam args
+/// (e.g. `d: Deque[int] = Deque.new()` returning `Deque[GenericParam("T")]`).
 pub fn coerce_generic_to_declared(expr: TypedExpr, declared: &Ty) -> TypedExpr {
     fn has_param(ty: &Ty) -> bool {
         match ty {
@@ -1885,9 +1873,8 @@ pub fn coerce_generic_to_declared(expr: TypedExpr, declared: &Ty) -> TypedExpr {
     expr
 }
 
-/// If `expr` is an unspecialized PrimTypeRef and `expected` is a matching
-/// Callable type, fill in the concrete source type so codegen can emit the
-/// right conversion thunk.
+/// If `expr` is an unspecialized PrimTypeRef matching `expected`'s Callable type,
+/// fill in the concrete source type so codegen emits the right conversion thunk.
 fn specialize_prim_ref(expr: TypedExpr, expected: &Ty) -> TypedExpr {
     if let TypedExprKind::PrimTypeRef {
         source: Ty::Unknown,

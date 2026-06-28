@@ -44,9 +44,7 @@ use crate::diagnostics::Span;
 use crate::parser::ast::{Expr, HookName, ImplKind, Item, SourceFile, StringSegment, TypeExpr};
 
 fn register_builtins(_env: &mut Env, _registry: &mut ty::TypeRegistry) {
-    // All builtin names are declared in prelude.kn.
-    // None and Some are registered via @builtin def declarations in the prelude;
-    // their symbols are resolved in pass 1b alongside all other function signatures.
+    // All builtin names (including None/Some) are declared in prelude.kn via @builtin defs.
 }
 
 /// Alpha-normalized type equality for signature comparison.
@@ -193,15 +191,13 @@ fn register_projection_pins(
 }
 
 /// Analyze `source`, producing a `TypedFile` or a list of errors.
-///
 /// The stdlib prelude is always prepended before user items.
 pub fn analyze(source: &SourceFile) -> Result<TypedFile, Vec<AnalysisError>> {
     analyze_with_base(source, &std::path::PathBuf::from(".")).map(|(typed, _warnings)| typed)
 }
 
 /// Like `analyze`, but resolves `import` statements relative to `base_dir`.
-/// Returns `Ok((TypedFile, warnings))` on success, `Err(errors)` on failure.
-/// Warnings are diagnostics that don't block compilation (W-codes).
+/// Returns `Ok((TypedFile, warnings))` or `Err(errors)`.
 pub fn analyze_with_base(
     source: &SourceFile,
     base_dir: &std::path::Path,
@@ -210,9 +206,8 @@ pub fn analyze_with_base(
         .map(|(typed, _registry, warnings)| (typed, warnings))
 }
 
-/// Like `analyze_with_base`, but also returns the `TypeRegistry` built during analysis.
-/// Used by codegen paths that need the registry for monomorphization.
-/// Returns `Ok((TypedFile, TypeRegistry, warnings))` on success.
+/// Like `analyze_with_base`, but also returns the `TypeRegistry` for codegen monomorphization.
+/// Returns `Ok((TypedFile, TypeRegistry, warnings))` or `Err(errors)`.
 pub fn analyze_with_base_and_registry(
     source: &SourceFile,
     base_dir: &std::path::Path,
@@ -593,9 +588,7 @@ fn resolve_one_import(
     let wildcard_export = exported.contains("*");
     let wildcard_import = import.symbols.iter().any(|s| s == "*");
 
-    // Filter module items to only those the module exports.
-    // Impl blocks are keyed by their for_type name, so they pass through
-    // alongside the type they implement.
+    // Filter to only exported items; impl blocks pass through alongside their type.
     let exported_items: Vec<Item> = module_items
         .into_iter()
         .filter(|i| match item_top_name(i) {
@@ -651,9 +644,8 @@ fn item_top_name(item: &Item) -> Option<&str> {
     }
 }
 
-/// Convert inline hooks in struct bodies into synthetic `ImplBlock` items.
-/// Each `@implements[Iface] hook` in a struct body becomes an `impl Iface for StructName { hook }`.
-/// Emits `MissingImplementsAnnotation` for any hook missing the annotation.
+/// Convert `@implements[Iface] hook` in struct bodies into synthetic ImplBlock items.
+/// Emits `MissingImplementsAnnotation` for hooks without the annotation.
 fn desugar_inline_hooks(items: Vec<Item>) -> (Vec<Item>, Vec<error::AnalysisError>) {
     use crate::parser::ast::{ImplBlock, ImplKind, TypeExpr};
 
@@ -980,11 +972,8 @@ fn analyze_inner(
                 let generic_param_names: Vec<String> =
                     f.generic_params.iter().map(|g| g.name.clone()).collect();
 
-                // @builtin def with no params is a value-level declaration (a nullary
-                // constructor). Register it as Symbol::Var so that bare references
-                // resolve to the value type rather than a Callable type. Generic params
-                // are replaced with Unknown so the type unifier can infer them from
-                // context (e.g. `x: Option[int] = None` infers None: Option[int]).
+                // @builtin def with no params is a nullary constructor; register as Symbol::Var
+                // so bare refs resolve to the value type. Generic params become Unknown for inference.
                 let is_builtin = f.annotations.iter().any(|a| a.name == "builtin");
                 // A lone non-builtin declaration with no implementation is an error.
                 if f.is_declaration && !is_builtin {
@@ -1126,9 +1115,7 @@ fn analyze_inner(
                     }
                 }
 
-                // Build overload entries for implementations only.
-                // For each implementation, check if there is a matching declaration
-                // (same arity) and inherit its bounds.
+                // Build overload entries for implementations; inherit bounds from matching decls.
                 let mut overloads: Vec<FnOverload> = Vec::new();
                 let mut overload_local_idx = 0usize;
                 for &ii in &impl_indices {
@@ -1198,9 +1185,8 @@ fn analyze_inner(
     for item in &source.items {
         if let Item::Struct(s) = item {
             if s.is_builtin {
-                // Builtin structs declare their methods as FnDecl entries.
-                // Register them so the analyzer can type-check calls, using the
-                // real source spans from the prelude file.
+                // Builtin struct methods are declared as FnDecl entries in the prelude;
+                // register them so the analyzer can type-check calls with real spans.
                 let has_generics = !s.generic_params.is_empty();
                 if has_generics {
                     env.push_scope();
@@ -1320,9 +1306,7 @@ fn analyze_inner(
         }
     }
 
-    // Pass 1c2: register enum variant fields and generic param order so match arm
-    // bindings get properly-typed variables (e.g. `v: int` in `Some { value: v }`
-    // when the scrutinee is `Option[int]`).
+    // Pass 1c2: register enum variant fields and generic param order for typed match bindings.
     for item in &source.items {
         if let Item::Enum(e) = item {
             let has_generics = !e.generic_params.is_empty();
@@ -1436,10 +1420,8 @@ fn analyze_inner(
                 );
             }
 
-            // Define `Self` and any user alias so hook/method signatures can use them.
-            // Look up the concrete type from the registry so Self resolves to Ty::Named("Item")
-            // rather than a generic param. Primitive types (int, bool, float, str) are not in
-            // the registry by name, so fall back to resolve_type_expr on the for_type.
+            // Define `Self` and any user alias for hook/method signatures. Primitives are
+            // not in the registry by name, so fall back to resolve_type_expr for them.
             let self_concrete_ty = if let Some(e) = registry.lookup_by_name(&type_name) {
                 Ty::Named(e.id.clone(), type_name.clone(), vec![])
             } else {
@@ -1685,10 +1667,8 @@ fn analyze_inner(
         }
     }
 
-    // Pass 1e2: conformance propagation.
-    // For every direct (type, iface) conformance, also register it for every transitive
-    // superinterface of iface so that constraint solving never needs to traverse the
-    // superinterface graph at query time.
+    // Pass 1e2: propagate each direct (type, iface) conformance to all transitive
+    // superinterfaces so constraint solving uses O(1) set lookup at query time.
     {
         let direct = registry.all_direct_conformances();
         for (type_name, iface_name, entries) in direct {
@@ -1710,16 +1690,8 @@ fn analyze_inner(
         }
     }
 
-    // Pass 1f: compute variance for all generic type parameters.
-    //
-    // For each struct and builtin struct with generic params:
-    //   1. Register the param name order.
-    //   2. Infer variance from method signatures: output-only => covariant,
-    //      input-only => contravariant, both => invariant, neither => bivariant.
-    //   3. Apply any explicit variance annotation (+T/-T) from the AST, overriding
-    //      the inferred result.
-    //
-    // After inference, override hardcoded invariant types (Mutex[T]).
+    // Pass 1f: compute variance for all generic type parameters by inferring from method
+    // signatures, then applying explicit +T/-T annotations and hardcoded overrides (Mutex[T]).
     {
         use crate::analyzer::ty::ComputedVariance;
         use crate::parser::ast::Variance;
@@ -2007,9 +1979,8 @@ fn analyze_inner(
                         }
                         let ret_raw =
                             resolve::resolve_type_expr(&method.return_type, &env, &mut errors);
-                        // Erase generic params in the ABI signature so is_generic_fn returns
-                        // false: all Kiln values are i64 at codegen, so one version works for
-                        // all T.  The body retains GenericParam types for correct type-checking.
+                        // Erase generic params in the ABI signature (all values are i64 at codegen);
+                        // the body retains GenericParam types for correct type-checking.
                         let gp_names: Vec<String> =
                             s.generic_params.iter().map(|gp| gp.name.clone()).collect();
                         let ret = subst_generic_params_unknown(&ret_raw, &gp_names);
@@ -2147,9 +2118,8 @@ fn analyze_inner(
                             if generics.is_empty() {
                                 name.clone()
                             } else {
-                                // Include a fingerprint of generic args so that
-                                // `AddableWith[int]` and `AddableWith[float]` do not
-                                // collide as duplicate impls for the same type.
+                                // Fingerprint generic args so AddableWith[int] and
+                                // AddableWith[float] do not collide as duplicate impls.
                                 let args: Vec<String> = generics
                                     .iter()
                                     .map(|g| match g {
@@ -2567,11 +2537,8 @@ fn analyze_inner(
     // Pass 4: object safety -- check that interfaces used as dynamic types are object-safe.
     {
         use crate::parser::ast::{HookName, InterfaceItemKind};
-        // Build the non-erasable set: iface_name -> violating method/hook name.
-        // An interface is not erasable when any hook or method:
-        //   - uses Self in a non-receiver parameter type, or
-        //   - uses Self in the return type, or
-        //   - is itself generic (a method with its own type parameters).
+        // Build iface_name -> violating name for interfaces not usable as dynamic types
+        // (Self in non-receiver param/return type, or the method is itself generic).
         let non_object_safe: std::collections::HashMap<String, String> = interfaces
             .iter()
             .filter_map(|iface| {

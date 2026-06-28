@@ -4,15 +4,8 @@ use cranelift_module::{DataDescription, FuncId, FuncOrDataId, Linkage, Module};
 use cranelift_object::ObjectModule;
 use std::collections::HashMap;
 
-/// Declare all string-related runtime functions as external imports and return
-/// their FuncIds so callers can seed `func_ids` for Kiln-level calls.
-///
-///   __kiln_print(str_val: i64)
-///   __kiln_println(str_val: i64)
-///   __kiln_str_concat(a: i64, b: i64) -> i64
-///   __kiln_int_to_str(n: i64) -> i64
-///   __kiln_float_to_str(bits: i64) -> i64
-///   __kiln_bool_to_str(b: i64) -> i64
+/// Declare string runtime functions as external imports and return FuncIds for `func_ids` seeding.
+/// Covers print, println, str_concat, int/float/bool_to_str.
 pub fn declare_str_runtime(module: &mut ObjectModule) -> HashMap<String, FuncId> {
     let mut ids: HashMap<String, FuncId> = HashMap::new();
 
@@ -220,13 +213,8 @@ fn import_fn(
         })
 }
 
-/// Emit a string literal as a pair of global data objects and return a
-/// single `i64` Value that is a pointer to a heap-layout `{ ptr: i64, len: i64 }`
-/// (a KilnStr fat-pointer struct) stored in a global.
-///
-/// Layout of the fat-pointer global (16 bytes, little-endian):
-///   bytes  0..8  : relocation pointing to the UTF-8 bytes global
-///   bytes  8..16 : byte length as a little-endian i64
+/// Emit a string literal as two globals and return an i64 pointer to a KilnStr fat-pointer
+/// struct (16 bytes: ptr at 0..8, byte length at 8..16, little-endian).
 pub fn emit_str_literal(
     s: &str,
     module: &mut ObjectModule,

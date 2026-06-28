@@ -89,3 +89,13 @@ fn stdlib_result() {
 fn stdlib_fileio() {
     run_kiln_tests("examples/stdlib/fileio_test.kn");
 }
+
+#[test]
+fn stdlib_path() {
+    run_kiln_tests("examples/stdlib/path_test.kn");
+}
+
+#[test]
+fn stdlib_http() {
+    run_kiln_tests("examples/stdlib/http_test.kn");
+}

@@ -1,9 +1,7 @@
 use crate::parser::ast::BinOp;
 
-/// The ordered resolution path for a compound-assign operator.
-/// Each step is an interface name to check, from most specific to most general.
-/// Codegen walks this to find the best available implementation.
-/// Constraint checking uses the last (most general) entry as the required bound.
+/// Ordered resolution path for a compound-assign operator, most specific to most general.
+/// Codegen walks for the best impl; constraint checking uses the last as the required bound.
 pub fn compound_assign_hierarchy(op: &BinOp) -> &'static [&'static str] {
     match op {
         BinOp::Add => &["AddAssignable", "AddableWith", "Addable"],
@@ -15,9 +13,8 @@ pub fn compound_assign_hierarchy(op: &BinOp) -> &'static [&'static str] {
     }
 }
 
-/// Returns the required interface for a compound-assign operator -- the loosest
-/// bound that guarantees the operation is possible at all.
-/// Returns None for operators with no compound-assign interface.
+/// Returns the loosest required interface for a compound-assign operator,
+/// or None for operators with no compound-assign interface.
 pub fn compound_assign_iface(op: &BinOp) -> Option<&'static str> {
     compound_assign_hierarchy(op).last().copied()
 }

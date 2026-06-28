@@ -169,9 +169,8 @@ fn collect_callees_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
             ..
         } => {
             out.insert(fn_name.clone());
-            // After monomorphization the callee Ident holds the resolved name
-            // (e.g. "println__T__str"), which may differ from fn_name ("println").
-            // Record it so the BFS reaches the concrete monomorphized function.
+            // After mono the callee Ident may hold a resolved name (e.g. "println__T__str");
+            // record it so BFS reaches the concrete monomorphized function.
             if let TypedExprKind::Ident(resolved) = &callee.kind {
                 out.insert(resolved.clone());
             }

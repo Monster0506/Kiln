@@ -1,13 +1,5 @@
-/// Escape analysis: determine which local struct bindings do NOT escape
-/// their enclosing function scope.
-///
-/// A variable escapes if:
-/// - It is returned from the function.
-/// - It is passed as an argument to any function call.
-/// - It is stored into a struct field or another collection.
-///
-/// Non-escaping structs could be stack-allocated instead of heap-allocated.
-/// This module performs the analysis; codegen changes are a future step.
+/// Escape analysis: determine which local struct bindings do NOT escape their function scope.
+/// A variable escapes if returned, passed as an argument, or stored into a field/collection.
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedExpr, TypedExprKind, TypedFile, TypedItem, TypedStmt,
 };

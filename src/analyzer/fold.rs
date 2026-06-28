@@ -720,10 +720,8 @@ fn try_fold_binop(
     // Float self-comparison and self-difference for ident operands
     match (&op, left_kind, right_kind) {
         (BinOp::Sub, TypedExprKind::Ident(a), TypedExprKind::Ident(b)) if a == b => {
-            // Already handled above for the general case (produces Int(0)).
-            // For floats we emit Float(0.0) since the type is float.
-            // This arm is unreachable for Int because the earlier arm returns first.
-            // We check the type to distinguish.
+            // The Int case is already handled above. This arm only fires for Float
+            // (unreachable for Int), so emit Float(0.0) instead of Int(0).
             if ty == crate::analyzer::ty::Ty::Float {
                 fold_note!(format!("{} - {}", a, b), "0.0");
                 return TypedExpr {

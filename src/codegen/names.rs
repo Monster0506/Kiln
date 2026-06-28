@@ -31,10 +31,8 @@ pub fn encode_op(op: &str) -> String {
     }
 }
 
-/// Encode a *unary* operator string (from `HookName::Op` with no params) to
-/// its function-name suffix. Unary ops use different names than their binary
-/// counterparts so `hook +()` (normalize) and `hook +(rhs)` (add) don't
-/// collide on the same type.
+/// Encode a unary operator string to its function-name suffix. Distinct from binary
+/// names so `hook +()` (normalize) and `hook +(rhs)` (add) don't collide.
 pub fn encode_unary_op(op: &str) -> &'static str {
     match op {
         "+" => "pos",

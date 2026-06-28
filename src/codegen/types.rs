@@ -3,14 +3,8 @@ use crate::analyzer::ty::Ty;
 use crate::parser::ast::TypeExpr;
 use cranelift_codegen::ir::types::{self, Type};
 
-/// Lower a Kiln `Ty` to a Cranelift scalar `Type`.
-///
-/// Returns `None` for `Ty::Void` (no value) and for composite types that
-/// require out-of-band handling (str, tuples, structs) -- callers that may
-/// receive those must check first.
-///
-/// Heap-allocated composite types (Vec, Map, Set, Shared, Ref, Named) are
-/// represented as opaque `I64` pointers at the IR level.
+/// Lower a Kiln `Ty` to a Cranelift scalar `Type`. Returns `None` for `Ty::Void` and
+/// composite types needing out-of-band handling. Heap types become opaque I64 pointers.
 pub fn clif_type(ty: &Ty) -> Option<Type> {
     match ty {
         Ty::Int => Some(types::I64),

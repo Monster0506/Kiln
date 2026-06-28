@@ -1,10 +1,5 @@
 /// Liveness analysis: standard backward dataflow over a CFG.
-///
-/// For each basic block b:
-///   live_out[b] = union of live_in[s] for all successors s of b
-///   live_in[b]  = use[b] union (live_out[b] \ def[b])
-///
-/// Iterates until fixed point.
+/// live_out[b] = union(live_in[s] for successors s); live_in[b] = use[b] | (live_out[b] \ def[b]).
 use crate::analyzer::cfg::{Cfg, Terminator};
 use crate::analyzer::typed_ast::{TypedExpr, TypedExprKind, TypedFile, TypedItem, TypedStmt};
 use std::collections::HashSet;
@@ -17,9 +12,8 @@ pub struct LivenessResult {
     pub live_out: Vec<HashSet<String>>,
 }
 
-/// Compute liveness for all basic blocks in `cfg`.
-/// The `stmts` slice should be the flat statement list of the function body
-/// in the same order that the CFG was built from.
+/// Compute liveness for all basic blocks in `cfg`, using the flat statement list
+/// in the same order the CFG was built from.
 pub fn analyze_liveness(cfg: &Cfg, stmts: &[TypedStmt]) -> LivenessResult {
     let n = cfg.blocks.len();
     let mut live_in: Vec<HashSet<String>> = vec![HashSet::new(); n];
@@ -72,9 +66,7 @@ fn successors(cfg: &Cfg, block_id: usize) -> Vec<usize> {
     }
 }
 
-/// Compute (use, def) for a basic block.
-/// `use` = variables read before written in this block.
-/// `def` = variables written in this block.
+/// Compute (use, def) for a basic block: use = read before written, def = written.
 fn block_use_def(
     block: &crate::analyzer::cfg::BasicBlock,
     stmts: &[TypedStmt],
@@ -274,18 +266,12 @@ mod tests {
 
     #[test]
     fn live_in_set_includes_variable_read_in_block() {
-        // let x = 1; return x
-        // Entry block reads x (after defining it, so x is in use but then in def).
-        // For live_in of block 0: x is defined here, so it shouldn't be in live_in.
+        // let x = 1; return x -- x is defined then used in the same block.
+        // VarDecl adds x to def before Return adds it to use, so x is not live_in.
         let b = block(vec![var_decl("x", int_expr(1)), ret_stmt(ident_expr("x"))]);
         let cfg = CfgBuilder::build(&b);
         let stmts: Vec<TypedStmt> = b.stmts.clone();
         let live = analyze_liveness(&cfg, &stmts);
-        // Block 0 defines x (VarDecl) and uses x (return). Since def precedes use within the
-        // same block traversal, x is in def but not live_in.
-        // However our stmt_use_def processes VarDecl as: read RHS (1 = no idents), then def x.
-        // Then Return reads x. But x is now in defs, so expr_uses won't add it to uses.
-        // This is correct: x is locally defined before its use, so it's not live at block entry.
         assert!(!live.live_in[0].contains("x"));
     }
 
@@ -302,9 +288,7 @@ mod tests {
 
     #[test]
     fn liveness_propagates_backwards_through_loop() {
-        // let x = 1; let y = 2; return x
-        // y is defined but never read -> y should not be live at exit.
-        // x is read at return -> x should appear as used.
+        // let x = 1; let y = 2; return x -- y never read, x read at return.
         let b = block(vec![
             var_decl("x", int_expr(1)),
             var_decl("y", int_expr(2)),

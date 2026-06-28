@@ -5,6 +5,7 @@ pub mod emit;
 pub mod exceptions;
 pub mod exprs;
 pub mod fns;
+pub mod io;
 pub mod match_;
 pub mod math;
 pub mod memory;

@@ -2,9 +2,8 @@ use crate::analyzer::types::{ParamList, ProjectionPins};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
-/// Substitute any `Ty::Projection { base, assoc }` whose `(base, assoc)` key
-/// appears in `pins` with its pinned concrete type, recursing into all
-/// compound type forms.  Leaves everything else unchanged.
+/// Substitute any pinned `Ty::Projection { base, assoc }` with its concrete type,
+/// recursing into all compound forms. Leaves everything else unchanged.
 pub fn normalize_ty(ty: &Ty, pins: &ProjectionPins) -> Ty {
     match ty {
         Ty::Projection { base, assoc } => {
@@ -63,14 +62,11 @@ impl ComputedVariance {
     }
 }
 
-/// One way a type can satisfy an interface.
-/// All bounds must hold for this entry to count.
-/// An empty `bounds` vec means unconditional conformance.
+/// One way a type can satisfy an interface; all bounds must hold. Empty bounds = unconditional.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ConformanceEntry {
-    /// Each element is `(param_name, interface_name)`.
-    /// For generic containers: e.g. `Vec[T]: Display` stores `[("T", "Display")]`.
-    /// For concrete types: empty.
+    /// `(param_name, interface_name)` pairs; empty means unconditional conformance.
+    /// e.g. `Vec[T]: Display` -> `[("T", "Display")]`.
     pub bounds: Vec<(String, String)>,
     /// Associated type bindings declared in the impl block: `type Item = int` stores `[("Item", Ty::Int)]`.
     pub bindings: ParamList,
@@ -366,9 +362,8 @@ impl TypeRegistry {
         self.interface_supers.insert(iface.to_string(), supers);
     }
 
-    /// Precompute the full transitive superinterface closure for every interface
-    /// that has direct supers registered. Call once after all interfaces are registered.
-    /// After this, `iface_implies` uses O(1) set lookup instead of BFS per query.
+    /// Precompute transitive superinterface closures for all registered interfaces.
+    /// Call once after registration so `iface_implies` uses O(1) set lookup.
     pub fn precompute_transitive_closures(&mut self) {
         let iface_names: Vec<String> = self.interface_supers.keys().cloned().collect();
         for iface in &iface_names {
@@ -440,9 +435,7 @@ impl TypeRegistry {
             .collect()
     }
 
-    // -----------------------------------------------------------------------
     // Variance infrastructure
-    // -----------------------------------------------------------------------
 
     /// Register the ordered list of generic parameter names for a type.
     /// Must be called before `register_type_variance` for that type.
@@ -459,8 +452,7 @@ impl TypeRegistry {
     }
 
     /// Override the computed variance for a specific parameter position.
-    /// The caller is responsible for ensuring this is consistent with the
-    /// type's actual usage (use for declared invariance sources like Mutex).
+    /// Use for declared invariance sources like Mutex; caller ensures consistency.
     pub fn register_type_variance(
         &mut self,
         type_name: &str,
@@ -471,9 +463,8 @@ impl TypeRegistry {
             .insert((type_name.to_string(), param_idx), v);
     }
 
-    /// Returns the variance for the given parameter index.
-    /// Defaults to `Covariant` when not explicitly set, matching the
-    /// conservative assumption that the majority of containers are read-through.
+    /// Returns the variance for the given parameter index, defaulting to `Covariant`
+    /// (conservative assumption: most containers are read-through).
     pub fn get_type_variance(&self, type_name: &str, param_idx: usize) -> ComputedVariance {
         self.type_variance
             .get(&(type_name.to_string(), param_idx))
@@ -481,9 +472,7 @@ impl TypeRegistry {
             .unwrap_or(ComputedVariance::Covariant)
     }
 
-    // -----------------------------------------------------------------------
     // Associated type tracking
-    // -----------------------------------------------------------------------
 
     /// Record that `iface_name` declares an associated type `assoc_name`.
     /// Call once per assoc type during interface registration.

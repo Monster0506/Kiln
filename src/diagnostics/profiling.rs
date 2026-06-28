@@ -10,9 +10,7 @@ pub struct RegistryStats {
     pub interfaces_total: usize,
     /// Top method names by count of types that define them (capped at 20).
     pub top_methods: Vec<(String, usize)>,
-    /// All symbols visible after analysis: (name, kind_label, count).
-    /// count > 1 only for FnOverloadSet (number of overloads).
-    /// Sorted by count desc, then name asc.
+    /// All symbols after analysis: (name, kind_label, count); count>1 for FnOverloadSet.
     pub symbols: Vec<(String, String, usize)>,
 }
 

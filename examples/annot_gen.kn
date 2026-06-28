@@ -84,7 +84,7 @@ processor Timed(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 # ---- Using the annotations ---------------------------------------------------
 
 @Retry { count: 5 }
-def fetch_data(url: str) -> str {
+def fetch_data(url: str) -> Result[HttpResponse, str] {
     return http_get(url)
 }
 

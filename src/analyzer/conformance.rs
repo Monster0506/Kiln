@@ -69,8 +69,7 @@ fn type_expr_display(
 }
 
 /// Returns true if the impl's TypeExpr is compatible with the interface's TypeExpr.
-/// `Self` and generic params in the interface are substituted before comparison.
-/// Names in `assoc_types` are treated as wildcards (the impl may use any concrete type).
+/// `Self`, generic params, and `assoc_types` names are substituted/wildcarded before comparison.
 fn hook_param_ty_compatible(
     impl_ty: &TypeExpr,
     iface_ty: &TypeExpr,
@@ -123,8 +122,7 @@ pub fn check_impl_completeness(
         None => return,
     };
 
-    // Build a substitution map from the interface's generic param names to the concrete
-    // type arguments supplied in the impl's interface type expression.
+    // Map interface generic param names to concrete args from the impl expression,
     // e.g. `impl AddableWith[int] for Item` gives { "Rhs" -> "int" }.
     let generic_subst: std::collections::HashMap<String, String> = {
         let iface_args = match &impl_block.interface {
@@ -266,9 +264,7 @@ pub fn check_impl_completeness(
         }
     }
 
-    // Check parent interfaces transitively, using ALL hooks/methods from ALL
-    // impl blocks for this type so that hooks split across multiple impl blocks
-    // (e.g. hook lives in impl WithHook rather than impl Wrapper) are found.
+    // Collect hooks/methods from ALL impl blocks so that hooks split across impls are found.
     let all_hooks = collect_all_hooks_for_type(&type_name, all_impls);
     let all_methods = collect_all_methods_for_type(&type_name, all_impls);
 
@@ -303,15 +299,8 @@ pub fn check_impl_completeness(
     }
 }
 
-/// Verify that, for a type implementing an interface that extends `parent_iface` with
-/// `bindings` (e.g. `Output=Self`), the type's impl of `parent_iface` actually satisfies
-/// those bindings.
-///
-/// For each binding `(assoc_name, bound_ty)`:
-///   - Resolve `bound_ty` by substituting `Self` -> `type_name`.
-///   - Find the hook in `parent_iface` whose declared return type equals `assoc_name`.
-///   - Look up the return type of that hook in `type_name`'s impl of `parent_iface`.
-///   - Require that it equals the resolved binding type.
+/// Verify that a type's impl of `parent_iface` satisfies the associated-type `bindings`
+/// (e.g. `Output=Self`) imposed by a child interface's `extends` clause.
 fn check_assoc_bindings(
     type_name: &str,
     parent_iface_name: &str,
@@ -1061,9 +1050,8 @@ mod tests {
 
     #[test]
     fn parent_iface_hooks_satisfied_by_separate_impl() {
-        // struct Foo: Wrapper {}  +  impl WithHook for Foo { hook do_thing {} }
-        // The hook lives in the parent-interface impl, not the child impl.
-        // Conformance check should locate it and pass.
+        // Foo impls Wrapper; do_thing lives in the WithHook impl (not the Wrapper impl).
+        // Conformance check should still locate it and pass.
         let st = foo_struct();
         let ifaces = vec![wrapper_iface(), with_hook_iface()];
         let impls = vec![with_hook_impl_for_foo()];
@@ -1090,9 +1078,8 @@ mod tests {
 
     #[test]
     fn check_impl_completeness_walks_parent_interfaces() {
-        // impl Wrapper for Foo {} -- empty, but Wrapper: WithHook requires do_thing.
-        // check_impl_completeness must walk parent interfaces and error when
-        // do_thing is not provided in any impl block for Foo.
+        // Empty impl Wrapper for Foo, but Wrapper: WithHook requires do_thing.
+        // Completeness check must walk parent interfaces and report the missing hook.
         let empty_wrapper_impl = ImplBlock {
             self_alias: None,
             generic_params: vec![],

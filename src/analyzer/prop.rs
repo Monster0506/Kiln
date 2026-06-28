@@ -80,9 +80,8 @@ fn collect_assigned_in_stmt(stmt: &TypedStmt, names: &mut HashSet<String>) {
     }
 }
 
-/// Propagate constants within a block. Maintains a map of definitely-constant bindings.
-/// Only propagates Int, Float, Bool literals (not Str to avoid complexity).
-/// Also promotes `mut` variables that are never reassigned anywhere in the block tree.
+/// Propagate Int/Float/Bool literal constants within a block and promote never-reassigned
+/// `mut` variables to constants. Str propagation is omitted for complexity reasons.
 pub fn propagate_block(block: TypedBlock) -> TypedBlock {
     propagate_block_seeded(block, &HashMap::new())
 }
@@ -127,9 +126,8 @@ fn propagate_stmt(
         } => {
             let value = propagate_expr(value, constants);
             let value = fold_expr(value);
-            // Always seed constants with the initial literal value, even for mutable
-            // vars. Assignment tracking will update or evict the entry on each write.
-            // Loops do constants.clear() before entering, so loop-modified vars are safe.
+            // Seed even mutable vars; assignment tracking updates/evicts the entry.
+            // Loops clear the map before entering so loop-modified vars are safe.
             if is_propagatable_literal(&value.kind) {
                 if mutable && !ever_assigned.contains(&name) {
                     crate::analyzer::opt_notes::note(format!(
@@ -284,9 +282,8 @@ fn propagate_stmt(
         TypedStmt::FnDef(f) => TypedStmt::FnDef(propagate_fn(f, &HashMap::new())),
         TypedStmt::Expr(e) => {
             let result = fold_expr(propagate_expr(e, constants));
-            // Evict variables assigned inside any Block or Match arms within the
-            // expression, since those can write to outer-scope variables and
-            // would otherwise leave stale constant entries in the propagation map.
+            // Evict variables assigned inside nested Block/Match to avoid stale
+            // constant entries for outer-scope variables written inside them.
             let mut assigned = HashSet::new();
             collect_assigned_in_expr(&result, &mut assigned);
             for name in &assigned {

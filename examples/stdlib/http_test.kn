@@ -1,0 +1,43 @@
+# HTTP stdlib tests
+# All tests use unreachable endpoints so Err is always returned,
+# letting us test the error path without a real server.
+
+def do_raise(msg: str) -> void { raise msg }
+
+# Connecting to a refused port must return Err, not crash.
+@test(failing)
+def test_get_refused_raises() -> void {
+    r: Result[HttpResponse, str] = http_get('http://localhost:1/ping')
+    match r {
+        Ok { value: _ } => assert(true),
+        Err { error: e } => do_raise(e)
+    }
+}
+
+@test(failing)
+def test_post_refused_raises() -> void {
+    r: Result[HttpResponse, str] = http_post('http://localhost:1/ping', 'body', 'text/plain')
+    match r {
+        Ok { value: _ } => assert(true),
+        Err { error: e } => do_raise(e)
+    }
+}
+
+# Bad URL scheme must return Err, not crash.
+@test(failing)
+def test_get_bad_url_raises() -> void {
+    r: Result[HttpResponse, str] = http_get('not-a-url')
+    match r {
+        Ok { value: _ } => assert(true),
+        Err { error: e } => do_raise(e)
+    }
+}
+
+@test(failing)
+def test_post_bad_url_raises() -> void {
+    r: Result[HttpResponse, str] = http_post('ftp://nope', '', 'text/plain')
+    match r {
+        Ok { value: _ } => assert(true),
+        Err { error: e } => do_raise(e)
+    }
+}

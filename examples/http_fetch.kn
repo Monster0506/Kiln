@@ -1,0 +1,55 @@
+# http_fetch.kn -- fetch an HTTP URL and save the response body to a file.
+#
+# Usage: kiln run examples/http_fetch.kn
+# Saves the response body to temp/fetched.txt and prints a summary.
+#
+# Only plain http:// URLs are supported (no TLS).
+
+def save_body(resp: HttpResponse) -> void {
+    body: str = resp.body()
+    out: Path = Path.new('temp').join('fetched.txt')
+    result: Result[int, str] = out.write_text(body)
+    match result {
+        Ok { value: _ } => print_save_ok(out, resp),
+        Err { error: e } => println('write failed: ' + e)
+    }
+}
+
+def print_save_ok(out: Path, resp: HttpResponse) -> void {
+    sz_result: Result[int, str] = out.file_size()
+    sz: int = match sz_result {
+        Ok { value: n } => n,
+        Err { error: _ } => 0
+    }
+    ct: Option[str] = resp.header('Content-Type')
+    ct_str: str = match ct {
+        Some { value: v } => v,
+        None => 'unknown'
+    }
+    println('saved ' + __kiln_int_to_str(sz) + ' bytes -> ' + out.to_str())
+    println('status:       ' + __kiln_int_to_str(resp.status()))
+    println('content-type: ' + ct_str)
+}
+
+def handle_get(url: str) -> void {
+    result: Result[HttpResponse, str] = http_get(url)
+    match result {
+        Ok { value: resp } => save_body(resp),
+        Err { error: e } => println('http_get failed: ' + e)
+    }
+}
+
+def ensure_temp() -> void {
+    tmp: Path = Path.new('temp')
+    match tmp.create_dir() {
+        Ok { value: _ } => assert(true),
+        Err { error: _ } => assert(true)
+    }
+}
+
+def main() -> void {
+    ensure_temp()
+    url: str = 'http://example.com/'
+    println('fetching ' + url)
+    handle_get(url)
+}

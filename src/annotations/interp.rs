@@ -1523,12 +1523,8 @@ mod tests {
             span: zero(),
         };
 
-        // Processor body (as AST):
-        //   checks: Block = Block.empty()
-        //   for p <- target.params {
-        //       checks = checks.concat(gen { 0 })
-        //   }
-        //   return (Some { value: target.with_body(checks) }, Vec.new())
+        // Processor body: builds a `checks` Block by iterating over target.params
+        // and returns (Some { value: target.with_body(checks) }, Vec.new()).
         let proc_body = Block {
             stmts: vec![
                 // checks: Block = Block.empty()

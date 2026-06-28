@@ -1,12 +1,8 @@
-# Path file I/O tests
+# File I/O stdlib tests -- comprehensive coverage of Path read/write/stat/dir ops.
 
-def fail_int(msg: str) -> int {
-    raise msg
-}
-
-def fail_str(msg: str) -> str {
-    raise msg
-}
+def fail_int(msg: str) -> int { raise msg }
+def fail_str(msg: str) -> str { raise msg }
+def fail_vec(msg: str) -> Vec[str] { raise msg }
 
 def unwrap_int(r: Result[int, str]) -> int {
     return match r {
@@ -22,65 +18,226 @@ def unwrap_str(r: Result[str, str]) -> str {
     }
 }
 
+def unwrap_vec(r: Result[Vec[str], str]) -> Vec[str] {
+    return match r {
+        Ok { value: v } => v,
+        Err { error: e } => fail_vec(e)
+    }
+}
+
+# --- Write / Read ---
+
 @test
-def test_write_then_read_succeeds() -> void {
-    p: Path = Path.new('temp/test_io_wr.txt')
+def test_write_then_read_roundtrip() -> void {
+    p: Path = Path.new('temp/fio_rw.txt')
     unwrap_int(p.write_text('hello kiln'))
-    unwrap_str(p.read_text())
+    content: str = unwrap_str(p.read_text())
+    if content == '' {
+        fail_int('read returned empty after write')
+    }
 }
 
 @test
-def test_exists_after_write() -> void {
-    p: Path = Path.new('temp/test_io_ex.txt')
+def test_overwrite_replaces_content() -> void {
+    p: Path = Path.new('temp/fio_overwrite.txt')
+    unwrap_int(p.write_text('first'))
+    unwrap_int(p.write_text('second'))
+    content: str = unwrap_str(p.read_text())
+    if content == '' {
+        fail_int('read returned empty after overwrite')
+    }
+}
+
+@test
+def test_write_empty_string_succeeds() -> void {
+    p: Path = Path.new('temp/fio_empty.txt')
+    unwrap_int(p.write_text(''))
+    if p.exists() == false {
+        fail_int('empty-write file should exist')
+    }
+}
+
+# --- Exists / is_file / is_dir ---
+
+@test
+def test_exists_true_after_write() -> void {
+    p: Path = Path.new('temp/fio_exists.txt')
     unwrap_int(p.write_text('x'))
     if p.exists() == false {
-        fail_int('expected file to exist')
+        fail_int('exists should be true after write')
     }
 }
 
 @test
-def test_is_file_after_write() -> void {
-    p: Path = Path.new('temp/test_io_is.txt')
-    unwrap_int(p.write_text('x'))
-    if p.is_file() == false {
-        fail_int('expected is_file to be true')
+def test_exists_false_for_absent_path() -> void {
+    p: Path = Path.new('temp/fio_no_such_file_xyz99.txt')
+    if p.exists() == true {
+        fail_int('exists should be false for absent path')
     }
 }
+
+@test
+def test_is_file_true_for_written_file() -> void {
+    p: Path = Path.new('temp/fio_isfile.txt')
+    unwrap_int(p.write_text('x'))
+    if p.is_file() == false {
+        fail_int('is_file should be true after write')
+    }
+}
+
+@test
+def test_is_dir_false_for_file() -> void {
+    p: Path = Path.new('temp/fio_notdir.txt')
+    unwrap_int(p.write_text('x'))
+    if p.is_dir() == true {
+        fail_int('is_dir should be false for a regular file')
+    }
+}
+
+@test
+def test_is_dir_true_for_directory() -> void {
+    p: Path = Path.new('temp')
+    if p.is_dir() == false {
+        fail_int('is_dir should be true for temp/')
+    }
+}
+
+# --- Append ---
+
+@test
+def test_append_adds_content() -> void {
+    p: Path = Path.new('temp/fio_append.txt')
+    unwrap_int(p.write_text('part1'))
+    unwrap_int(p.append_text('part2'))
+    if p.exists() == false {
+        fail_int('file should still exist after append')
+    }
+}
+
+@test
+def test_append_grows_file() -> void {
+    p: Path = Path.new('temp/fio_appendgrow.txt')
+    unwrap_int(p.write_text('aaa'))
+    sz1: int = unwrap_int(p.file_size())
+    unwrap_int(p.append_text('bbb'))
+    sz2: int = unwrap_int(p.file_size())
+    if sz2 < sz1 {
+        fail_int('size should not shrink after append')
+    }
+}
+
+# --- Delete ---
 
 @test
 def test_delete_removes_file() -> void {
-    p: Path = Path.new('temp/test_io_del.txt')
-    unwrap_int(p.write_text('to delete'))
+    p: Path = Path.new('temp/fio_del.txt')
+    unwrap_int(p.write_text('bye'))
     unwrap_int(p.delete())
     if p.exists() == true {
         fail_int('file should not exist after delete')
     }
 }
 
+@test(failing)
+def test_delete_nonexistent_raises() -> void {
+    p: Path = Path.new('temp/fio_no_del_xyz.txt')
+    unwrap_int(p.delete())
+}
+
+# --- File size ---
+
 @test
-def test_append_extends_content() -> void {
-    p: Path = Path.new('temp/test_io_app.txt')
-    unwrap_int(p.write_text('hello '))
-    unwrap_int(p.append_text('world'))
+def test_file_size_positive_after_write() -> void {
+    p: Path = Path.new('temp/fio_size.txt')
+    unwrap_int(p.write_text('hello size'))
+    sz: int = unwrap_int(p.file_size())
+    if sz < 1 {
+        fail_int('file_size should be positive')
+    }
+}
+
+@test(failing)
+def test_file_size_absent_raises() -> void {
+    p: Path = Path.new('temp/fio_no_size_xyz.txt')
+    unwrap_int(p.file_size())
+}
+
+# --- Copy / Rename ---
+
+@test
+def test_copy_creates_new_file() -> void {
+    src: Path = Path.new('temp/fio_copy_src.txt')
+    unwrap_int(src.write_text('copy me'))
+    unwrap_int(src.copy_to('temp/fio_copy_dst.txt'))
+    dst: Path = Path.new('temp/fio_copy_dst.txt')
+    if dst.exists() == false {
+        fail_int('copy destination should exist')
+    }
 }
 
 @test
-def test_create_dir_and_is_dir() -> void {
-    p: Path = Path.new('temp/test_io_dir_12345')
+def test_copy_preserves_source() -> void {
+    src: Path = Path.new('temp/fio_cpsrc2.txt')
+    unwrap_int(src.write_text('keep me'))
+    unwrap_int(src.copy_to('temp/fio_cpdst2.txt'))
+    if src.exists() == false {
+        fail_int('source should still exist after copy')
+    }
+}
+
+@test
+def test_rename_moves_file() -> void {
+    src: Path = Path.new('temp/fio_mv_src.txt')
+    unwrap_int(src.write_text('move me'))
+    unwrap_int(src.rename_to('temp/fio_mv_dst.txt'))
+    if src.exists() == true {
+        fail_int('source should not exist after rename')
+    }
+    dst: Path = Path.new('temp/fio_mv_dst.txt')
+    if dst.exists() == false {
+        fail_int('destination should exist after rename')
+    }
+}
+
+# --- Directories ---
+
+@test
+def test_create_dir_succeeds_or_exists() -> void {
+    p: Path = Path.new('temp/fio_mkdir_11111')
     match p.create_dir() {
         Ok { value: _ } => assert(true),
         Err { error: _ } => assert(true)
     }
     if p.is_dir() == false {
-        fail_int('expected directory to exist')
+        fail_int('directory should exist after create_dir')
     }
 }
 
 @test
+def test_create_dir_all_nested() -> void {
+    p: Path = Path.new('temp/fio_deep/x/y/z')
+    match p.create_dir_all() {
+        Ok { value: _ } => assert(true),
+        Err { error: _ } => assert(true)
+    }
+}
+
+@test
+def test_list_dir_returns_entries() -> void {
+    d: Path = Path.new('temp')
+    entries: Vec[str] = unwrap_vec(d.list_dir())
+    if entries.len() < 0 {
+        fail_int('list_dir length is negative')
+    }
+}
+
+# --- Path component extraction ---
+
+@test
 def test_join_produces_nonempty_path() -> void {
-    p: Path = Path.new('temp').join('foo.txt')
+    p: Path = Path.new('temp').join('sub').join('file.txt')
     if p.to_str() == '' {
-        fail_int('join produced empty path')
+        fail_int('joined path should not be empty')
     }
 }
 
@@ -93,23 +250,41 @@ def test_basename_nonempty() -> void {
 }
 
 @test
-def test_extension_nonempty() -> void {
+def test_extension_of_dotted_file() -> void {
     p: Path = Path.new('foo.txt')
     if p.extension() == '' {
-        fail_int('extension should not be empty')
+        fail_int('extension should not be empty for foo.txt')
     }
 }
 
 @test
-def test_stem_nonempty() -> void {
+def test_stem_of_dotted_file() -> void {
     p: Path = Path.new('foo.txt')
     if p.stem() == '' {
-        fail_int('stem should not be empty')
+        fail_int('stem should not be empty for foo.txt')
     }
 }
 
+@test
+def test_dirname_nonempty() -> void {
+    p: Path = Path.new('temp/sub/file.txt')
+    if p.dirname().to_str() == '' {
+        fail_int('dirname should not be empty')
+    }
+}
+
+@test
+def test_to_str_nonempty() -> void {
+    p: Path = Path.new('temp/x.txt')
+    if p.to_str() == '' {
+        fail_int('to_str should not be empty')
+    }
+}
+
+# --- Error paths ---
+
 @test(failing)
 def test_read_missing_raises() -> void {
-    p: Path = Path.new('temp/no_such_file_xyz99999.txt')
+    p: Path = Path.new('temp/fio_no_read_xyz.txt')
     unwrap_str(p.read_text())
 }

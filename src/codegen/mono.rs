@@ -231,10 +231,8 @@ fn hook_suffix(hook: &TypedHookDef) -> String {
     }
 }
 
-/// Derive the generic-param substitution by unifying the impl's generic self
-/// type (e.g. `Vec(GenericParam("T"))`) against the concrete receiver type
-/// (e.g. `Vec(Named("Item"))`).  Returns an empty map when the impl is not
-/// generic or the types don't match.
+/// Derive the generic-param substitution by unifying the impl's self type against the
+/// concrete receiver type. Returns an empty map when they don't match or the impl is not generic.
 fn derive_impl_subst(for_type_ty: &Ty, concrete_ty: &Ty) -> HashMap<String, Ty> {
     let mut subst = HashMap::new();
     unify_ty(for_type_ty, concrete_ty, &mut subst);
@@ -435,9 +433,8 @@ fn seed_stmt(
     }
 }
 
-// Resolve the effective type of an expression, recursively resolving generic call return types.
-// When an arg's type is still a GenericParam (e.g. the return of an unsubstituted generic call),
-// this looks at the call's arg types to compute the concrete return type via unification.
+// Resolve the effective type of an expression. When the type is still a GenericParam
+// from an unsubstituted call, unify the call's arg types to derive the concrete return type.
 fn resolve_expr_ty(expr: &TypedExpr, generic_fns: &HashMap<String, TypedFnDef>) -> Ty {
     if matches!(&expr.ty, Ty::GenericParam(_)) {
         if let TypedExprKind::Call {
@@ -665,9 +662,8 @@ fn subst_ty(ty: &Ty, subst: &HashMap<String, Ty>) -> Ty {
             .get(name.as_str())
             .cloned()
             .unwrap_or_else(|| ty.clone()),
-        // Resolve projections: if base param is substituted, look up the assoc binding
-        // from the extended substitution (which includes assoc type bindings added by
-        // `extend_with_assoc_bindings`).
+        // Resolve projections via the extended substitution (includes assoc bindings
+        // added by `extend_with_assoc_bindings`).
         Ty::Projection { base, assoc } => {
             let key = format!("{}::{}", base, assoc);
             if let Some(resolved) = subst.get(&key) {
@@ -691,10 +687,8 @@ fn subst_ty(ty: &Ty, subst: &HashMap<String, Ty>) -> Ty {
     }
 }
 
-/// Extend a generic-param substitution with associated type bindings from all
-/// conformance entries for each concrete type in the substitution.
-/// Keys for assoc bindings use the format `"ParamName::AssocName"` to avoid
-/// collisions with regular generic param names.
+/// Extend a substitution with associated type bindings from conformance entries.
+/// Assoc binding keys use `"ParamName::AssocName"` to avoid collisions.
 fn extend_with_assoc_bindings(
     subst: &HashMap<String, Ty>,
     registry: &TypeRegistry,
@@ -984,9 +978,8 @@ fn subst_expr(
             let new_obj = se!(object);
             let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
             let rewritten = rewrite_method_fn(method_fn, subst, generic_impl_hooks, impl_reqs);
-            // When the receiver is a concrete parameterized type (e.g. ListNode[int])
-            // and the method targets a generic impl hook (e.g. ListNode_to_str),
-            // rewrite to the monomorphized name (ListNode_int_to_str) and emit an impl_req.
+            // For concrete parameterized receivers targeting a generic impl hook,
+            // rewrite to the monomorphized name and emit an impl_req.
             let final_method_fn = {
                 let inner_ty = match &new_obj.ty {
                     Ty::Ref(inner, _) => inner.as_ref(),
@@ -1027,9 +1020,8 @@ fn subst_expr(
         TypedExprKind::StaticCall { method_fn, args } => {
             let new_args: Vec<TypedExpr> = args.iter().map(|a| se!(a)).collect();
             let rewritten = rewrite_method_fn(method_fn, subst, generic_impl_hooks, impl_reqs);
-            // If no param substitution happened but the expression's return type is
-            // fully concrete, check whether the call targets a generic impl hook and
-            // emit the required specialization (e.g. ListNode[int].new()).
+            // If no substitution happened but the return type is concrete, check for
+            // a generic impl hook and emit the required specialization.
             let final_fn = if rewritten == *method_fn && !contains_type_param(&ty) {
                 let mut specialized = None;
                 for ((base, suffix), _) in generic_impl_hooks.iter() {
@@ -1142,9 +1134,8 @@ fn subst_expr(
                     TypedStringSegment::Text(t) => TypedStringSegment::Text(t.clone()),
                     TypedStringSegment::Interp(e) => {
                         let substed = se!(e);
-                        // If the interpolated value has a concrete Named type with
-                        // a registered to_str hook, emit an impl_req so the
-                        // monomorphized to_str function gets compiled.
+                        // Concrete Named type with a registered to_str hook: emit an
+                        // impl_req so the monomorphized to_str function gets compiled.
                         if let Ty::Named(_, base, args) = &substed.ty {
                             if !args.is_empty()
                                 && generic_impl_hooks

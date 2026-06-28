@@ -8,6 +8,7 @@ use crate::analyzer::TypedFile;
 use crate::codegen::context::CodegenContext;
 use crate::codegen::exceptions::declare_exception_runtime;
 use crate::codegen::exprs::{LowerCtx, VarEnv};
+use crate::codegen::io::declare_io_runtime;
 use crate::codegen::math::declare_math_runtime;
 use crate::codegen::memory::declare_alloc_fns;
 use crate::codegen::stmts::{block_needs_term, lower_typed_block, LoopCtx};
@@ -159,6 +160,7 @@ pub fn compile(
     declare_alloc_fns(&mut cgx.module);
     let mut runtime_ids = declare_str_runtime(&mut cgx.module);
     runtime_ids.extend(declare_math_runtime(&mut cgx.module));
+    runtime_ids.extend(declare_io_runtime(&mut cgx.module));
     declare_exception_runtime(&mut cgx.module);
 
     {
@@ -171,11 +173,8 @@ pub fn compile(
             .ok();
     }
 
-    // Pass 0a: declare module-level globals.
-    // Immutable globals whose initializer is a scalar literal are inlined at every
-    // use site -- no data slot is allocated for them.
-    // All other globals (mutable, or immutable with a computed init) get a writable
-    // 8-byte data slot and are initialized by __kiln_init_globals at runtime.
+    // Pass 0a: declare module-level globals. Scalar-literal immutables are inlined;
+    // all others get an 8-byte data slot initialized by __kiln_init_globals.
     let mut global_data_ids: HashMap<String, DataId> = HashMap::new();
     let mut inline_globals: HashMap<String, TypedExpr> = HashMap::new();
     let mut global_items: Vec<TypedGlobalVar> = Vec::new();
@@ -398,9 +397,8 @@ pub fn compile(
             TypedItem::ImplBlock(impl_block) => {
                 let is_generic =
                     crate::codegen::mono::contains_type_param_pub(&impl_block.for_type_ty);
-                // Generic impls: hooks are emitted only as mono specializations (skip them).
-                // Methods whose params and return type are type-param-free can still be
-                // compiled directly (e.g. Vec_length on impl VecMethods for Vec[T]).
+                // Generic impl hooks are emitted only as mono specializations; methods
+                // free of type params compile directly (e.g. Vec_length on Vec[T]).
                 if is_generic {
                     let type_name = &impl_block.for_type;
                     let type_id = layouts.get_type_id(type_name).unwrap_or(0);
@@ -586,9 +584,8 @@ pub fn compile(
         let _ = (reachable, auto_inline); // used below
     }
 
-    // Build the inline_bodies map: @inline functions with single-return bodies
-    // can be expanded at call sites instead of emitting a function call.
-    // Also include auto-inline candidates from the call graph.
+    // Build inline_bodies map: @inline single-return functions and auto-inline candidates
+    // from the call graph are expanded at call sites instead of emitting calls.
     let auto_inline_names = if opt_level > 0 {
         use crate::codegen::call_graph::{build_call_graph, find_auto_inline_candidates};
         let graph = build_call_graph(typed_file);

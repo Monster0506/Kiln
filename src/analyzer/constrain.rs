@@ -361,10 +361,7 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
 }
 
 /// Returns the interface required to use this binary operator, if any.
-///
-/// Uses `PartialEq`/`PartialOrd` for `==`/`<` etc. so that float (which has
-/// partial order but not total order) can be compared. Only `<=>` (spaceship)
-/// requires a total order (`Ord`).
+/// Uses `PartialEq`/`PartialOrd` for `==`/`<` so floats work; `<=>` requires `Ord`.
 pub fn binop_required_iface(op: &BinOp) -> Option<&'static str> {
     match op {
         BinOp::Add => Some("Addable"),
@@ -380,14 +377,8 @@ pub fn binop_required_iface(op: &BinOp) -> Option<&'static str> {
     }
 }
 
-/// Emit constraints for a direct call to a named function with generic bounds.
-/// `bounds` come from `Symbol::Fn.generic_bounds` plus inferred_bounds.
-/// `param_tys` are the declared parameter types (may contain GenericParam).
-/// `arg_tys` are `(concrete_type, span)` for each positional argument.
-///
-/// We unify each `param_tys[i]` with `arg_tys[i].ty` to build a substitution
-/// map from generic param names to concrete types, then check each bound against
-/// the substituted type.
+/// Emit constraints for a direct call with generic bounds.
+/// Unifies declared param types with concrete arg types, then checks each bound.
 pub fn emit_call_bound_constraints(
     fn_name: &str,
     bounds: &[GenericBound],

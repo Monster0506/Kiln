@@ -1,11 +1,5 @@
-/// Simplified boolean constraint propagation.
-///
-/// Detects conditions that are syntactically always-true or always-false after
-/// constant folding. Emits `TautologicalCondition` and `ContradictoryCondition`
-/// analysis warnings.
-///
-/// This is the simple version: we only flag literal Bool conditions.
-/// The full version (tracking inequalities across branches) is a future extension.
+/// Simplified boolean constraint propagation: flags literal always-true/always-false
+/// conditions after constant folding. Inequality tracking is a future extension.
 use crate::analyzer::error::AnalysisError;
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedExpr, TypedExprKind, TypedFile, TypedItem, TypedStmt,

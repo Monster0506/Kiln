@@ -3,9 +3,8 @@ use crate::analyzer::typed_ast::{
 };
 use std::collections::{HashMap, HashSet};
 
-/// Write the computed impure set back into the TypedFile, setting is_impure on all
-/// functions/hooks that are transitively impure. This makes impurity visible in the
-/// emitted .opt.kn output and available to subsequent passes.
+/// Write the computed impure set back into the TypedFile, marking transitively impure
+/// functions/hooks so subsequent passes and .opt.kn output can see the flag.
 pub fn tag_impure_functions(mut file: TypedFile, impure: &HashSet<String>) -> TypedFile {
     for item in &mut file.items {
         match item {
@@ -33,11 +32,8 @@ pub fn tag_impure_functions(mut file: TypedFile, impure: &HashSet<String>) -> Ty
     file
 }
 
-/// Build the set of function names that are impure (have observable side effects).
-///
-/// Seeds from all TypedFnDef/TypedHookDef with is_impure=true, then expands via
-/// fixed-point: if any direct Call/MethodCall/StaticCall in a function body targets
-/// a name already in the set, that function is also impure.
+/// Build the transitive set of impure function names. Seeds from is_impure=true defs,
+/// then expands to callers until fixed point.
 pub fn build_impure_set(file: &TypedFile) -> HashSet<String> {
     let mut impure: HashSet<String> = HashSet::new();
     let mut fn_bodies: HashMap<String, Vec<TypedStmt>> = HashMap::new();

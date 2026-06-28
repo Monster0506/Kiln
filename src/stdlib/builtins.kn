@@ -192,6 +192,22 @@ def path_cwd() -> str
 @impure
 def path_temp_dir() -> str
 
+# HttpResponse -- result of an HTTP request.
+@builtin
+struct HttpResponse {
+    def status() -> int
+    def body() -> str
+    def header(name: str) -> Option[str]
+}
+
+@builtin
+@impure
+def http_get(url: str) -> Result[HttpResponse, str]
+
+@builtin
+@impure
+def http_post(url: str, body: str, content_type: str) -> Result[HttpResponse, str]
+
 @builtin
 def __kiln_math_floor(x: float) -> float
 
@@ -370,6 +386,7 @@ export {
     __kiln_math_ipow, __kiln_math_gcd, __kiln_math_lcm,
     __kiln_math_imin, __kiln_math_imax, __kiln_math_iclamp,
     __kiln_math_factorial, __kiln_math_comb, __kiln_math_perm,
-    Path, path_cwd, path_temp_dir
+    Path, path_cwd, path_temp_dir,
+    HttpResponse, http_get, http_post
 }
 

@@ -3,14 +3,8 @@ use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{Linkage, Module};
 use cranelift_object::ObjectModule;
 
-/// Declare the Kiln exception runtime as external imports.
-///
-/// - `__kiln_setjmp(buf: i64) -> i32`    -- saves context; returns 0 on entry, 1 via longjmp
-/// - `__kiln_longjmp(buf: i64, val: i32)` -- restores context; does not return
-/// - `__kiln_exc_push(buf: i64)`          -- registers a jmp_buf as the active frame
-/// - `__kiln_exc_pop()`                   -- unregisters the innermost frame
-/// - `__kiln_raise(exc_ptr: i64)`         -- stores exc_ptr and calls longjmp
-/// - `__kiln_current_exc() -> i64`        -- returns the current exception pointer
+/// Declare the Kiln exception runtime as external imports: setjmp/longjmp wrappers,
+/// exc_push/pop frame management, raise, and current_exc.
 pub fn declare_exception_runtime(module: &mut ObjectModule) {
     let mut setjmp_sig = module.make_signature();
     setjmp_sig.params.push(AbiParam::new(types::I64));
@@ -50,10 +44,8 @@ pub fn declare_exception_runtime(module: &mut ObjectModule) {
         .ok();
 }
 
-/// Emit IR for a `raise expr` statement.
-///
-/// Calls `__kiln_raise(exc_ptr)`. After the call the block is considered
-/// diverging (no further instructions should be emitted in the same block).
+/// Emit IR for `raise expr`: calls `__kiln_raise(exc_ptr)`.
+/// The block is diverging after this; emit no further instructions.
 pub fn emit_raise(
     exc_ptr: cranelift_codegen::ir::Value,
     module: &mut ObjectModule,

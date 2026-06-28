@@ -389,9 +389,8 @@ impl Parser {
             }
             TokenKind::Amp => {
                 self.advance();
-                // Check for a lifetime: `&a T`, `&a mut T`, `&static T`.
-                // A lifetime is present when the next token is an identifier
-                // and the token after it is also an identifier or `mut`.
+                // Lifetime `&a T` / `&static T`: present when next token is an ident
+                // followed by another ident or `mut`.
                 let lifetime = if let TokenKind::Ident(_) = self.peek() {
                     let next_is_type_or_mut = matches!(
                         self.tokens.get(self.pos + 1).map(|t| &t.kind),
@@ -560,9 +559,7 @@ impl Parser {
                 } else {
                     GenericParamKind::Type
                 };
-                // Generic params use `+` to separate multiple bounds, or
-                // a parenthesized comma-separated list: T:Bound or
-                // T:A+B or T:(A[X=Y], B).
+                // Generic param bounds: `T:Bound`, `T:A+B`, or `T:(A[X=Y], B)`.
                 let bounds = if self.eat(&TokenKind::Colon) {
                     if self.eat(&TokenKind::LParen) {
                         let mut bs = Vec::new();

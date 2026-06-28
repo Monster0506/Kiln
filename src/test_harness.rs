@@ -31,11 +31,6 @@ fn collect_tests(source: &SourceFile) -> Vec<TestCase> {
 
 /// Scan a parsed source file for `@test`-annotated functions and inject a
 /// synthetic `main()` that runs each test with named output.
-///
-/// Supported annotation parameters:
-///   @test             -- normal test: passes if returns, fails if raises
-///   @test(failing)    -- expected-to-fail: passes if raises, fails if returns
-///   @test(isolate)    -- currently runs inline (subprocess isolation not yet impl)
 pub fn inject_harness(source: &mut SourceFile) {
     let tests = collect_tests(source);
     if tests.is_empty() {

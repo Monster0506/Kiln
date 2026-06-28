@@ -377,10 +377,8 @@ fn lower_typed_stmt(
             {
                 use cranelift_codegen::ir::{StackSlotData, StackSlotKind};
 
-                // Allocate the jmp_buf in THIS (Cranelift) function's stack frame.
-                // 8 x 8 bytes = 64 bytes: [rip, rsp, rbx, rbp, r12, r13, r14, r15].
-                // The jmp_buf lives at the same address for the duration of the try
-                // block, so __kiln_longjmp can safely jump back into this frame.
+                // Allocate the jmp_buf (64 bytes) in this frame so its address is stable
+                // for the try block and __kiln_longjmp can safely jump back here.
                 let slot = builder.func.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
                     64,
@@ -640,9 +638,7 @@ fn lower_for(
         return;
     }
 
-    // For `for x <- EnumType`, the iterable is the enum type itself used as an
-    // expression. The loop iterates over discriminants 0..N where N is the
-    // variant count, and each iteration binds the discriminant as the value.
+    // For `for x <- EnumType`, iterate over discriminants 0..N and bind each as the value.
     let enum_variant_count: Option<i64> = match &iterable.ty {
         Ty::Named(_, name, args) if args.is_empty() => ctx
             .layouts
@@ -673,10 +669,7 @@ fn lower_for(
     let bind_var = vars.declare(binding, bind_clif_ty, builder);
     builder.def_var(bind_var, bind_zero);
 
-    // header_bb: condition check
-    // body_bb:   element setup + user body
-    // incr_bb:   index increment (continue target)
-    // exit_bb:   loop exit (break target)
+    // header_bb: condition; body_bb: element + user body; incr_bb: continue; exit_bb: break.
     let header_bb = builder.create_block();
     let body_bb = builder.create_block();
     let incr_bb = builder.create_block();
@@ -726,9 +719,8 @@ fn lower_for(
     builder.seal_block(exit_bb);
 }
 
-/// Custom Iterable dispatch: call iter() on the object, then loop over next() results.
-/// `Option::None` (unit variant, discriminant 1) terminates the loop.
-/// `Option::Some { value: x }` (fielded variant, discriminant 0) carries the item at offset 8.
+/// Iterable dispatch: call iter(), then loop over next(). None (discriminant 1) terminates;
+/// Some (discriminant 0) carries the item at offset 8.
 #[allow(clippy::too_many_arguments)]
 fn lower_for_iterable(
     binding: &str,
@@ -776,10 +768,7 @@ fn lower_for_iterable(
     let bind_var = vars.declare(binding, bind_clif_ty, builder);
     builder.def_var(bind_var, bind_zero);
 
-    // header_bb: call next(), check for None
-    // body_bb:   extract Some.value, run user body
-    // incr_bb:   continue target (just jumps to header)
-    // exit_bb:   loop exit
+    // header_bb: call next()/check None; body_bb: extract Some.value; incr_bb/exit_bb: continue/break.
     let header_bb = builder.create_block();
     let body_bb = builder.create_block();
     let incr_bb = builder.create_block();

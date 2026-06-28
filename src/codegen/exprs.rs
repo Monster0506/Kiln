@@ -265,9 +265,8 @@ pub fn lower_typed_expr(
     ctx: &mut LowerCtx,
 ) -> Value {
     let raw = lower_typed_expr_inner(expr, builder, vars, ctx);
-    // If the expression is semantically a float but came through an I64 ABI
-    // boundary (Vec storage, closure param, indirect call return), reinterpret
-    // the bits as F64 so arithmetic always operates on the correct machine type.
+    // Float values through I64 ABI boundaries (Vec storage, closure param, indirect return)
+    // must be reinterpreted as F64 so arithmetic uses the correct machine type.
     if matches!(expr.ty, Ty::Float) && builder.func.dfg.value_type(raw) == types::I64 {
         builder.ins().bitcast(types::F64, MemFlags::new(), raw)
     } else {
@@ -516,9 +515,8 @@ fn lower_typed_expr_inner(
                 .collect();
             match &callee.kind {
                 TypedExprKind::Ident(name) => {
-                    // println/print expect a KilnStr pointer. When the argument type is
-                    // not Str, call to_str on it first so structs and other types display
-                    // correctly instead of being treated as raw KilnStr pointers.
+                    // println/print expect a KilnStr pointer; call to_str first for non-Str
+                    // args so they display correctly rather than as raw pointers.
                     if (name == "println" || name == "print")
                         && args.len() == 1
                         && args[0].ty != Ty::Str
@@ -1182,10 +1180,8 @@ pub fn call_fn_by_name(
     let func_id = if let Some(&id) = ctx.func_ids.get(name) {
         id
     } else {
-        // Generic method dispatch: when the resolved name is like `T_to_str` (a type
-        // parameter + method) and we have no concrete implementation, redirect to the
-        // runtime dispatch helper.  This covers generic hook bodies where the receiver
-        // type is unknown at compile time (e.g. `item.to_str()` where item: T).
+        // For names like `T_to_str` (generic param + method) with no concrete impl,
+        // redirect to the runtime dispatch helper for generic hook bodies.
         let dispatch_name: Option<&'static str> = if name.ends_with("_to_str") {
             Some("__kiln_to_str_dispatch")
         } else {
@@ -1272,9 +1268,8 @@ fn lower_str_seg(
             if e.ty == Ty::Str {
                 return v;
             }
-            // Use the fully monomorphized name so generic types like LinkedList[int]
-            // dispatch to LinkedList_int_to_str rather than the unmonomorphized
-            // LinkedList_to_str (which still has GenericParam("T") in its body).
+            // Use the monomorphized name so LinkedList[int] dispatches to
+            // LinkedList_int_to_str, not the unsubstituted LinkedList_to_str.
             let fn_name = format!("{}_to_str", type_mono_name(&e.ty));
             call_fn_by_name(&fn_name, &[v], builder, ctx)
         }

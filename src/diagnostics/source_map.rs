@@ -80,15 +80,7 @@ impl SourceMap {
         (text, col, caret_w)
     }
 
-    /// Renders a `note:` block with a secondary source location.
-    ///
-    /// ```text
-    /// note: required because `sum` has use of `+=` on `T`
-    ///   --> file.kn:14:5
-    ///    |
-    /// 14 |     total += item
-    ///    |     ^^^^^^^^^^^^^
-    /// ```
+    /// Renders a `note:` block with a secondary source location (file, line, caret).
     pub fn render_note(&self, src: &str, span: Span, file: &str, note: &str) -> String {
         let (line_num, col) = self.location_of(span.start);
         let (text, _, caret_w) = self.line_info(src, span);
@@ -120,20 +112,8 @@ impl SourceMap {
         Some(&src[start..end])
     }
 
-    /// Renders a rich diagnostic block with context lines, colors, hyperlinks, and caret label.
-    ///
-    /// The caller is responsible for printing the header line (`error[E002]: ...`).
-    /// This method returns the location + source excerpt portion.
-    ///
-    /// ```text
-    ///   --> file.kn:5:14
-    ///    |
-    /// 3  | (dim) prev prev line
-    /// 4  | (dim) prev line
-    /// 5  | let x: bool = 42
-    ///    |                ^^ expected `bool`
-    /// 6  | (dim) next line
-    /// ```
+    /// Renders a rich diagnostic block with context lines, colors, hyperlinks, and caret.
+    /// Returns the location + source excerpt; caller prints the `error[...]:` header.
     pub fn render_rich(&self, src: &str, span: Span, file: &str, opts: &RenderOpts<'_>) -> String {
         let c = get_colors();
         let (line_num, col) = self.location_of(span.start);
@@ -200,9 +180,7 @@ impl SourceMap {
         out
     }
 
-    /// Renders a rich note block with context lines, colors, hyperlinks, and caret.
-    ///
-    /// Includes the `note: <text>` header line.
+    /// Renders a rich note block including the `note: <text>` header line.
     pub fn render_note_rich(
         &self,
         src: &str,
@@ -235,18 +213,8 @@ impl SourceMap {
         format!("{lnum} | {text}\n{pad} | {indent}{caret}")
     }
 
-    /// Renders a full Rust-style diagnostic block:
-    ///
-    /// ```text
-    /// error[E002]: type mismatch: expected `bool`, found `int`
-    ///   --> examples/file.kn:5:14
-    ///    |
-    /// 5  |     flag: bool = 42
-    ///    |                  ^^
-    /// ```
-    ///
-    /// The caller is responsible for printing the first `error[...]: ...` line.
-    /// This method returns only the location + source excerpt portion.
+    /// Renders the location + source excerpt portion of a Rust-style diagnostic block.
+    /// The caller is responsible for printing the `error[...]: ...` header line.
     pub fn render_diagnostic(&self, src: &str, span: Span, file: &str) -> String {
         let (line_num, col) = self.location_of(span.start);
         let (text, _, caret_w) = self.line_info(src, span);

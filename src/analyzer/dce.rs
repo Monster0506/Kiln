@@ -1,8 +1,5 @@
-/// Dead assignment elimination: remove VarDecl bindings that are never read,
-/// provided the initializer expression has no side effects.
-///
-/// This is a simple backward linear scan within each block. It does not
-/// handle cross-block liveness (loops, branches); those cases are conservative.
+/// Dead assignment elimination: remove VarDecl bindings never read, provided the
+/// initializer has no side effects. Conservative for cross-block liveness.
 use crate::analyzer::typed_ast::{
     TypedBlock, TypedCatchHandler, TypedExpr, TypedExprKind, TypedFile, TypedFnDef, TypedHookDef,
     TypedImplBlock, TypedItem, TypedStmt,
@@ -59,9 +56,7 @@ pub fn dce_block(block: TypedBlock) -> TypedBlock {
     }
 
     // Second pass: rebuild, dropping dead VarDecl with pure RHS.
-    // Immutable: always safe to drop if unreferenced.
-    // Mutable: also drop if unreferenced AND never assigned elsewhere in the block
-    // (no orphan Assign statements would remain pointing at it).
+    // Mutable vars also require no orphan Assign statements remaining.
     let mut new_stmts = Vec::with_capacity(block.stmts.len());
     for stmt in block.stmts {
         match &stmt {
@@ -377,10 +372,7 @@ fn collect_reads_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
 }
 
 /// Returns true if the expression has observable side effects using a known-impure set.
-/// A Call/MethodCall/StaticCall is considered impure only if its name is in `impure`.
-/// IndirectCall and Spawn are always impure.
-/// Pass an empty set to get conservative behavior (but all calls will be considered pure
-/// unless explicitly named); use `expr_has_side_effects` for fully conservative analysis.
+/// Calls are impure only if named in `impure`; IndirectCall/Spawn are always impure.
 pub fn expr_has_side_effects_ctx(expr: &TypedExpr, impure: &HashSet<String>) -> bool {
     match &expr.kind {
         TypedExprKind::Call {
@@ -544,11 +536,8 @@ fn waw_block(block: TypedBlock) -> TypedBlock {
         changed = false;
         let mut i = 0;
         while i + 1 < stmts.len() {
-            // Pattern A: VarDecl { name, mutable:true, value: e1 } followed (possibly
-            // non-adjacently) by the first Assign { target: Ident(name), value: e2 }
-            // where e2 does not read `name` and no statement in between reads `name`
-            // or has side effects. Replace with VarDecl { name, value: e2 }, remove
-            // the Assign.
+            // Pattern A: mutable VarDecl immediately overwritten by Assign before any read;
+            // replace with the final value, drop the Assign.
             let is_waw_decl = matches!(&stmts[i], TypedStmt::VarDecl { mutable: true, .. });
             let waw_decl_target: Option<usize> = if is_waw_decl {
                 if let TypedStmt::VarDecl { name: n1, .. } = &stmts[i] {
@@ -584,9 +573,8 @@ fn waw_block(block: TypedBlock) -> TypedBlock {
             };
             let is_waw_decl = waw_decl_target.is_some();
 
-            // Pattern B: Assign { target: Ident(n), value: e1 } followed by
-            // Assign { target: Ident(n), value: e2 } where e1 has no side effects
-            // and e2 does not read `n`. The first write is dead.
+            // Pattern B: two consecutive Assigns to the same ident where the first
+            // has no side effects and the second does not read it -- first write is dead.
             let is_waw_assign = if !is_waw_decl {
                 if let (
                     TypedStmt::Assign {
@@ -922,9 +910,8 @@ fn collect_assigned_stmts(stmts: &[TypedStmt], out: &mut HashSet<String>) {
     }
 }
 
-/// Inline immutable single-use bindings at their use site (emit path only).
-/// For each `x: T = expr` where x appears exactly once in subsequent stmts and is never assigned,
-/// replace that read with `expr` and remove the VarDecl.
+/// Inline immutable single-use bindings: replace the sole read of `x` with its initializer
+/// and remove the VarDecl, when x is never reassigned.
 pub fn single_use_inline_file(file: TypedFile) -> TypedFile {
     let items = file
         .items
@@ -1836,8 +1823,7 @@ fn single_use_inline_stmt_ctx(stmt: TypedStmt, impure: &HashSet<String>) -> Type
 }
 
 /// Inline pure top-level functions at call sites where all arguments are literals.
-/// After this pass, run `fold_file` to simplify the substituted expressions.
-/// `eliminate_dead_fns` will then remove any functions that have no remaining callers.
+/// Run `fold_file` and then `eliminate_dead_fns` after this pass.
 pub fn inline_pure_const_calls_file(file: TypedFile, impure: &HashSet<String>) -> TypedFile {
     let mut inline_map: HashMap<String, (Vec<String>, TypedExpr)> = HashMap::new();
     for item in &file.items {

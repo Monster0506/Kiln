@@ -13,9 +13,8 @@ struct ProjectionCtx {
     desc: String,
 }
 
-/// Emit a projected inferred bound when a `Ty::Projection { base, assoc }` expression
-/// is used in a context that requires `required_iface`.
-/// Searches all interfaces that declare `assoc` and emits a bound for each.
+/// Emit a projected inferred bound for `Ty::Projection { base, assoc }` in a context
+/// requiring `required_iface`, searching all interfaces that declare `assoc`.
 fn emit_projection_bound(
     base: &str,
     assoc: &str,
@@ -63,10 +62,7 @@ fn binop_symbol(op: &BinOp) -> &'static str {
 }
 
 /// Scan a function body and infer interface bounds required for each generic param.
-///
-/// For each operation that requires a specific interface (e.g. `T.zero()` -> `T: Zero`,
-/// `a + b` where `a: T` -> `T: Addable`), we emit a `GenericBound`. These are
-/// stored on `Symbol::Fn.inferred_bounds` and checked at call sites.
+/// Emits `GenericBound` for each operation (e.g. `a+b` -> `T: Addable`), stored on `inferred_bounds`.
 pub fn infer_bounds_from_body(
     body: &TypedBlock,
     generic_params: &[String],
@@ -84,9 +80,8 @@ fn dedup_bounds(mut v: Vec<GenericBound>) -> Vec<GenericBound> {
     v
 }
 
-/// Reduce an inferred bound set to its antichain: drop any bound `T: A` for which
-/// there exists another bound `T: B` in the set where `B` implies `A` (B is more
-/// specific). Keeping only the antichain avoids redundant constraints at call sites.
+/// Reduce a bound set to its antichain: drop `T: A` when some `T: B` also exists with
+/// B more specific than A, avoiding redundant constraints at call sites.
 fn minimize_bounds(bounds: Vec<GenericBound>, registry: &TypeRegistry) -> Vec<GenericBound> {
     let keep: Vec<bool> = bounds
         .iter()

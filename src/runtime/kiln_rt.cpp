@@ -228,6 +228,13 @@ void __kiln_raise(int64_t exc_ptr) {
 
 int64_t __kiln_current_exc() { return current_exc_val; }
 
+// Non-catchable termination for programming errors (bugs). Unlike raise,
+// this bypasses any try/except frames and kills the process unconditionally.
+void __kiln_abandon() {
+    fprintf(stderr, "kiln: program abandoned\n");
+    abort();
+}
+
 int64_t Vec_new() {
     KilnVec* v = (KilnVec*)malloc(sizeof(KilnVec));
     v->data = NULL; v->len = 0; v->cap = 0;

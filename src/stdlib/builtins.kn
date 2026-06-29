@@ -192,21 +192,39 @@ def path_cwd() -> str
 @impure
 def path_temp_dir() -> str
 
-# HttpResponse -- result of an HTTP request.
+# Response -- result of an HTTP request.
 @builtin
-struct HttpResponse {
+struct Response {
     def status() -> int
     def body() -> str
+    def ok() -> bool
     def header(name: str) -> Option[str]
 }
 
-@builtin
-@impure
-def http_get(url: str) -> Result[HttpResponse, str]
+struct HttpError {
+    msg: str
+    status: int
+}
 
+struct Request {
+    url: str
+    method: str
+    body: str
+    content_type: str
+}
+
+# Http -- namespace for making HTTP requests.
 @builtin
 @impure
-def http_post(url: str, body: str, content_type: str) -> Result[HttpResponse, str]
+struct Http {
+    def get(url: str) -> Result[Response, HttpError]
+    def post(url: str, body: str, content_type: str) -> Result[Response, HttpError]
+    def put(url: str, body: str, content_type: str) -> Result[Response, HttpError]
+    def patch(url: str, body: str, content_type: str) -> Result[Response, HttpError]
+    def delete(url: str) -> Result[Response, HttpError]
+    def head(url: str) -> Result[Response, HttpError]
+    def options(url: str) -> Result[Response, HttpError]
+}
 
 @builtin
 def __kiln_math_floor(x: float) -> float
@@ -387,6 +405,6 @@ export {
     __kiln_math_imin, __kiln_math_imax, __kiln_math_iclamp,
     __kiln_math_factorial, __kiln_math_comb, __kiln_math_perm,
     Path, path_cwd, path_temp_dir,
-    HttpResponse, http_get, http_post
+    Response, HttpError, Request, Http
 }
 

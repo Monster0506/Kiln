@@ -24,26 +24,6 @@ pub fn declare_io_runtime(module: &mut ObjectModule) -> HashMap<String, FuncId> 
     };
     ids.insert("path_temp_dir".into(), id);
 
-    // http_get(url: str) -> Result[HttpResponse, str]
-    let id = {
-        let mut sig = module.make_signature();
-        sig.params.push(AbiParam::new(types::I64));
-        sig.returns.push(AbiParam::new(types::I64));
-        import_fn(module, "http_get", sig)
-    };
-    ids.insert("http_get".into(), id);
-
-    // http_post(url: str, body: str, content_type: str) -> Result[HttpResponse, str]
-    let id = {
-        let mut sig = module.make_signature();
-        sig.params.push(AbiParam::new(types::I64));
-        sig.params.push(AbiParam::new(types::I64));
-        sig.params.push(AbiParam::new(types::I64));
-        sig.returns.push(AbiParam::new(types::I64));
-        import_fn(module, "http_post", sig)
-    };
-    ids.insert("http_post".into(), id);
-
     ids
 }
 

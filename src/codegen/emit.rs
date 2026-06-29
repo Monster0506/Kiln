@@ -7,6 +7,13 @@ use std::process::{Command, Stdio};
 /// Empty slice means build.rs could not find a C compiler; linking will warn.
 static RUNTIME_OBJ: &[u8] = include_bytes!(env!("KILN_RT_OBJ_PATH"));
 
+/// Rust HTTP runtime staticlib, compiled from kiln_rt/ during `cargo build`.
+/// Empty slice means build failed; HTTP builtins will produce linker errors in user programs.
+static RUNTIME_HTTP: &[u8] = include_bytes!(env!("KILN_HTTP_RT_PATH"));
+
+/// "gnu" = GNU ar (.a), compatible with g++/gcc; "msvc" = MSVC lib (.lib), compatible with link.exe.
+const RUNTIME_HTTP_FORMAT: &str = env!("KILN_HTTP_RT_FORMAT");
+
 /// Finalise the module and return the raw object file bytes.
 pub fn emit_object(cgx: CodegenContext) -> Result<Vec<u8>, String> {
     let product: ObjectProduct = cgx.module.finish();
@@ -25,10 +32,11 @@ pub fn link_executable(
 
     let tmp_dir = obj_path.parent().unwrap_or(Path::new("."));
 
+    let stem = obj_path
+        .file_stem()
+        .unwrap_or_else(|| std::ffi::OsStr::new("kiln_out"));
+
     let runtime_path: Option<std::path::PathBuf> = if !RUNTIME_OBJ.is_empty() {
-        let stem = obj_path
-            .file_stem()
-            .unwrap_or_else(|| std::ffi::OsStr::new("kiln_rt"));
         let rt = tmp_dir.join(format!("{}_rt.o", stem.to_string_lossy()));
         std::fs::write(&rt, RUNTIME_OBJ).map_err(|e| format!("write runtime .o: {e}"))?;
         Some(rt)
@@ -36,6 +44,22 @@ pub fn link_executable(
         eprintln!("warning: Kiln runtime not available; binary will be missing runtime symbols");
         None
     };
+
+    // Use the extension that matches the format build.rs produced.
+    // "gnu" = .a (GNU ar), "msvc" = .lib (MSVC), anything else = skip.
+    let http_path: Option<std::path::PathBuf> =
+        if !RUNTIME_HTTP.is_empty() && RUNTIME_HTTP_FORMAT != "none" {
+            let ext = if RUNTIME_HTTP_FORMAT == "msvc" {
+                "lib"
+            } else {
+                "a"
+            };
+            let hp = tmp_dir.join(format!("{}_http_rt.{}", stem.to_string_lossy(), ext));
+            std::fs::write(&hp, RUNTIME_HTTP).map_err(|e| format!("write HTTP runtime: {e}"))?;
+            Some(hp)
+        } else {
+            None
+        };
 
     struct LinkerSpec {
         name: &'static str,
@@ -67,7 +91,9 @@ pub fn link_executable(
                     "-Wl,--subsystem,console",
                     "-Wl,-e,mainCRTStartup",
                 ],
-                trailing_libs: &["-lws2_32"],
+                // ws2_32: sockets; userenv: Rust std GetUserProfileDirectory;
+                // ntdll: Rust std NtCreateNamedPipeFile; bcrypt: ring/rustls crypto
+                trailing_libs: &["-lws2_32", "-luserenv", "-lntdll", "-lbcrypt"],
             },
             LinkerSpec {
                 name: "gcc",
@@ -77,22 +103,50 @@ pub fn link_executable(
                     "-Wl,--subsystem,console",
                     "-Wl,-e,mainCRTStartup",
                 ],
-                trailing_libs: &["-lws2_32"],
+                trailing_libs: &["-lws2_32", "-luserenv", "-lntdll", "-lbcrypt"],
             },
         ]
-    } else {
+    } else if cfg!(target_os = "macos") {
         &[
             LinkerSpec {
                 name: "c++",
                 is_msvc_style: false,
                 leading_flags: &[],
-                trailing_libs: &[],
+                trailing_libs: &[
+                    "-framework",
+                    "Security",
+                    "-framework",
+                    "CoreFoundation",
+                    "-lpthread",
+                ],
             },
             LinkerSpec {
                 name: "cc",
                 is_msvc_style: false,
                 leading_flags: &[],
-                trailing_libs: &[],
+                trailing_libs: &[
+                    "-framework",
+                    "Security",
+                    "-framework",
+                    "CoreFoundation",
+                    "-lpthread",
+                ],
+            },
+        ]
+    } else {
+        // Linux and other Unix: reqwest/tokio need pthread and dl.
+        &[
+            LinkerSpec {
+                name: "c++",
+                is_msvc_style: false,
+                leading_flags: &[],
+                trailing_libs: &["-lpthread", "-ldl", "-lm"],
+            },
+            LinkerSpec {
+                name: "cc",
+                is_msvc_style: false,
+                leading_flags: &[],
+                trailing_libs: &["-lpthread", "-ldl", "-lm"],
             },
         ]
     };
@@ -115,6 +169,12 @@ pub fn link_executable(
             if let Some(ref rt) = runtime_path {
                 cmd.arg(rt);
             }
+            // MSVC .lib: only compatible with MSVC-style linkers.
+            if RUNTIME_HTTP_FORMAT == "msvc" {
+                if let Some(ref hp) = http_path {
+                    cmd.arg(hp);
+                }
+            }
         } else {
             for flag in spec.leading_flags {
                 cmd.arg(flag);
@@ -122,6 +182,12 @@ pub fn link_executable(
             cmd.arg("-o").arg(output).arg(obj_path);
             if let Some(ref rt) = runtime_path {
                 cmd.arg(rt);
+            }
+            // GNU .a: only compatible with GNU-style linkers.
+            if RUNTIME_HTTP_FORMAT == "gnu" {
+                if let Some(ref hp) = http_path {
+                    cmd.arg(hp);
+                }
             }
             for lib in spec.trailing_libs {
                 cmd.arg(lib);
@@ -149,6 +215,9 @@ pub fn link_executable(
             Ok(s) if s.success() => {
                 if let Some(ref rt) = runtime_path {
                     let _ = std::fs::remove_file(rt);
+                }
+                if let Some(ref hp) = http_path {
+                    let _ = std::fs::remove_file(hp);
                 }
                 return Ok(());
             }

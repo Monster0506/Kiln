@@ -340,6 +340,13 @@ interface IntMath {
     def perm(k: int) -> int {}
 }
 
+# RequestMethods -- builder-style methods for constructing and sending HTTP requests.
+interface RequestMethods {
+    def send() -> Result[Response, HttpError] {}
+    def with_body(b: str) -> Request {}
+    def with_content_type(ct: str) -> Request {}
+}
+
 interface Sized {
     def len() -> int {}
 }
@@ -398,5 +405,6 @@ export {
     Callable, Iterator, Iterable, Foldable, Collection, Sequence,
     Predicate, Mapper, Into, From, Indexable, Sized, VecMethods,
     StringMethods,
-    FloatMath, IntMath
+    FloatMath, IntMath,
+    RequestMethods
 }

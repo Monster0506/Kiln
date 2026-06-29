@@ -1,0 +1,17 @@
+[package]
+name = "kiln_rt"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+reqwest = { version = "0.13", features = ["blocking", "rustls"], default-features = false }
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

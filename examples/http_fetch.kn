@@ -3,9 +3,9 @@
 # Usage: kiln run examples/http_fetch.kn
 # Saves the response body to temp/fetched.txt and prints a summary.
 #
-# Only plain http:// URLs are supported (no TLS).
+# Both http:// and https:// are supported (reqwest + rustls).
 
-def save_body(resp: HttpResponse) -> void {
+def save_body(resp: Response) -> void {
     body: str = resp.body()
     out: Path = Path.new('temp').join('fetched.txt')
     result: Result[int, str] = out.write_text(body)
@@ -15,7 +15,7 @@ def save_body(resp: HttpResponse) -> void {
     }
 }
 
-def print_save_ok(out: Path, resp: HttpResponse) -> void {
+def print_save_ok(out: Path, resp: Response) -> void {
     sz_result: Result[int, str] = out.file_size()
     sz: int = match sz_result {
         Ok { value: n } => n,
@@ -32,10 +32,10 @@ def print_save_ok(out: Path, resp: HttpResponse) -> void {
 }
 
 def handle_get(url: str) -> void {
-    result: Result[HttpResponse, str] = http_get(url)
+    result: Result[Response, HttpError] = Http.get(url)
     match result {
         Ok { value: resp } => save_body(resp),
-        Err { error: e } => println('http_get failed: ' + e)
+        Err { error: e } => println('Http.get failed: ' + e.msg)
     }
 }
 

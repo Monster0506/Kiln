@@ -10,25 +10,12 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include <direct.h>
 #define stat _stat
 #define mkdir(p, m) _mkdir(p)
-typedef SOCKET kiln_sock_t;
-#define KILN_INVALID_SOCK INVALID_SOCKET
-#define kiln_close_sock closesocket
-#define kiln_sock_err() WSAGetLastError()
 #else
 #include <dirent.h>
 #include <unistd.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-typedef int kiln_sock_t;
-#define KILN_INVALID_SOCK (-1)
-#define kiln_close_sock close
-#define kiln_sock_err() errno
 #endif
 
 typedef struct { const char* ptr; int64_t len; } KilnStr;
@@ -52,21 +39,19 @@ static int is_ws(unsigned char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
-static int64_t make_option_none() {
-    int32_t* box = (int32_t*)malloc(8);
-    box[0] = 0; box[1] = 0;
-    return (int64_t)box;
-}
+// None = raw integer 1, matching kiln_option_none() and the match codegen.
+static int64_t make_option_none() { return 1; }
+// Some = heap block with disc=0 at offset 0, matching kiln_option_some().
 static int64_t make_option_some_i64(int64_t val) {
     int32_t* box = (int32_t*)malloc(16);
-    box[0] = 1; box[1] = 0;
+    box[0] = 0; box[1] = 0;
     *(int64_t*)(box + 2) = val;
     return (int64_t)box;
 }
 static int64_t make_option_some_f64(double val) {
     int32_t* box = (int32_t*)malloc(16);
     int64_t bits; memcpy(&bits, &val, 8);
-    box[0] = 1; box[1] = 0;
+    box[0] = 0; box[1] = 0;
     *(int64_t*)(box + 2) = bits;
     return (int64_t)box;
 }
@@ -1168,254 +1153,6 @@ int64_t path_temp_dir() {
     memcpy(copy, tmp, len + 1);
     return (int64_t)alloc_str_struct(copy, (int64_t)len);
 #endif
-}
-
-// --- HTTP stdlib ---
-
-typedef struct {
-    int64_t status;
-    int64_t body;
-    int64_t hdr_names;
-    int64_t hdr_vals;
-} KilnHttpResponse;
-
-static int64_t alloc_vec() {
-    KilnVec* v = (KilnVec*)malloc(sizeof(KilnVec));
-    v->data = NULL; v->len = 0; v->cap = 0;
-    return (int64_t)v;
-}
-
-static void vec_push(int64_t vec_raw, int64_t val) {
-    KilnVec* v = (KilnVec*)vec_raw;
-    if (v->len == v->cap) {
-        v->cap = v->cap == 0 ? 4 : v->cap * 2;
-        v->data = (int64_t*)realloc(v->data, (size_t)(v->cap * 8));
-    }
-    v->data[v->len++] = val;
-}
-
-// Returns 1 on success, 0 on failure. Fills host/port/path (caller-owned buffers).
-static int http_parse_url(const char* url, size_t url_len,
-                          char host[512], int* port, char path[2048]) {
-    // Only http:// is supported.
-    if (url_len < 7 || strncmp(url, "http://", 7) != 0) return 0;
-    const char* rest = url + 7;
-    // Find end of host[:port] section.
-    const char* slash = strchr(rest, '/');
-    size_t hostport_len = slash ? (size_t)(slash - rest) : strlen(rest);
-    if (hostport_len == 0 || hostport_len >= 511) return 0;
-    char hostport[512];
-    memcpy(hostport, rest, hostport_len);
-    hostport[hostport_len] = '\0';
-    // Split host:port.
-    char* colon = strchr(hostport, ':');
-    if (colon) {
-        *colon = '\0';
-        *port = atoi(colon + 1);
-    } else {
-        *port = 80;
-    }
-    strncpy(host, hostport, 511);
-    host[511] = '\0';
-    // Path (default to /).
-    if (!slash || slash[1] == '\0') {
-        strcpy(path, "/");
-    } else {
-        strncpy(path, slash, 2047);
-        path[2047] = '\0';
-    }
-    return 1;
-}
-
-// Returns 1 if line (CR stripped) is blank, 0 otherwise.
-static int is_blank_line(const char* line) {
-    return line[0] == '\0' || (line[0] == '\r' && line[1] == '\0');
-}
-
-// Lowercase a char for case-insensitive header comparison.
-static char lc(char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
-
-static int header_name_eq(const char* a, const char* b) {
-    while (*a && *b) { if (lc(*a) != lc(*b)) return 0; a++; b++; }
-    return *a == '\0' && *b == '\0';
-}
-
-static int64_t http_do_request(const char* host, int port, const char* request,
-                               size_t req_len) {
-#ifdef _WIN32
-    WSADATA wsd;
-    WSAStartup(MAKEWORD(2, 2), &wsd);
-#endif
-    char port_str[16];
-    snprintf(port_str, sizeof(port_str), "%d", port);
-    struct addrinfo hints, *res = NULL;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(host, port_str, &hints, &res) != 0 || !res) {
-        return kiln_err_from_cstr("http: could not resolve host");
-    }
-    kiln_sock_t fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (fd == KILN_INVALID_SOCK) {
-        freeaddrinfo(res);
-        return kiln_err_from_cstr("http: socket creation failed");
-    }
-    if (connect(fd, res->ai_addr, (int)res->ai_addrlen) != 0) {
-        kiln_close_sock(fd);
-        freeaddrinfo(res);
-        return kiln_err_from_cstr("http: connection refused");
-    }
-    freeaddrinfo(res);
-    // Send request.
-    size_t sent = 0;
-    while (sent < req_len) {
-        int n = (int)send(fd, request + sent, (int)(req_len - sent), 0);
-        if (n <= 0) { kiln_close_sock(fd); return kiln_err_from_cstr("http: send failed"); }
-        sent += (size_t)n;
-    }
-    // Read full response into a growable buffer.
-    size_t buf_cap = 16384, buf_len = 0;
-    char* buf = (char*)malloc(buf_cap);
-    while (1) {
-        if (buf_len + 4096 > buf_cap) {
-            buf_cap *= 2;
-            buf = (char*)realloc(buf, buf_cap);
-        }
-        int n = (int)recv(fd, buf + buf_len, 4096, 0);
-        if (n <= 0) break;
-        buf_len += (size_t)n;
-    }
-    kiln_close_sock(fd);
-    // Parse status line.
-    char* p = buf;
-    char* end = buf + buf_len;
-    char* nl = (char*)memchr(p, '\n', (size_t)(end - p));
-    if (!nl) { free(buf); return kiln_err_from_cstr("http: malformed response"); }
-    // Status code is after "HTTP/1.x ".
-    int status_code = 200;
-    char* sp = (char*)memchr(p, ' ', (size_t)(nl - p));
-    if (sp && sp + 1 < nl) status_code = atoi(sp + 1);
-    p = nl + 1;
-    // Parse headers.
-    int64_t hdr_names = alloc_vec();
-    int64_t hdr_vals = alloc_vec();
-    while (p < end) {
-        char* line_end = (char*)memchr(p, '\n', (size_t)(end - p));
-        if (!line_end) break;
-        size_t line_len = (size_t)(line_end - p);
-        if (line_len > 0 && p[line_len - 1] == '\r') line_len--;
-        if (line_len == 0) { p = line_end + 1; break; } // blank = end of headers
-        char* colon = (char*)memchr(p, ':', line_len);
-        if (colon) {
-            size_t nlen = (size_t)(colon - p);
-            char* name_buf = (char*)malloc(nlen + 1);
-            memcpy(name_buf, p, nlen); name_buf[nlen] = '\0';
-            char* vp = colon + 1;
-            while (vp < line_end && (*vp == ' ' || *vp == '\t')) vp++;
-            size_t vlen = (size_t)(line_end - vp);
-            if (vlen > 0 && vp[vlen - 1] == '\r') vlen--;
-            char* val_buf = (char*)malloc(vlen + 1);
-            memcpy(val_buf, vp, vlen); val_buf[vlen] = '\0';
-            vec_push(hdr_names, (int64_t)alloc_str_struct(name_buf, (int64_t)nlen));
-            vec_push(hdr_vals, (int64_t)alloc_str_struct(val_buf, (int64_t)vlen));
-        }
-        p = line_end + 1;
-    }
-    // Body = everything after blank header line.
-    size_t body_len = (p < end) ? (size_t)(end - p) : 0;
-    char* body_buf = (char*)malloc(body_len + 1);
-    if (body_len > 0) memcpy(body_buf, p, body_len);
-    body_buf[body_len] = '\0';
-    free(buf);
-    KilnHttpResponse* resp = (KilnHttpResponse*)malloc(sizeof(KilnHttpResponse));
-    resp->status = (int64_t)status_code;
-    resp->body = (int64_t)alloc_str_struct(body_buf, (int64_t)body_len);
-    resp->hdr_names = hdr_names;
-    resp->hdr_vals = hdr_vals;
-    return kiln_result_ok((int64_t)resp);
-}
-
-int64_t HttpResponse_status(int64_t resp_raw) {
-    KilnHttpResponse* r = (KilnHttpResponse*)resp_raw;
-    return r->status;
-}
-
-int64_t HttpResponse_body(int64_t resp_raw) {
-    KilnHttpResponse* r = (KilnHttpResponse*)resp_raw;
-    return r->body;
-}
-
-int64_t HttpResponse_header(int64_t resp_raw, int64_t name_raw) {
-    KilnHttpResponse* r = (KilnHttpResponse*)resp_raw;
-    KilnStr* needle = (KilnStr*)name_raw;
-    char needle_buf[512];
-    size_t nlen = needle->len < 511 ? (size_t)needle->len : 511;
-    memcpy(needle_buf, needle->ptr, nlen);
-    needle_buf[nlen] = '\0';
-    KilnVec* names = (KilnVec*)r->hdr_names;
-    KilnVec* vals = (KilnVec*)r->hdr_vals;
-    for (int64_t i = 0; i < names->len; i++) {
-        KilnStr* hn = (KilnStr*)names->data[i];
-        char hn_buf[512];
-        size_t hl = hn->len < 511 ? (size_t)hn->len : 511;
-        memcpy(hn_buf, hn->ptr, hl); hn_buf[hl] = '\0';
-        if (header_name_eq(needle_buf, hn_buf)) {
-            return kiln_option_some(vals->data[i]);
-        }
-    }
-    return kiln_option_none();
-}
-
-int64_t http_get(int64_t url_raw) {
-    KilnStr* url_s = (KilnStr*)url_raw;
-    char host[512]; int port; char path[2048];
-    char url_buf[4096];
-    size_t ulen = url_s->len < 4095 ? (size_t)url_s->len : 4095;
-    memcpy(url_buf, url_s->ptr, ulen); url_buf[ulen] = '\0';
-    if (!http_parse_url(url_buf, ulen, host, &port, path)) {
-        return kiln_err_from_cstr("http: unsupported URL scheme (only http:// supported)");
-    }
-    char req[8192];
-    int rlen = snprintf(req, sizeof(req),
-        "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n",
-        path, host);
-    if (rlen <= 0 || rlen >= (int)sizeof(req)) {
-        return kiln_err_from_cstr("http: request too large");
-    }
-    return http_do_request(host, port, req, (size_t)rlen);
-}
-
-int64_t http_post(int64_t url_raw, int64_t body_raw, int64_t ct_raw) {
-    KilnStr* url_s = (KilnStr*)url_raw;
-    KilnStr* body_s = (KilnStr*)body_raw;
-    KilnStr* ct_s = (KilnStr*)ct_raw;
-    char host[512]; int port; char path[2048];
-    char url_buf[4096];
-    size_t ulen = url_s->len < 4095 ? (size_t)url_s->len : 4095;
-    memcpy(url_buf, url_s->ptr, ulen); url_buf[ulen] = '\0';
-    if (!http_parse_url(url_buf, ulen, host, &port, path)) {
-        return kiln_err_from_cstr("http: unsupported URL scheme (only http:// supported)");
-    }
-    char ct_buf[256];
-    size_t ctlen = ct_s->len < 255 ? (size_t)ct_s->len : 255;
-    memcpy(ct_buf, ct_s->ptr, ctlen); ct_buf[ctlen] = '\0';
-    // Build request: headers + body.
-    size_t hdr_max = 1024, body_len = (size_t)body_s->len;
-    char hdr[1024];
-    int hlen = snprintf(hdr, hdr_max,
-        "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: %s\r\n"
-        "Content-Length: %zu\r\nConnection: close\r\n\r\n",
-        path, host, ct_buf, body_len);
-    if (hlen <= 0 || hlen >= (int)hdr_max) {
-        return kiln_err_from_cstr("http: request headers too large");
-    }
-    size_t req_len = (size_t)hlen + body_len;
-    char* req = (char*)malloc(req_len);
-    memcpy(req, hdr, (size_t)hlen);
-    memcpy(req + hlen, body_s->ptr, body_len);
-    int64_t result = http_do_request(host, port, req, req_len);
-    free(req);
-    return result;
 }
 
 } // extern "C"

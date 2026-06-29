@@ -402,4 +402,24 @@ impl IntMath for int {
     def perm(k: int) -> int { return __kiln_math_perm(self, k) }
 }
 
+# ---- RequestMethods for Request ------------------------------------------------
+
+impl RequestMethods for Request {
+    def send() -> Result[Response, HttpError] {
+        if self.method == 'GET' { return Http.get(self.url) }
+        if self.method == 'DELETE' { return Http.delete(self.url) }
+        if self.method == 'HEAD' { return Http.head(self.url) }
+        if self.method == 'OPTIONS' { return Http.options(self.url) }
+        if self.method == 'PUT' { return Http.put(self.url, self.body, self.content_type) }
+        if self.method == 'PATCH' { return Http.patch(self.url, self.body, self.content_type) }
+        return Http.post(self.url, self.body, self.content_type)
+    }
+    def with_body(b: str) -> Request {
+        return Request { url: self.url, method: self.method, body: b, content_type: self.content_type }
+    }
+    def with_content_type(ct: str) -> Request {
+        return Request { url: self.url, method: self.method, body: self.body, content_type: ct }
+    }
+}
+
 export { * }

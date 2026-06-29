@@ -57,6 +57,9 @@ pub enum TokenKind {
     Export,
     Self_,
     Void,
+    Throws,
+    Ignore,
+    Abandon,
 
     // Operators
     Plus,

@@ -14,6 +14,7 @@ fn stmt_always_returns(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Return { .. } => true,
         Stmt::Raise { .. } => true,
+        Stmt::Abandon { .. } => true,
 
         Stmt::If {
             branches,
@@ -54,6 +55,12 @@ mod tests {
     fn raise_stmt() -> Stmt {
         Stmt::Raise {
             value: Some(Expr::Int(1, s())),
+            span: s(),
+        }
+    }
+    fn abandon_stmt() -> Stmt {
+        Stmt::Abandon {
+            message: None,
             span: s(),
         }
     }
@@ -102,6 +109,14 @@ mod tests {
             span: s(),
         };
         assert!(always_returns(&block));
+    }
+
+    #[test]
+    fn abandon_is_always_returning() {
+        assert!(always_returns(&Block {
+            stmts: vec![abandon_stmt()],
+            span: s()
+        }));
     }
 
     #[test]

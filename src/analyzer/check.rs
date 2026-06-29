@@ -898,7 +898,7 @@ fn read_expr(kind: &TypedExprKind, reads: &mut std::collections::HashSet<String>
             TypedClosureBody::Expr(e) => read_expr(&e.kind, reads),
             TypedClosureBody::Block(b) => read_block(b, reads),
         },
-        TypedExprKind::Spawn(e) => read_expr(&e.kind, reads),
+        TypedExprKind::Spawn(e) | TypedExprKind::Try(e) => read_expr(&e.kind, reads),
         TypedExprKind::Ref { expr, .. } => read_expr(&expr.kind, reads),
         TypedExprKind::Gen { body } => read_block(body, reads),
         TypedExprKind::GenSplice(e) => read_expr(&e.kind, reads),
@@ -1608,6 +1608,35 @@ mod tests {
             throws: true,
             span: s(),
         }
+    }
+
+    #[test]
+    fn try_expr_allows_throws_fn_in_clean_context() {
+        // try f() in a clean context should NOT produce ThrowsInCleanContext
+        let block = Block {
+            stmts: vec![Stmt::Expr(Expr::Try(
+                Box::new(Expr::Call {
+                    callee: Box::new(Expr::Ident("risky".into(), s())),
+                    args: vec![],
+                    span: s(),
+                }),
+                s(),
+            ))],
+            span: s(),
+        };
+        let mut env = Env::new();
+        env.push_scope();
+        env.define("risky", throws_fn_symbol());
+        env.throws_context = false;
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            !errs
+                .iter()
+                .any(|e| matches!(e, AnalysisError::ThrowsInCleanContext { .. })),
+            "try should suppress ThrowsInCleanContext: {errs:?}"
+        );
     }
 
     #[test]

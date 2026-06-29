@@ -596,6 +596,7 @@ mod tests {
                 is_declaration: false,
                 is_entry: false,
                 is_impure: false,
+                throws: false,
                 span: s(),
             })],
             span: s(),

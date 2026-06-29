@@ -1611,6 +1611,7 @@ fn lower_stmt_shallow(
                 is_declaration: false,
                 is_entry: f.annotations.iter().any(|a| a.name == "entry"),
                 is_impure: f.annotations.iter().any(|a| a.name == "impure"),
+                throws: f.throws,
                 span: f.span,
             })
         }

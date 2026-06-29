@@ -654,6 +654,7 @@ pub fn check_fn_def(
                 .map(|p| (p.name.clone(), p.ty.clone()))
                 .collect(),
             ret: ret.clone(),
+            throws: f.throws,
             span: f.span,
         },
     );
@@ -683,6 +684,7 @@ pub fn check_fn_def(
         is_declaration: false,
         is_entry: f.annotations.iter().any(|a| a.name == "entry"),
         is_impure: f.annotations.iter().any(|a| a.name == "impure"),
+        throws: f.throws,
         span: f.span,
     }
 }

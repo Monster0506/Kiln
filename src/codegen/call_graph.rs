@@ -479,6 +479,7 @@ mod tests {
             is_declaration: false,
             is_entry,
             is_impure: false,
+            throws: false,
             span: s(),
         }
     }

@@ -33,6 +33,7 @@ pub struct FnOverload {
     pub inferred_bounds: Vec<GenericBound>,
     pub params: ParamList,
     pub ret: Ty,
+    pub throws: bool,
     /// The symbol name used in codegen, e.g. "foo__0" for the first overload of "foo".
     pub mangled_name: String,
     pub span: Span,
@@ -52,6 +53,7 @@ pub enum Symbol {
         inferred_bounds: Vec<GenericBound>,
         params: ParamList,
         ret: Ty,
+        throws: bool,
         span: Span,
     },
     /// Multiple definitions of the same function name (overloads).

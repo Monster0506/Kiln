@@ -284,6 +284,7 @@ fn specialize_hook_as_fn(
         is_declaration: false,
         is_entry: false,
         is_impure: hook.is_impure,
+        throws: false,
         span: hook.span,
     }
 }
@@ -650,6 +651,7 @@ fn specialize_fn(
         is_declaration: false,
         is_entry: f.is_entry,
         is_impure: f.is_impure,
+        throws: f.throws,
         span: f.span,
     }
 }
@@ -876,6 +878,7 @@ fn subst_stmt(
             is_declaration: f.is_declaration,
             is_entry: f.is_entry,
             is_impure: f.is_impure,
+            throws: f.throws,
             span: f.span,
         }),
         TypedStmt::Break(s) => TypedStmt::Break(*s),

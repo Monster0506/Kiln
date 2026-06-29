@@ -1001,6 +1001,7 @@ fn analyze_inner(
                             inferred_bounds: vec![],
                             params,
                             ret,
+                            throws: f.throws,
                             span: f.span,
                         },
                     );
@@ -1150,6 +1151,7 @@ fn analyze_inner(
                         inferred_bounds: vec![],
                         params: resolved[ii].params.clone(),
                         ret: resolved[ii].ret.clone(),
+                        throws: resolved[ii].f.throws,
                         mangled_name,
                         span: resolved[ii].f.span,
                     });
@@ -1171,6 +1173,7 @@ fn analyze_inner(
                         inferred_bounds: vec![],
                         params: resolved[di].params.clone(),
                         ret: resolved[di].ret.clone(),
+                        throws: resolved[di].f.throws,
                         mangled_name,
                         span: resolved[di].f.span,
                     });
@@ -1882,6 +1885,7 @@ fn analyze_inner(
                     is_declaration: f.is_declaration,
                     is_entry: f.annotations.iter().any(|a| a.name == "entry"),
                     is_impure: f.annotations.iter().any(|a| a.name == "impure"),
+                    throws: f.throws,
                     span: f.span,
                 }));
             }
@@ -2040,6 +2044,7 @@ fn analyze_inner(
                             is_declaration: false,
                             is_entry: false,
                             is_impure: method.annotations.iter().any(|a| a.name == "impure"),
+                            throws: method.throws,
                             span: method.span,
                         }));
                     }
@@ -2276,6 +2281,7 @@ fn analyze_inner(
                         is_declaration: false,
                         is_entry: false,
                         is_impure: method.annotations.iter().any(|a| a.name == "impure"),
+                        throws: method.throws,
                         span: method.span,
                     });
                 }

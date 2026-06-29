@@ -50,6 +50,7 @@ pub struct TypedFnDef {
     pub is_declaration: bool,
     pub is_entry: bool,
     pub is_impure: bool,
+    pub throws: bool,
     pub span: Span,
 }
 

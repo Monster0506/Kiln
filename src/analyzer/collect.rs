@@ -87,6 +87,7 @@ pub fn collect_top_level(
                 inferred_bounds: vec![], // populated after body analysis
                 params: vec![],          // resolved in pass 1b
                 ret: Ty::Unknown,
+                throws: f.throws,
                 span,
             },
             _ => continue,

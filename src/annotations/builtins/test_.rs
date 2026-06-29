@@ -42,6 +42,7 @@ mod tests {
             is_declaration: false,
             is_entry: false,
             is_impure: false,
+            throws: false,
             span: s(),
         };
         assert!(process_test(&empty_file(), AnnotationTarget::Function(&f), &[]).is_empty());

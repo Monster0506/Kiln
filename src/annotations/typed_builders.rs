@@ -170,6 +170,7 @@ pub fn impure_fn(
         is_declaration: false,
         is_entry: false,
         is_impure: true,
+        throws: false,
         span: s(),
     }
 }

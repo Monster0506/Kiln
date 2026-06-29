@@ -1,0 +1,10 @@
+# ignore_valid.kn -- auditably discard a result value
+
+def compute() -> int {
+    return 42
+}
+
+def main() -> void {
+    # explicitly discard the result -- intent is visible in source
+    ignore compute()
+}

@@ -898,7 +898,9 @@ fn read_expr(kind: &TypedExprKind, reads: &mut std::collections::HashSet<String>
             TypedClosureBody::Expr(e) => read_expr(&e.kind, reads),
             TypedClosureBody::Block(b) => read_block(b, reads),
         },
-        TypedExprKind::Spawn(e) | TypedExprKind::Try(e) => read_expr(&e.kind, reads),
+        TypedExprKind::Spawn(e) | TypedExprKind::Try(e) | TypedExprKind::Ignore(e) => {
+            read_expr(&e.kind, reads)
+        }
         TypedExprKind::Ref { expr, .. } => read_expr(&expr.kind, reads),
         TypedExprKind::Gen { body } => read_block(body, reads),
         TypedExprKind::GenSplice(e) => read_expr(&e.kind, reads),

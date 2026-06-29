@@ -2,16 +2,6 @@
 
 # ---- Generic enums -----------------------------------------------------------
 
-enum Option[T] {
-    Some { value: T }
-    None
-}
-
-enum Result[T, E] {
-    Ok { value: T }
-    Err { error: E }
-}
-
 enum Either[L, R] {
     Left { value: L }
     Right { value: R }

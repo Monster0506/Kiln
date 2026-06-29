@@ -2,7 +2,7 @@
 
 # ---- Types that will have impl blocks ----------------------------------------
 
-@derive(Eq, Display)
+@derive(Eq)
 struct Point: Comparable {
     x: float
     y: float
@@ -25,32 +25,6 @@ struct Velocity: Addable, Subtractable, Display {
     dy: float
 }
 
-# ---- Interfaces needed -------------------------------------------------------
-
-interface Addable {
-    hook +(other: Self) -> Self
-}
-
-interface Subtractable {
-    hook -(other: Self) -> Self
-}
-
-interface Display {
-    hook to_str() -> str
-}
-
-interface Comparable: Eq {
-    hook <=>(other: Self) -> int
-}
-
-interface Eq {
-    hook ==(other: Self) -> bool
-}
-
-interface Clone {
-    hook clone() -> Self
-}
-
 # ---- impl blocks for Point --------------------------------------------------
 #
 # Orphan rule: you may implement an interface for a type if you own the type,
@@ -58,7 +32,7 @@ interface Clone {
 
 impl Comparable for Point {
     hook <=>(other: Point) -> int {
-        dist_self: float = x * x + y * y
+        dist_self: float = self.x * self.x + self.y * self.y
         dist_other: float = other.x * other.x + other.y * other.y
         if dist_self < dist_other {
             return -1
@@ -70,19 +44,19 @@ impl Comparable for Point {
     }
 
     hook ==(other: Point) -> bool {
-        return x == other.x && y == other.y
+        return self.x == other.x && self.y == other.y
     }
 }
 
 impl Display for Point {
     hook to_str() -> str {
-        return "Point({x}, {y})"
+        return "Point({self.x}, {self.y})"
     }
 }
 
 impl Clone for Point {
     hook clone() -> Self {
-        return Point { x: x, y: y }
+        return Point { x: self.x, y: self.y }
     }
 }
 
@@ -90,7 +64,7 @@ impl Clone for Point {
 
 impl Comparable for Color {
     hook <=>(other: Color) -> int {
-        self_lum: int = r + g + b
+        self_lum: int = self.r + self.g + self.b
         other_lum: int = other.r + other.g + other.b
         if self_lum < other_lum {
             return -1
@@ -102,13 +76,13 @@ impl Comparable for Color {
     }
 
     hook ==(other: Color) -> bool {
-        return r == other.r && g == other.g && b == other.b
+        return self.r == other.r && self.g == other.g && self.b == other.b
     }
 }
 
 impl Display for Color {
     hook to_str() -> str {
-        return "rgb({r}, {g}, {b})"
+        return "rgb({self.r}, {self.g}, {self.b})"
     }
 }
 
@@ -116,9 +90,9 @@ impl Display for Color {
 
 impl Comparable for Temperature {
     hook <=>(other: Temperature) -> int {
-        if degrees < other.degrees {
+        if self.degrees < other.degrees {
             return -1
-        } elif degrees > other.degrees {
+        } elif self.degrees > other.degrees {
             return 1
         } else {
             return 0
@@ -126,13 +100,13 @@ impl Comparable for Temperature {
     }
 
     hook ==(other: Temperature) -> bool {
-        return degrees == other.degrees
+        return self.degrees == other.degrees
     }
 }
 
 impl Display for Temperature {
     hook to_str() -> str {
-        return "{degrees}{unit}"
+        return "{self.degrees}{self.unit}"
     }
 }
 
@@ -140,19 +114,19 @@ impl Display for Temperature {
 
 impl Addable for Velocity {
     hook +(other: Velocity) -> Velocity {
-        return Velocity { dx: dx + other.dx, dy: dy + other.dy }
+        return Velocity { dx: self.dx + other.dx, dy: self.dy + other.dy }
     }
 }
 
 impl Subtractable for Velocity {
     hook -(other: Velocity) -> Velocity {
-        return Velocity { dx: dx - other.dx, dy: dy - other.dy }
+        return Velocity { dx: self.dx - other.dx, dy: self.dy - other.dy }
     }
 }
 
 impl Display for Velocity {
     hook to_str() -> str {
-        return "Velocity({dx}, {dy})"
+        return "Velocity({self.dx}, {self.dy})"
     }
 }
 

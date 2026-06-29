@@ -1,17 +1,5 @@
 # patterns_option.kn -- matching on Option and Result-like enums
 
-# ---- Option enum -------------------------------------------------------------
-
-enum Option[T] {
-    Some { value: T }
-    None
-}
-
-enum Result[T, E] {
-    Ok { value: T }
-    Err { error: E }
-}
-
 # ---- Matching on Option ------------------------------------------------------
 
 def unwrap_or(opt: Option[int], default: int) -> int {

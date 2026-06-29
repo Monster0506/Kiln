@@ -22,14 +22,14 @@ struct Buffer {
     priv data: Vec[int]
 
     def contents() -> &Vec[int] {
-        return data
+        return self.data
     }
 
     def first() -> Option[int] {
-        if data.length() == 0 {
+        if self.data.length() == 0 {
             return None
         }
-        return Some { value: data[0] }
+        return Some { value: self.data[0] }
     }
 }
 

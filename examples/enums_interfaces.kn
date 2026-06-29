@@ -74,11 +74,6 @@ impl Eq for Direction {}
 
 # ---- Generic enum with interface conformance --------------------------------
 
-enum Result[T, E]: Display {
-    Ok { value: T }
-    Err { error: E }
-}
-
 impl Display for Result[int, str] {
     hook to_str() -> str {
         return match self {

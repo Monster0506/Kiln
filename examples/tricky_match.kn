@@ -1,12 +1,5 @@
 # tricky_match.kn -- match edge cases
 
-enum Expr {
-    Num { val: int }
-    Add { left: Expr, right: Expr }
-    Mul { left: Expr, right: Expr }
-    Neg { inner: Expr }
-}
-
 def eval_expr(e: Expr) -> int {
     return match e {
         Num { val: v } => v,

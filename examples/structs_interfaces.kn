@@ -36,9 +36,9 @@ struct Color: Eq, Display {
 
 impl Comparable for Temperature {
     hook <=>(other: Temperature) -> int {
-        if degrees < other.degrees {
+        if self.degrees < other.degrees {
             return -1
-        } elif degrees > other.degrees {
+        } elif self.degrees > other.degrees {
             return 1
         } else {
             return 0
@@ -48,31 +48,31 @@ impl Comparable for Temperature {
 
 impl Display for Temperature {
     hook to_str() -> str {
-        return "{degrees}C"
+        return "{self.degrees}C"
     }
 }
 
 impl Eq for Temperature {
     hook ==(other: Temperature) -> bool {
-        return degrees == other.degrees
+        return self.degrees == other.degrees
     }
 }
 
 impl Display for Player {
     hook to_str() -> str {
-        return "{name} (lvl {level}, score {score})"
+        return "{self.name} (lvl {self.level}, score {self.score})"
     }
 }
 
 impl Eq for Color {
     hook ==(other: Color) -> bool {
-        return r == other.r && g == other.g && b == other.b
+        return self.r == other.r && self.g == other.g && self.b == other.b
     }
 }
 
 impl Display for Color {
     hook to_str() -> str {
-        return "rgb({r},{g},{b})"
+        return "rgb({self.r},{self.g},{self.b})"
     }
 }
 

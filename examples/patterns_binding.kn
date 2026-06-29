@@ -47,16 +47,8 @@ def sign_message(x: int) -> str {
 
 # ---- Interface guard patterns ------------------------------------------------
 
-interface Comparable {
-    hook <=>(other: Self) -> int
-}
-
 interface Printable {
     hook to_str() -> str
-}
-
-interface Addable {
-    hook +(other: Self) -> Self
 }
 
 def handle_printable(val: Printable) -> str {

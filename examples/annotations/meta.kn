@@ -122,7 +122,7 @@ processor Bounded(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 annotation Counted { }
 
 processor Counted(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
-    n: int = 0
+    mut n: int = 0
     for p <- target.params {
         n = n + 1
     }

@@ -59,7 +59,7 @@ processor Offset(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
 annotation ParamAudit { }
 
 processor ParamAudit(target: FnDecl) -> (Option[Decl], Vec[Decl]) {
-    count: int = 0
+    mut count: int = 0
     for p <- target.params {
         count = count + 1
     }

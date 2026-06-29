@@ -127,7 +127,6 @@ type Matrix = Vec[Vec[float]]
 type Callback = Callable[(str), void]
 type IntPair = (int, int)
 type UserId = int
-type Predicate[T] = Callable[(T), bool]
 type Transform[T] = Callable[(T), T]
 
 # ---- Using type aliases ------------------------------------------------------

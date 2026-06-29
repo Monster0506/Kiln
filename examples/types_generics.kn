@@ -85,46 +85,36 @@ struct Stack[T] {
     priv items: Vec[T]
 
     def push(item: T) -> void {
-        items.add(item)
+        self.items.add(item)
     }
 
     def pop() -> Option[T] {
-        n: int = items.length()
+        n: int = self.items.length()
         if n == 0 {
             return None
         }
-        return Some { value: items[n - 1] }
+        return Some { value: self.items[n - 1] }
     }
 
     def peek() -> Option[T] {
-        n: int = items.length()
+        n: int = self.items.length()
         if n == 0 {
             return None
         }
-        v: T = items[n - 1]
+        v: T = self.items[n - 1]
         return Some { value: v }
     }
 
     def is_empty() -> bool {
-        return items.length() == 0
+        return self.items.length() == 0
     }
 
     def size() -> int {
-        return items.length()
+        return self.items.length()
     }
 }
 
 # ---- Generic enums -----------------------------------------------------------
-
-enum Option[T] {
-    Some { value: T }
-    None
-}
-
-enum Result[T, E] {
-    Ok { value: T }
-    Err { error: E }
-}
 
 enum Either[L, R] {
     Left { value: L }
@@ -152,7 +142,7 @@ def filter_vec[T](items: Vec[T], pred: Callable[(T), bool]) -> Vec[T] {
 }
 
 def reduce[T](items: Vec[T], init: T, f: Callable[(T, T), T]) -> T {
-    acc: T = init
+    mut acc: T = init
     for item <- items {
         acc = f(acc, item)
     }

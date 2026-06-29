@@ -25,9 +25,6 @@ interface SecurityError: Exception {
 interface FsError: IoError {
 }
 
-interface HttpError: NetworkError {
-}
-
 interface SqlError: DbError {
 }
 

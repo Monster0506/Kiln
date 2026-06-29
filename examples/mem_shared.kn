@@ -72,14 +72,6 @@ def write_to(s: Shared[Mutex[Vec[int]]], val: int) -> void {
     guard.value.add(val)
 }
 
-struct Mutex[T] {
-    priv inner: T
-
-    def lock() -> MutexGuard[T] {
-        return MutexGuard { value: inner }
-    }
-}
-
 struct MutexGuard[T] {
     value: T
 }

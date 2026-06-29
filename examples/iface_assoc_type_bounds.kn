@@ -11,21 +11,6 @@
 # The analyzer emits a ProjectedBound constraint for T::Item: Display
 # and checks it at each call site.
 
-interface Display {
-    hook to_str() -> str
-}
-
-interface Iterator {
-    type Item
-    hook next() -> Option[Item]
-    hook has_next() -> bool
-}
-
-interface Iterable {
-    type Item
-    hook iter() -> Iterator[Item = Item]
-}
-
 # ---- A simple wrapper that formats all items --------------------------------
 #
 # The bound [T: Iterable[Item: Display]] ensures we can interpolate each
@@ -33,7 +18,7 @@ interface Iterable {
 # would be rejected by the type checker.
 
 def format_count[T: Iterable](col: T) -> int {
-    count: int = 0
+    mut count: int = 0
     it: Iterator[Item = T.Item] = col.iter()
     while it.has_next() {
         item: T.Item = it.next().unwrap()
@@ -54,16 +39,16 @@ impl Iterator for IntRange {
     type Item = int
 
     hook next() -> Option[int] {
-        if current >= stop {
+        if self.current >= self.stop {
             return None
         }
-        val: int = current
-        current = current + 1
+        val: int = self.current
+        self.current = self.current + 1
         return Some(val)
     }
 
     hook has_next() -> bool {
-        return current < stop
+        return self.current < self.stop
     }
 }
 
@@ -71,7 +56,7 @@ impl Iterable for IntRange {
     type Item = int
 
     hook iter() -> Iterator[Item = int] {
-        return IntRange { start: start, stop: stop, current: start }
+        return IntRange { start: self.start, stop: self.stop, current: self.start }
     }
 }
 

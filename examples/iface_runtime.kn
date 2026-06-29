@@ -1,25 +1,5 @@
 # iface_runtime.kn -- isinstance, implements, generic constrained functions
 
-interface Display {
-    hook to_str() -> str
-}
-
-interface Comparable: Eq {
-    hook <=>(other: Self) -> int
-}
-
-interface Eq {
-    hook ==(other: Self) -> bool
-}
-
-interface Clone {
-    hook clone() -> Self
-}
-
-interface Addable {
-    hook +(other: Self) -> Self
-}
-
 @derive(Eq, Display)
 struct Point: Comparable {
     x: float
@@ -28,13 +8,13 @@ struct Point: Comparable {
 
 impl Comparable for Point {
     hook <=>(other: Point) -> int {
-        lx: float = x * x + y * y
+        lx: float = self.x * self.x + self.y * self.y
         rx: float = other.x * other.x + other.y * other.y
         if lx < rx { return -1 }
         if lx > rx { return 1 }
         return 0
     }
-    hook ==(other: Point) -> bool { return x == other.x && y == other.y }
+    hook ==(other: Point) -> bool { return self.x == other.x && self.y == other.y }
 }
 
 @derive(Eq, Display)
@@ -46,14 +26,14 @@ struct Color: Comparable {
 
 impl Comparable for Color {
     hook <=>(other: Color) -> int {
-        ls: int = r + g + b
+        ls: int = self.r + self.g + self.b
         rs: int = other.r + other.g + other.b
         if ls < rs { return -1 }
         if ls > rs { return 1 }
         return 0
     }
     hook ==(other: Color) -> bool {
-        return r == other.r && g == other.g && b == other.b
+        return self.r == other.r && self.g == other.g && self.b == other.b
     }
 }
 

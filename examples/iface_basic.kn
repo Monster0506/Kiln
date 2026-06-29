@@ -2,31 +2,11 @@
 
 # ---- Basic interface declarations --------------------------------------------
 
-interface Display {
-    hook to_str() -> str
-}
-
-interface Debug {
-    hook debug_str() -> str
-}
-
-interface Clone {
-    hook clone() -> Self
-}
-
 interface Drop {
     hook drop() -> void
 }
 
 # ---- Interface with required fields ------------------------------------------
-
-interface Exception {
-    message: str
-
-    hook to_str() -> str {
-        return message
-    }
-}
 
 interface Named {
     name: str
@@ -36,7 +16,7 @@ interface Labeled {
     label: str
 
     hook display_label() -> str {
-        return "[{label}]"
+        return "[{self.label}]"
     }
 }
 
@@ -88,7 +68,7 @@ struct Greeting: Printable {
 
 impl Printable for Greeting {
     hook to_str() -> str {
-        return message
+        return self.message
     }
 }
 
@@ -99,7 +79,7 @@ struct Person: Named, Describable {
 
 impl Describable for Person {
     hook describe() -> str {
-        return "{name}, age {age}"
+        return "{self.name}, age {self.age}"
     }
 }
 

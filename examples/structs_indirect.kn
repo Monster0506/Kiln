@@ -115,18 +115,18 @@ struct FileHandle: Drop {
     is_open: bool
 
     def read() -> str {
-        return read_fd(fd)
+        return read_fd(self.fd)
     }
 
     def write(data: str) -> void {
-        write_fd(fd, data)
+        write_fd(self.fd, data)
     }
 }
 
 impl Drop for FileHandle {
     hook drop() -> void {
-        if is_open {
-            close_fd(fd)
+        if self.is_open {
+            close_fd(self.fd)
         }
     }
 }
@@ -136,14 +136,14 @@ struct TempDir: Drop {
     priv created: bool
 
     def path_str() -> str {
-        return path
+        return self.path
     }
 }
 
 impl Drop for TempDir {
     hook drop() -> void {
-        if created {
-            remove_dir(path)
+        if self.created {
+            remove_dir(self.path)
         }
     }
 }
@@ -153,14 +153,14 @@ struct Connection: Drop {
     priv connected: bool
 
     def send(data: str) -> void {
-        write_socket(socket, data)
+        write_socket(self.socket, data)
     }
 }
 
 impl Drop for Connection {
     hook drop() -> void {
-        if connected {
-            disconnect(socket)
+        if self.connected {
+            disconnect(self.socket)
         }
     }
 }

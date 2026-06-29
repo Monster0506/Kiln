@@ -14,31 +14,31 @@ struct Counter {
     priv value: int
 
     def get() -> int {
-        return value
+        return self.value
     }
 
     def reset() -> void {
-        value = 0
+        self.value = 0
     }
 
     def increment() -> void {
-        value = value + 1
+        self.value = self.value + 1
     }
 
     def decrement() -> void {
-        value = value - 1
+        self.value = self.value - 1
     }
 
     def add(n: int) -> void {
-        value = value + n
+        self.value = self.value + n
     }
 
     def sub(n: int) -> void {
-        value = value - n
+        self.value = self.value - n
     }
 
     def is_zero() -> bool {
-        return value == 0
+        return self.value == 0
     }
 }
 
@@ -46,28 +46,28 @@ struct StringBuilder {
     priv parts: Vec[str]
 
     def append(s: str) -> void {
-        parts.add(s)
+        self.parts.add(s)
     }
 
     def append_line(s: str) -> void {
-        parts.add(s)
-        parts.add("\n")
+        self.parts.add(s)
+        self.parts.add("\n")
     }
 
     def build() -> str {
         mut result: str = ""
-        for part <- parts {
+        for part <- self.parts {
             result = "{result}{part}"
         }
         return result
     }
 
     def length() -> int {
-        return parts.length()
+        return self.parts.length()
     }
 
     def clear() -> void {
-        parts = Vec.new()
+        self.parts = Vec.new()
     }
 }
 
@@ -76,64 +76,31 @@ struct Stack[T] {
     priv size: int
 
     def push(item: T) -> void {
-        items.add(item)
-        size = size + 1
+        self.items.add(item)
+        self.size = self.size + 1
     }
 
     def pop() -> Option[T] {
-        if size == 0 {
+        if self.size == 0 {
             return None
         }
-        size = size - 1
-        return Some { value: items[size] }
+        self.size = self.size - 1
+        return Some { value: self.items[self.size] }
     }
 
     def peek() -> Option[T] {
-        if size == 0 {
+        if self.size == 0 {
             return None
         }
-        return Some { value: items[size - 1] }
+        return Some { value: self.items[self.size - 1] }
     }
 
     def is_empty() -> bool {
-        return size == 0
+        return self.size == 0
     }
 
     def length() -> int {
-        return size
-    }
-}
-
-# ---- Methods using other methods ---------------------------------------------
-
-struct Range {
-    start: int
-    end: int
-
-    def length() -> int {
-        return end - start
-    }
-
-    def contains(n: int) -> bool {
-        return n >= start && n < end
-    }
-
-    def is_empty() -> bool {
-        return length() == 0
-    }
-
-    def overlaps(other: Range) -> bool {
-        return start < other.end && end > other.start
-    }
-
-    def to_vec() -> Vec[int] {
-        result: Vec[int] = Vec.new()
-        mut i: int = start
-        while i < end {
-            result.add(i)
-            i = i + 1
-        }
-        return result
+        return self.size
     }
 }
 

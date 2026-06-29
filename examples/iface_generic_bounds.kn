@@ -4,27 +4,6 @@
 # The constraint solver instantiates T to the concrete argument type
 # and verifies it satisfies each bound.
 
-# ---- Interfaces -------------------------------------------------------------
-
-interface Display {
-    hook to_str() -> str
-}
-
-interface PartialEq {
-    hook ==(other: Self) -> bool
-}
-
-interface Eq: PartialEq {
-}
-
-interface Addable {
-    hook +(other: Self) -> Self
-}
-
-interface Ord: Eq {
-    hook <=>(other: Self) -> int
-}
-
 # ---- Types ------------------------------------------------------------------
 
 struct Color {
@@ -35,13 +14,13 @@ struct Color {
 
 impl Display for Color {
     hook to_str() -> str {
-        return "rgb({r}, {g}, {b})"
+        return "rgb({self.r}, {self.g}, {self.b})"
     }
 }
 
 impl PartialEq for Color {
     hook ==(other: Color) -> bool {
-        return r == other.r && g == other.g && b == other.b
+        return self.r == other.r && self.g == other.g && self.b == other.b
     }
 
 }
@@ -55,15 +34,15 @@ struct Money {
 
 impl Display for Money {
     hook to_str() -> str {
-        dollars: int = cents / 100
-        c: int = cents % 100
+        dollars: int = self.cents / 100
+        c: int = self.cents % 100
         return "${dollars}.{c}"
     }
 }
 
 impl Addable for Money {
     hook +(other: Money) -> Money {
-        return Money { cents: cents + other.cents }
+        return Money { cents: self.cents + other.cents }
     }
 }
 
@@ -126,7 +105,7 @@ def valid_calls() -> void {
 # So print(v) is valid for Vec[int] but not Vec[Color] unless Color: Display.
 
 def print_each[T: Display](items: Vec[T]) -> void {
-    i: int = 0
+    mut i: int = 0
     loop: int = items.len()
     while i < loop {
         item: T = items.get(i)

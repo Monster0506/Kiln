@@ -6,18 +6,18 @@ struct FileHandle: Drop {
     priv is_open: bool
 
     def read_bytes(buf: &mut Vec[int], count: int) -> int {
-        return read(fd, buf, count)
+        return read(self.fd, buf, count)
     }
 
     def write_bytes(buf: &Vec[int]) -> int {
-        return write(fd, buf)
+        return write(self.fd, buf)
     }
 }
 
 impl Drop for FileHandle {
     hook drop() -> void {
-        if is_open {
-            close(fd)
+        if self.is_open {
+            close(self.fd)
         }
     }
 }
@@ -29,14 +29,14 @@ struct NetworkSocket: Drop {
     priv connected: bool
 
     def send(data: &Vec[int]) -> int {
-        return write(fd, data)
+        return write(self.fd, data)
     }
 }
 
 impl Drop for NetworkSocket {
     hook drop() -> void {
-        if connected {
-            shutdown(fd)
+        if self.connected {
+            shutdown(self.fd)
         }
     }
 }
@@ -48,8 +48,8 @@ struct TempFile: Drop {
 
 impl Drop for TempFile {
     hook drop() -> void {
-        close(fd)
-        remove_file(path)
+        close(self.fd)
+        remove_file(self.path)
     }
 }
 

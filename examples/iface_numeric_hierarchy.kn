@@ -16,49 +16,6 @@
 
 # ---- Interface declarations -------------------------------------------------
 
-interface PartialEq {
-    hook ==(other: Self) -> bool
-}
-
-interface Eq: PartialEq {
-}
-
-interface PartialOrd: PartialEq {
-    hook partial_cmp(other: Self) -> int
-}
-
-interface Ord: Eq, PartialOrd {
-    hook <=>(other: Self) -> int
-}
-
-interface Display {
-    hook to_str() -> str
-}
-
-interface Addable {
-    hook +(other: Self) -> Self
-}
-
-interface Subtractable {
-    hook -(other: Self) -> Self
-}
-
-interface Multiplicable {
-    hook *(other: Self) -> Self
-}
-
-interface Divisible {
-    hook /(other: Self) -> Self
-}
-
-interface Negatable {
-    hook -() -> Self
-}
-
-# Numeric bundles all arithmetic interfaces.
-interface Numeric: Addable, Subtractable, Multiplicable, Negatable, Ord {
-}
-
 # ---- int satisfies the full Integral hierarchy ------------------------------
 #
 # int: Copy, Clone, Eq, Hash, Ord, Display, Default,

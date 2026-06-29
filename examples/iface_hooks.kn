@@ -2,60 +2,7 @@
 
 # ---- Operator hook signatures ------------------------------------------------
 
-interface Eq {
-    hook ==(other: Self) -> bool
-}
-
-interface Comparable: Eq {
-    hook <=>(other: Self) -> int
-
-    hook <(other: Self) -> bool {
-        return (self <=> other) < 0
-    }
-
-    hook >(other: Self) -> bool {
-        return (self <=> other) > 0
-    }
-
-    hook <=(other: Self) -> bool {
-        return (self <=> other) <= 0
-    }
-
-    hook >=(other: Self) -> bool {
-        return (self <=> other) >= 0
-    }
-}
-
-interface Addable {
-    hook +(other: Self) -> Self
-}
-
-interface Subtractable {
-    hook -(other: Self) -> Self
-}
-
-interface Negatable {
-    hook -() -> Self
-}
-
-interface Multiplicable {
-    hook *(other: Self) -> Self
-}
-
-interface Divisible {
-    hook /(other: Self) -> Self
-}
-
 # ---- Index and iterator hooks ------------------------------------------------
-
-interface Indexable[T] {
-    hook [](index: int) -> T
-    hook length() -> int
-}
-
-interface Iterable[T] {
-    hook iter() -> Iterator[T]
-}
 
 interface Container[T]: Indexable[T], Iterable[T] {
     hook contains(item: T) -> bool
@@ -91,10 +38,6 @@ interface Chainable {
 
 # ---- Generic interface declarations ------------------------------------------
 
-interface Mapper[A, B] {
-    hook map(item: A) -> B
-}
-
 interface Reducer[T, Acc] {
     hook reduce(acc: Acc, item: T) -> Acc
 }
@@ -102,11 +45,6 @@ interface Reducer[T, Acc] {
 interface Converter[From, To] {
     hook convert(value: From) -> To
     hook convert_back(value: To) -> From
-}
-
-interface Predicate[T] {
-    hook test(item: T) -> bool
-    hook negate() -> Self
 }
 
 def main() -> void {

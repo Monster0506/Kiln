@@ -33,10 +33,6 @@ interface FsError: IoError {
     hook is_recoverable() -> bool
 }
 
-interface HttpError: NetworkError {
-    hook status_code() -> int
-}
-
 # ---- Concrete exception structs implementing the hierarchy ------------------
 
 struct FileNotFoundError: FsError {

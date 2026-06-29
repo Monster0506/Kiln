@@ -1,41 +1,6 @@
 # custom_iter_range.kn -- Range and StepRange implementing Iterator + Iterable
 # Demonstrates: separate iterator type, step iteration, nested iteration
 
-# ---- RangeIter: iterator state separate from the range --------------------
-
-struct RangeIter {
-    current: int
-    stop: int
-    step: int
-}
-
-impl Iterator for RangeIter {
-    hook next() -> Option[int] {
-        if self.step > 0 {
-            if self.current >= self.stop {
-                return Option:None
-            }
-        }
-        val: int = self.current
-        self.current = self.current + self.step
-        return Option:Some { value: val }
-    }
-}
-
-# ---- Range: an integer range [start, stop) with configurable step ----------
-
-struct Range {
-    start: int
-    stop: int
-    step: int
-}
-
-impl Iterable for Range {
-    hook iter() -> RangeIter {
-        return RangeIter { current: self.start, stop: self.stop, step: self.step }
-    }
-}
-
 def make_range(start: int, stop: int) -> Range {
     return Range { start: start, stop: stop, step: 1 }
 }

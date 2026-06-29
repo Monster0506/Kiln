@@ -2,11 +2,6 @@
 
 # ---- Unwrap operator (?) ----------------------------------------------------
 
-enum Option[T] {
-    Some { value: T }
-    None
-}
-
 def get_value(opt: Option[int]) -> int {
     return opt?
 }

@@ -169,6 +169,10 @@ pub enum TypedStmt {
         value: Option<TypedExpr>,
         span: Span,
     },
+    Abandon {
+        message: Option<TypedExpr>,
+        span: Span,
+    },
     Break(Span),
     Continue(Span),
     If {

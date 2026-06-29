@@ -1586,4 +1586,62 @@ mod tests {
             "should emit exactly one unreachable warning, got {count}"
         );
     }
+
+    fn call_throws_fn_block() -> Block {
+        Block {
+            stmts: vec![Stmt::Expr(Expr::Call {
+                callee: Box::new(Expr::Ident("risky".into(), s())),
+                args: vec![],
+                span: s(),
+            })],
+            span: s(),
+        }
+    }
+
+    fn throws_fn_symbol() -> Symbol {
+        Symbol::Fn {
+            generic_params: vec![],
+            generic_bounds: vec![],
+            inferred_bounds: vec![],
+            params: vec![],
+            ret: Ty::Void,
+            throws: true,
+            span: s(),
+        }
+    }
+
+    #[test]
+    fn call_throws_fn_in_clean_context_errors() {
+        let block = call_throws_fn_block();
+        let mut env = Env::new();
+        env.push_scope();
+        env.define("risky", throws_fn_symbol());
+        env.throws_context = false;
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, AnalysisError::ThrowsInCleanContext { .. })),
+            "expected ThrowsInCleanContext error: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn call_throws_fn_in_throws_context_ok() {
+        let block = call_throws_fn_block();
+        let mut env = Env::new();
+        env.push_scope();
+        env.define("risky", throws_fn_symbol());
+        env.throws_context = true;
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            !errs
+                .iter()
+                .any(|e| matches!(e, AnalysisError::ThrowsInCleanContext { .. })),
+            "should not error when calling throws fn from throws context: {errs:?}"
+        );
+    }
 }

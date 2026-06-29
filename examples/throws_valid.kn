@@ -1,0 +1,19 @@
+# throws_valid.kn -- throws propagates correctly when context matches
+
+# A function that may raise an error
+def parse_int(s: str) throws -> int {
+    return 42
+}
+
+# A caller marked throws -- allowed to call throws functions
+def process(s: str) throws -> int {
+    return parse_int(s)
+}
+
+# A higher-order throws chain
+def run() throws -> void {
+    _x: int = process("10")
+}
+
+def main() -> void {
+}

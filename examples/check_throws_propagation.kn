@@ -1,0 +1,13 @@
+# check_throws_propagation.kn -- should fail: calling throws fn from clean context
+
+def may_fail() throws -> int {
+    return 0
+}
+
+# ERROR: calling a throws function from a non-throws context
+def clean_caller() -> int {
+    return may_fail()
+}
+
+def main() -> void {
+}

@@ -1,0 +1,14 @@
+# try_valid.kn -- try expr allows calling throws fns from clean contexts
+
+def parse_int(s: str) throws -> int {
+    return 42
+}
+
+# Clean function calls throws fn via try -- OK
+def read_value(s: str) -> int {
+    return try parse_int(s)
+}
+
+def main() -> void {
+    _n: int = read_value("10")
+}

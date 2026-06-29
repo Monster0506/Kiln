@@ -375,11 +375,16 @@ fn seed_stmt(
 ) {
     match stmt {
         TypedStmt::Expr(e) => seed_expr(e, generic_fns, queue),
-        TypedStmt::Return { value: Some(e), .. } | TypedStmt::Raise { value: Some(e), .. } => {
+        TypedStmt::Return { value: Some(e), .. }
+        | TypedStmt::Raise { value: Some(e), .. }
+        | TypedStmt::Abandon {
+            message: Some(e), ..
+        } => {
             seed_expr(e, generic_fns, queue);
         }
         TypedStmt::Return { value: None, .. }
         | TypedStmt::Raise { value: None, .. }
+        | TypedStmt::Abandon { message: None, .. }
         | TypedStmt::Break(_)
         | TypedStmt::Continue(_) => {}
         TypedStmt::VarDecl { value, .. } => seed_expr(value, generic_fns, queue),
@@ -759,6 +764,10 @@ fn subst_stmt(
         },
         TypedStmt::Raise { value, span } => TypedStmt::Raise {
             value: value.as_ref().map(|v| se!(v)),
+            span: *span,
+        },
+        TypedStmt::Abandon { message, span } => TypedStmt::Abandon {
+            message: message.as_ref().map(|v| se!(v)),
             span: *span,
         },
         TypedStmt::VarDecl {

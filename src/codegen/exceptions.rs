@@ -42,6 +42,22 @@ pub fn declare_exception_runtime(module: &mut ObjectModule) {
     module
         .declare_function("__kiln_current_exc", Linkage::Import, &cur_exc_sig)
         .ok();
+
+    let abandon_sig = module.make_signature();
+    module
+        .declare_function("__kiln_abandon", Linkage::Import, &abandon_sig)
+        .ok();
+}
+
+/// Emit IR for `abandon`: calls `__kiln_abandon()`, which aborts the process.
+/// Cannot be caught; the block is diverging after this call.
+pub fn emit_abandon(module: &mut ObjectModule, builder: &mut FunctionBuilder) {
+    let sig = module.make_signature();
+    let callee = module
+        .declare_function("__kiln_abandon", Linkage::Import, &sig)
+        .unwrap();
+    let func_ref = module.declare_func_in_func(callee, builder.func);
+    builder.ins().call(func_ref, &[]);
 }
 
 /// Emit IR for `raise expr`: calls `__kiln_raise(exc_ptr)`.

@@ -364,6 +364,10 @@ fn lower_typed_stmt(
             crate::codegen::exceptions::emit_raise(exc_val, ctx.module, builder);
         }
 
+        TypedStmt::Abandon { .. } => {
+            crate::codegen::exceptions::emit_abandon(ctx.module, builder);
+        }
+
         TypedStmt::TryCatch {
             body,
             handlers,

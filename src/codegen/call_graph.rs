@@ -96,7 +96,7 @@ fn collect_callees_stmt(stmt: &TypedStmt, out: &mut HashSet<String>) {
                 collect_callees_expr(e, out);
             }
         }
-        TypedStmt::Raise { value, .. } => {
+        TypedStmt::Raise { value, .. } | TypedStmt::Abandon { message: value, .. } => {
             if let Some(e) = value {
                 collect_callees_expr(e, out);
             }
@@ -372,6 +372,9 @@ fn stmt_has_closure_or_spawn(stmt: &TypedStmt) -> bool {
         }
         TypedStmt::Return { value, .. } => value.as_ref().is_some_and(expr_has_closure_or_spawn),
         TypedStmt::Raise { value, .. } => value.as_ref().is_some_and(expr_has_closure_or_spawn),
+        TypedStmt::Abandon { message: value, .. } => {
+            value.as_ref().is_some_and(expr_has_closure_or_spawn)
+        }
         TypedStmt::If {
             branches,
             else_branch,

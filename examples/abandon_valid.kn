@@ -1,0 +1,22 @@
+// abandon: non-catchable process termination for invariant violations
+
+def check_positive(n: int) -> int {
+    if n <= 0 {
+        abandon n
+    }
+    n
+}
+
+def safe_divide(a: int, b: int) -> int {
+    if b == 0 {
+        abandon
+    }
+    a / b
+}
+
+def main() -> void {
+    let x = check_positive(5)
+    let y = safe_divide(10, 2)
+    print(x)
+    print(y)
+}

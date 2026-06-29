@@ -1432,7 +1432,21 @@ impl Parser {
             TokenKind::While => self.parse_while(),
             TokenKind::Do => self.parse_do_while(),
             TokenKind::For => self.parse_for(),
-            TokenKind::Try => self.parse_try(),
+            TokenKind::Try => {
+                let next = self.tokens.get(self.pos + 1).map(|t| &t.kind);
+                if next == Some(&TokenKind::LBrace) {
+                    self.parse_try()
+                } else {
+                    let s = self.peek_span();
+                    self.advance();
+                    let expr = self.parse_expr(0)?;
+                    let end = expr.span().end;
+                    Ok(Stmt::Expr(Expr::Try(
+                        Box::new(expr),
+                        Span::new(s.start, end),
+                    )))
+                }
+            }
             TokenKind::Def => Ok(Stmt::FnDef(self.parse_fn_def(vec![])?)),
             TokenKind::At => {
                 let anns = self.parse_annotation_uses()?;
@@ -1840,6 +1854,12 @@ impl Parser {
                     operand: Box::new(e),
                     span: start,
                 })
+            }
+            TokenKind::Try => {
+                self.advance();
+                let e = self.parse_expr_inner(15, allow_struct)?;
+                let end = e.span().end;
+                Ok(Expr::Try(Box::new(e), Span::new(start.start, end)))
             }
             TokenKind::LBracket => {
                 self.advance();
@@ -2923,6 +2943,33 @@ export { Point, distance }
                     other => panic!("{other:?}"),
                 }
             }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn try_expr_wraps_call() {
+        let file = parse("def f() -> void { try g() }").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.body.stmts[0] {
+                Stmt::Expr(Expr::Try(inner, _)) => match inner.as_ref() {
+                    Expr::Call { .. } => {}
+                    other => panic!("expected Call inside Try, got {other:?}"),
+                },
+                other => panic!("expected Try expr stmt, got {other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn try_block_still_parsed_as_stmt() {
+        let file = parse("def f() -> void { try { } }").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.body.stmts[0] {
+                Stmt::TryCatch { .. } => {}
+                other => panic!("expected TryCatch stmt, got {other:?}"),
+            },
             other => panic!("{other:?}"),
         }
     }

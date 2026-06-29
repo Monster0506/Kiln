@@ -180,7 +180,7 @@ fn expr_uses(expr: &TypedExpr, uses: &mut HashSet<String>, defs: &HashSet<String
                 expr_uses(&arm.body, uses, defs);
             }
         }
-        TypedExprKind::Spawn(e) => expr_uses(e, uses, defs),
+        TypedExprKind::Spawn(e) | TypedExprKind::Try(e) => expr_uses(e, uses, defs),
         TypedExprKind::Ref { expr, .. } => expr_uses(expr, uses, defs),
         TypedExprKind::Array(exprs) => {
             for e in exprs {

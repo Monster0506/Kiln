@@ -311,6 +311,8 @@ pub enum TypedExprKind {
         body: TypedClosureBody,
     },
     Spawn(Box<TypedExpr>),
+    /// `try expr` -- inner call may throw; propagates in throws context
+    Try(Box<TypedExpr>),
     Ref {
         mutable: bool,
         expr: Box<TypedExpr>,

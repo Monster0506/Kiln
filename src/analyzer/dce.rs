@@ -336,7 +336,7 @@ fn collect_reads_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
                 }
             }
         }
-        TypedExprKind::Spawn(e) => collect_reads_expr(e, out),
+        TypedExprKind::Spawn(e) | TypedExprKind::Try(e) => collect_reads_expr(e, out),
         TypedExprKind::Ref { expr, .. } => collect_reads_expr(expr, out),
         TypedExprKind::Array(exprs) => {
             for e in exprs {
@@ -398,6 +398,7 @@ pub fn expr_has_side_effects_ctx(expr: &TypedExpr, impure: &HashSet<String>) -> 
             impure.contains(method_fn) || args.iter().any(|a| expr_has_side_effects_ctx(a, impure))
         }
         TypedExprKind::IndirectCall { .. } | TypedExprKind::Spawn(_) => true,
+        TypedExprKind::Try(e) => expr_has_side_effects_ctx(e, impure),
         TypedExprKind::BinOp { left, right, .. } => {
             expr_has_side_effects_ctx(left, impure) || expr_has_side_effects_ctx(right, impure)
         }
@@ -451,6 +452,7 @@ pub fn expr_has_side_effects(expr: &TypedExpr) -> bool {
         | TypedExprKind::StaticCall { .. }
         | TypedExprKind::IndirectCall { .. }
         | TypedExprKind::Spawn(_) => true,
+        TypedExprKind::Try(e) => expr_has_side_effects(e),
         TypedExprKind::BinOp { left, right, .. } => {
             expr_has_side_effects(left) || expr_has_side_effects(right)
         }
@@ -714,9 +716,10 @@ fn expr_reads_name(expr: &TypedExpr, name: &str) -> bool {
         TypedExprKind::StructLiteral { fields, .. } => {
             fields.iter().any(|(_, e)| expr_reads_name(e, name))
         }
-        TypedExprKind::Unwrap(e) | TypedExprKind::Spawn(e) | TypedExprKind::GenSplice(e) => {
-            expr_reads_name(e, name)
-        }
+        TypedExprKind::Unwrap(e)
+        | TypedExprKind::Spawn(e)
+        | TypedExprKind::Try(e)
+        | TypedExprKind::GenSplice(e) => expr_reads_name(e, name),
         TypedExprKind::As { expr, .. } | TypedExprKind::Ref { expr, .. } => {
             expr_reads_name(expr, name)
         }
@@ -1183,9 +1186,10 @@ fn count_reads_in_expr(expr: &TypedExpr, name: &str) -> usize {
             .iter()
             .map(|(_, e)| count_reads_in_expr(e, name))
             .sum(),
-        TypedExprKind::Unwrap(e) | TypedExprKind::Spawn(e) | TypedExprKind::GenSplice(e) => {
-            count_reads_in_expr(e, name)
-        }
+        TypedExprKind::Unwrap(e)
+        | TypedExprKind::Spawn(e)
+        | TypedExprKind::Try(e)
+        | TypedExprKind::GenSplice(e) => count_reads_in_expr(e, name),
         TypedExprKind::As { expr, .. } | TypedExprKind::Ref { expr, .. } => {
             count_reads_in_expr(expr, name)
         }
@@ -1439,6 +1443,9 @@ fn substitute_name_in_expr(expr: TypedExpr, name: &str, replacement: &TypedExpr)
         }
         TypedExprKind::Spawn(e) => {
             TypedExprKind::Spawn(Box::new(substitute_name_in_expr(*e, name, replacement)))
+        }
+        TypedExprKind::Try(e) => {
+            TypedExprKind::Try(Box::new(substitute_name_in_expr(*e, name, replacement)))
         }
         TypedExprKind::GenSplice(e) => {
             TypedExprKind::GenSplice(Box::new(substitute_name_in_expr(*e, name, replacement)))
@@ -2090,6 +2097,7 @@ fn ipc_expr(expr: TypedExpr, map: &HashMap<String, (Vec<String>, TypedExpr)>) ->
         },
         TypedExprKind::Unwrap(e) => TypedExprKind::Unwrap(Box::new(ipc_expr(*e, map))),
         TypedExprKind::Spawn(e) => TypedExprKind::Spawn(Box::new(ipc_expr(*e, map))),
+        TypedExprKind::Try(e) => TypedExprKind::Try(Box::new(ipc_expr(*e, map))),
         TypedExprKind::GenSplice(e) => TypedExprKind::GenSplice(Box::new(ipc_expr(*e, map))),
         TypedExprKind::As { expr: e, ty: aty } => TypedExprKind::As {
             expr: Box::new(ipc_expr(*e, map)),
@@ -2340,9 +2348,10 @@ fn collect_called_fns_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
                 collect_called_fns_expr(e, out);
             }
         }
-        TypedExprKind::Unwrap(e) | TypedExprKind::Spawn(e) | TypedExprKind::GenSplice(e) => {
-            collect_called_fns_expr(e, out)
-        }
+        TypedExprKind::Unwrap(e)
+        | TypedExprKind::Spawn(e)
+        | TypedExprKind::Try(e)
+        | TypedExprKind::GenSplice(e) => collect_called_fns_expr(e, out),
         TypedExprKind::As { expr, .. } | TypedExprKind::Ref { expr, .. } => {
             collect_called_fns_expr(expr, out)
         }

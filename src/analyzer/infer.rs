@@ -647,6 +647,14 @@ pub fn infer_typed_expr(
             mk(TypedExprKind::Spawn(Box::new(ti)), Ty::Unknown, span)
         }
 
+        Expr::Try(inner, _) => {
+            let mut throws_env = env.clone();
+            throws_env.throws_context = true;
+            let ti = infer_typed_expr(inner, &throws_env, registry, errors);
+            let ty = ti.ty.clone();
+            mk(TypedExprKind::Try(Box::new(ti)), ty, span)
+        }
+
         Expr::Ref { mutable, expr, .. } => {
             let te = infer_typed_expr(expr, env, registry, errors);
             let inner = te.ty.clone();

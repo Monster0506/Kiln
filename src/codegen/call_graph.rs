@@ -240,7 +240,7 @@ fn collect_callees_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
                 TypedClosureBody::Block(b) => collect_callees_block(b, out),
             }
         }
-        TypedExprKind::Spawn(e) => collect_callees_expr(e, out),
+        TypedExprKind::Spawn(e) | TypedExprKind::Try(e) => collect_callees_expr(e, out),
         TypedExprKind::Ref { expr, .. } => collect_callees_expr(expr, out),
         TypedExprKind::Array(exprs) => {
             for e in exprs {

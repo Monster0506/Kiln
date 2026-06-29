@@ -184,6 +184,7 @@ fn expr_touches_impure(
             true
         }
         TypedExprKind::Spawn(_) => true,
+        TypedExprKind::Try(e) => expr_touches_impure(e, impure),
         TypedExprKind::BinOp { left, right, .. } => {
             expr_touches_impure(left, impure) || expr_touches_impure(right, impure)
         }

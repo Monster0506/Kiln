@@ -401,6 +401,7 @@ fn emit_expr_kind(kind: &TypedExprKind) -> String {
         TypedExprKind::Closure { params, body } => emit_closure(params, body),
         TypedExprKind::Spawn(inner) => format!("spawn {}", emit_expr(inner)),
         TypedExprKind::Try(inner) => format!("try {}", emit_expr(inner)),
+        TypedExprKind::Ignore(inner) => format!("ignore {}", emit_expr(inner)),
         TypedExprKind::Ref { mutable, expr } => {
             let kw = if *mutable { "&mut " } else { "&" };
             format!("{}{}", kw, emit_expr(expr))

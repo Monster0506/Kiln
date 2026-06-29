@@ -323,7 +323,7 @@ fn collect_expr(
         TypedExprKind::UnOp { operand, .. } => collect_expr(operand, params, registry, out),
         TypedExprKind::Unwrap(inner) => collect_expr(inner, params, registry, out),
         TypedExprKind::As { expr, .. } => collect_expr(expr, params, registry, out),
-        TypedExprKind::Spawn(inner) | TypedExprKind::Try(inner) => {
+        TypedExprKind::Spawn(inner) | TypedExprKind::Try(inner) | TypedExprKind::Ignore(inner) => {
             collect_expr(inner, params, registry, out)
         }
         TypedExprKind::Ref { expr, .. } => collect_expr(expr, params, registry, out),

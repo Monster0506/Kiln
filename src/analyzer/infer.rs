@@ -655,6 +655,11 @@ pub fn infer_typed_expr(
             mk(TypedExprKind::Try(Box::new(ti)), ty, span)
         }
 
+        Expr::Ignore(inner, _) => {
+            let ti = infer_typed_expr(inner, env, registry, errors);
+            mk(TypedExprKind::Ignore(Box::new(ti)), Ty::Void, span)
+        }
+
         Expr::Ref { mutable, expr, .. } => {
             let te = infer_typed_expr(expr, env, registry, errors);
             let inner = te.ty.clone();

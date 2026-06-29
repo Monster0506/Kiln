@@ -334,7 +334,9 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
 
         TypedExprKind::Unwrap(inner) => collect_expr(inner, out),
         TypedExprKind::As { expr, .. } => collect_expr(expr, out),
-        TypedExprKind::Spawn(inner) | TypedExprKind::Try(inner) => collect_expr(inner, out),
+        TypedExprKind::Spawn(inner) | TypedExprKind::Try(inner) | TypedExprKind::Ignore(inner) => {
+            collect_expr(inner, out)
+        }
         TypedExprKind::Ref { expr, .. } => collect_expr(expr, out),
         TypedExprKind::Array(elems) => {
             for e in elems {

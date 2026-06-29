@@ -313,6 +313,8 @@ pub enum TypedExprKind {
     Spawn(Box<TypedExpr>),
     /// `try expr` -- inner call may throw; propagates in throws context
     Try(Box<TypedExpr>),
+    /// `ignore expr` -- auditable discard; result type is void
+    Ignore(Box<TypedExpr>),
     Ref {
         mutable: bool,
         expr: Box<TypedExpr>,

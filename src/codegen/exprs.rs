@@ -1064,7 +1064,9 @@ fn lower_typed_expr_inner(
             call_spawn(fn_ptr, env_ptr, ctx.module, builder)
         }
 
-        TypedExprKind::Try(inner) => lower_typed_expr(inner, builder, vars, ctx),
+        TypedExprKind::Try(inner) | TypedExprKind::Ignore(inner) => {
+            lower_typed_expr(inner, builder, vars, ctx)
+        }
 
         TypedExprKind::Ref { expr, .. } => {
             let val = lower_typed_expr(expr, builder, vars, ctx);

@@ -460,6 +460,8 @@ pub enum Expr {
         variant: String,
         span: Span,
     },
+    /// `try expr` -- explicit acknowledgment that `expr` may throw
+    Try(Box<Expr>, Span),
     /// `expr?`
     Unwrap(Box<Expr>, Span),
     /// `expr as Type`
@@ -518,6 +520,7 @@ impl Expr {
             Expr::UnOp { span, .. } => *span,
             Expr::EnumAccess { span, .. } => *span,
             Expr::Array(_, s) => *s,
+            Expr::Try(_, s) => *s,
             Expr::Unwrap(_, s) => *s,
             Expr::As { span, .. } => *span,
             Expr::Match { span, .. } => *span,

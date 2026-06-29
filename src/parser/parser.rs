@@ -1447,6 +1447,16 @@ impl Parser {
                     )))
                 }
             }
+            TokenKind::Ignore => {
+                let s = self.peek_span();
+                self.advance();
+                let expr = self.parse_expr(0)?;
+                let end = expr.span().end;
+                Ok(Stmt::Expr(Expr::Ignore(
+                    Box::new(expr),
+                    Span::new(s.start, end),
+                )))
+            }
             TokenKind::Def => Ok(Stmt::FnDef(self.parse_fn_def(vec![])?)),
             TokenKind::At => {
                 let anns = self.parse_annotation_uses()?;
@@ -1860,6 +1870,12 @@ impl Parser {
                 let e = self.parse_expr_inner(15, allow_struct)?;
                 let end = e.span().end;
                 Ok(Expr::Try(Box::new(e), Span::new(start.start, end)))
+            }
+            TokenKind::Ignore => {
+                self.advance();
+                let e = self.parse_expr_inner(15, allow_struct)?;
+                let end = e.span().end;
+                Ok(Expr::Ignore(Box::new(e), Span::new(start.start, end)))
             }
             TokenKind::LBracket => {
                 self.advance();
@@ -2943,6 +2959,21 @@ export { Point, distance }
                     other => panic!("{other:?}"),
                 }
             }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn ignore_expr_wraps_call() {
+        let file = parse("def f() -> void { ignore g() }").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.body.stmts[0] {
+                Stmt::Expr(Expr::Ignore(inner, _)) => match inner.as_ref() {
+                    Expr::Call { .. } => {}
+                    other => panic!("expected Call inside Ignore, got {other:?}"),
+                },
+                other => panic!("expected Ignore expr stmt, got {other:?}"),
+            },
             other => panic!("{other:?}"),
         }
     }

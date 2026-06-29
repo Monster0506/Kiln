@@ -56,6 +56,7 @@ fn is_definite_terminator(ts: &TypedStmt) -> bool {
             | TypedStmt::Break(_)
             | TypedStmt::Continue(_)
             | TypedStmt::Raise { .. }
+            | TypedStmt::Abandon { .. }
     )
 }
 
@@ -66,6 +67,7 @@ fn typed_stmt_span(ts: &TypedStmt) -> Span {
         | TypedStmt::CompoundAssign { span, .. }
         | TypedStmt::Return { span, .. }
         | TypedStmt::Raise { span, .. }
+        | TypedStmt::Abandon { span, .. }
         | TypedStmt::If { span, .. }
         | TypedStmt::While { span, .. }
         | TypedStmt::DoWhile { span, .. }
@@ -84,6 +86,7 @@ fn ast_stmt_span(s: &Stmt) -> Span {
         | Stmt::CompoundAssign { span, .. }
         | Stmt::Return { span, .. }
         | Stmt::Raise { span, .. }
+        | Stmt::Abandon { span, .. }
         | Stmt::If { span, .. }
         | Stmt::While { span, .. }
         | Stmt::DoWhile { span, .. }
@@ -287,6 +290,16 @@ fn check_typed_stmt(
                 .map(|v| infer_typed_expr(v, env, registry, errors));
             TypedStmt::Raise {
                 value: typed,
+                span: *span,
+            }
+        }
+
+        Stmt::Abandon { message, span } => {
+            let typed = message
+                .as_ref()
+                .map(|v| infer_typed_expr(v, env, registry, errors));
+            TypedStmt::Abandon {
+                message: typed,
                 span: *span,
             }
         }
@@ -779,7 +792,7 @@ fn read_stmt(stmt: &TypedStmt, reads: &mut std::collections::HashSet<String>) {
                 read_expr(&v.kind, reads);
             }
         }
-        TypedStmt::Raise { value, .. } => {
+        TypedStmt::Raise { value, .. } | TypedStmt::Abandon { message: value, .. } => {
             if let Some(v) = value {
                 read_expr(&v.kind, reads);
             }
@@ -1673,6 +1686,57 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, AnalysisError::ThrowsInCleanContext { .. })),
             "should not error when calling throws fn from throws context: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn abandon_is_definite_terminator() {
+        use crate::analyzer::typed_ast::TypedStmt;
+        use crate::diagnostics::span::Span;
+        let stmt = TypedStmt::Abandon {
+            message: None,
+            span: Span::new(0, 0),
+        };
+        assert!(is_definite_terminator(&stmt));
+    }
+
+    #[test]
+    fn abandon_no_message_infers_ok() {
+        let block = Block {
+            stmts: vec![Stmt::Abandon {
+                message: None,
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut env = Env::new();
+        env.push_scope();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            errs.is_empty(),
+            "abandon should not produce errors: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn abandon_with_message_infers_ok() {
+        let block = Block {
+            stmts: vec![Stmt::Abandon {
+                message: Some(Expr::Int(42, s())),
+                span: s(),
+            }],
+            span: s(),
+        };
+        let mut env = Env::new();
+        env.push_scope();
+        let reg = TypeRegistry::new();
+        let mut errs = vec![];
+        check_typed_block(&block, &mut env, &reg, &Ty::Void, &mut errs);
+        assert!(
+            errs.is_empty(),
+            "abandon with message should not produce errors: {errs:?}"
         );
     }
 }

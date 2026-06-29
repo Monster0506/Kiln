@@ -81,6 +81,7 @@ fn check_stmt(stmt: &TypedStmt, errs: &mut Vec<AnalysisError>) {
         | TypedStmt::CompoundAssign { .. }
         | TypedStmt::Return { .. }
         | TypedStmt::Raise { .. }
+        | TypedStmt::Abandon { .. }
         | TypedStmt::Break(_)
         | TypedStmt::Continue(_) => {}
     }

@@ -1476,6 +1476,12 @@ fn lower_stmt_shallow(
                 .map(|v| infer_typed_expr(v, env, registry, errors)),
             span: *span,
         },
+        Stmt::Abandon { message, span } => TypedStmt::Abandon {
+            message: message
+                .as_ref()
+                .map(|v| infer_typed_expr(v, env, registry, errors)),
+            span: *span,
+        },
         Stmt::VarDecl {
             name,
             ty,

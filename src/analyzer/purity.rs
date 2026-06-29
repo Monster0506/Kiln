@@ -112,6 +112,9 @@ fn stmt_touches_impure(stmt: &TypedStmt, impure: &HashSet<String>) -> bool {
         TypedStmt::Raise { value, .. } => value
             .as_ref()
             .is_some_and(|e| expr_touches_impure(e, impure)),
+        TypedStmt::Abandon { message: value, .. } => value
+            .as_ref()
+            .is_some_and(|e| expr_touches_impure(e, impure)),
         TypedStmt::Expr(e) => expr_touches_impure(e, impure),
         TypedStmt::If {
             branches,

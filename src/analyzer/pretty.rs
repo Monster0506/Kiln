@@ -221,6 +221,14 @@ fn emit_stmt(stmt: &TypedStmt, indent: usize) -> String {
         TypedStmt::Raise { value: None, .. } => {
             format!("{}raise\n", ind)
         }
+        TypedStmt::Abandon {
+            message: Some(v), ..
+        } => {
+            format!("{}abandon {}\n", ind, emit_expr(v))
+        }
+        TypedStmt::Abandon { message: None, .. } => {
+            format!("{}abandon\n", ind)
+        }
         TypedStmt::Break(_) => format!("{}break\n", ind),
         TypedStmt::Continue(_) => format!("{}continue\n", ind),
         TypedStmt::If {

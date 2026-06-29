@@ -195,7 +195,7 @@ fn collect_stmt(
             }
         }
         TypedStmt::FnDef(f) => collect_block(&f.body, params, registry, out),
-        TypedStmt::Raise { value, .. } => {
+        TypedStmt::Raise { value, .. } | TypedStmt::Abandon { message: value, .. } => {
             if let Some(v) = value {
                 collect_expr(v, params, registry, out);
             }

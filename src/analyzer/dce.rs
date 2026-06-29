@@ -182,7 +182,7 @@ fn collect_reads_stmt(stmt: &TypedStmt, out: &mut HashSet<String>) {
                 collect_reads_expr(e, out);
             }
         }
-        TypedStmt::Raise { value, .. } => {
+        TypedStmt::Raise { value, .. } | TypedStmt::Abandon { message: value, .. } => {
             if let Some(e) = value {
                 collect_reads_expr(e, out);
             }
@@ -1084,7 +1084,7 @@ fn count_reads_in_stmt(stmt: &TypedStmt, name: &str) -> usize {
         TypedStmt::Return { value, .. } => {
             value.as_ref().map_or(0, |e| count_reads_in_expr(e, name))
         }
-        TypedStmt::Raise { value, .. } => {
+        TypedStmt::Raise { value, .. } | TypedStmt::Abandon { message: value, .. } => {
             value.as_ref().map_or(0, |e| count_reads_in_expr(e, name))
         }
         TypedStmt::If {
@@ -1279,6 +1279,10 @@ pub(crate) fn substitute_name_in_stmt(
         },
         TypedStmt::Raise { value, span } => TypedStmt::Raise {
             value: value.map(|e| substitute_name_in_expr(e, name, replacement)),
+            span,
+        },
+        TypedStmt::Abandon { message, span } => TypedStmt::Abandon {
+            message: message.map(|e| substitute_name_in_expr(e, name, replacement)),
             span,
         },
         TypedStmt::Expr(e) => TypedStmt::Expr(substitute_name_in_expr(e, name, replacement)),
@@ -1960,6 +1964,10 @@ fn ipc_stmt(stmt: TypedStmt, map: &HashMap<String, (Vec<String>, TypedExpr)>) ->
             value: value.map(|e| ipc_expr(e, map)),
             span,
         },
+        TypedStmt::Abandon { message, span } => TypedStmt::Abandon {
+            message: message.map(|e| ipc_expr(e, map)),
+            span,
+        },
         TypedStmt::Expr(e) => TypedStmt::Expr(ipc_expr(e, map)),
         TypedStmt::If {
             branches,
@@ -2227,7 +2235,7 @@ fn collect_called_fns_stmt(stmt: &TypedStmt, out: &mut HashSet<String>) {
                 collect_called_fns_expr(e, out);
             }
         }
-        TypedStmt::Raise { value, .. } => {
+        TypedStmt::Raise { value, .. } | TypedStmt::Abandon { message: value, .. } => {
             if let Some(e) = value {
                 collect_called_fns_expr(e, out);
             }

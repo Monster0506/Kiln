@@ -174,6 +174,11 @@ fn collect_stmt(stmt: &TypedStmt, out: &mut Vec<Constraint>) {
                 collect_expr(v, out);
             }
         }
+        TypedStmt::Abandon { message: value, .. } => {
+            if let Some(v) = value {
+                collect_expr(v, out);
+            }
+        }
         TypedStmt::TryCatch {
             body,
             handlers,

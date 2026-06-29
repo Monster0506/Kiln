@@ -157,6 +157,9 @@ impl Parser {
             TokenKind::Return => Some("return"),
             TokenKind::Import => Some("import"),
             TokenKind::Export => Some("export"),
+            TokenKind::Throws => Some("throws"),
+            TokenKind::Ignore => Some("ignore"),
+            TokenKind::Abandon => Some("abandon"),
             _ => None,
         }
     }
@@ -220,7 +223,7 @@ impl Parser {
             let mut args = Vec::new();
             if self.eat(&TokenKind::LBrace) {
                 while self.peek() != &TokenKind::RBrace {
-                    let field = self.expect_ident()?;
+                    let field = self.expect_field_name()?;
                     self.expect(TokenKind::Colon)?;
                     let val = self.parse_expr(0)?;
                     args.push((field, val));
@@ -2886,6 +2889,39 @@ export { Point, distance }
                 assert_eq!(names, vec!["Applicative"]);
                 assert_eq!(f.generic_params[1].name, "A");
                 assert_eq!(f.generic_params[2].name, "B");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn fn_without_throws_has_false() {
+        let file = parse("def add(a: int, b: int) -> int {}").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => assert!(!f.throws),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn fn_with_throws_has_true() {
+        let file = parse("def parse(s: str) throws -> int {}").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => assert!(f.throws),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn fn_throws_with_no_return_type() {
+        let file = parse("def maybe_fail() throws {}").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => {
+                assert!(f.throws);
+                match &f.return_type {
+                    TypeExpr::Named { name, .. } => assert_eq!(name, "void"),
+                    other => panic!("{other:?}"),
+                }
             }
             other => panic!("{other:?}"),
         }

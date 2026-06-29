@@ -136,6 +136,7 @@ pub fn inject_harness(source: &mut SourceFile) {
         params: vec![],
         variadic: None,
         return_type: named("void"),
+        throws: false,
         body: Block { stmts, span: s },
         is_declaration: false,
         span: s,
@@ -174,6 +175,7 @@ mod tests {
             params: vec![],
             variadic: None,
             return_type: named("void"),
+            throws: false,
             body: Block {
                 stmts: vec![],
                 span: s(),
@@ -195,6 +197,7 @@ mod tests {
             params: vec![],
             variadic: None,
             return_type: named("void"),
+            throws: false,
             body: Block {
                 stmts: vec![],
                 span: s(),
@@ -212,6 +215,7 @@ mod tests {
             params: vec![],
             variadic: None,
             return_type: named("void"),
+            throws: false,
             body: Block {
                 stmts: vec![],
                 span: s(),

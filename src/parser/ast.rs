@@ -151,6 +151,7 @@ pub struct FnDef {
     pub params: Vec<Param>,
     pub variadic: Option<VariadicParam>,
     pub return_type: TypeExpr,
+    pub throws: bool,
     pub body: Block,
     pub is_declaration: bool,
     pub span: Span,

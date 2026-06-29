@@ -350,6 +350,7 @@ mod tests {
             params: vec![],
             variadic: None,
             return_type: stype_named("void"),
+            throws: false,
             body: sblock(vec![]),
             is_declaration: false,
             span: sp(),

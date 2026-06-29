@@ -76,6 +76,7 @@ mod tests {
             ],
             variadic: None,
             return_type: named_ty("int"),
+            throws: false,
             body: Block {
                 stmts: vec![],
                 span: s(),
@@ -97,6 +98,7 @@ mod tests {
             params: vec![],
             variadic: None,
             return_type: named_ty("void"),
+            throws: false,
             body: Block {
                 stmts: vec![],
                 span: s(),
@@ -118,6 +120,7 @@ mod tests {
             params: vec![],
             variadic: None,
             return_type: named_ty("void"),
+            throws: false,
             body: Block {
                 stmts: vec![],
                 span: s(),

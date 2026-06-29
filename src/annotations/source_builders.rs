@@ -171,6 +171,7 @@ pub fn sfn_impure(name: &str, params: Vec<Param>, return_type: TypeExpr, body: B
         params,
         variadic: None,
         return_type,
+        throws: false,
         body,
         is_declaration: false,
         span: s(),

@@ -141,6 +141,7 @@ mod tests {
                         bindings: vec![],
                         span: s(),
                     },
+                    throws: false,
                     body: Block {
                         stmts: vec![],
                         span: s(),

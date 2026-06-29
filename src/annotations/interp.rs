@@ -1230,6 +1230,7 @@ mod tests {
                 bindings: vec![],
                 span: zero(),
             },
+            throws: false,
             body: Block {
                 stmts,
                 span: zero(),
@@ -1515,6 +1516,7 @@ mod tests {
                 bindings: vec![],
                 span: zero(),
             },
+            throws: false,
             body: Block {
                 stmts: vec![],
                 span: zero(),

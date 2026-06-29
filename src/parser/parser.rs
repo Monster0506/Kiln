@@ -649,6 +649,7 @@ impl Parser {
             self.eat(&TokenKind::Comma);
         }
         self.expect(TokenKind::RParen)?;
+        let throws = self.eat(&TokenKind::Throws);
         let return_type = if self.eat(&TokenKind::Arrow) {
             self.parse_type()?
         } else {
@@ -680,6 +681,7 @@ impl Parser {
             params,
             variadic,
             return_type,
+            throws,
             body,
             is_declaration,
             span: Span::new(start, end),

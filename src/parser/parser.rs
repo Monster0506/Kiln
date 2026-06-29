@@ -1457,6 +1457,19 @@ impl Parser {
                     Span::new(s.start, end),
                 )))
             }
+            TokenKind::Abandon => {
+                self.advance();
+                let message = if self.peek() != &TokenKind::RBrace && self.peek() != &TokenKind::Eof
+                {
+                    Some(self.parse_expr(0)?)
+                } else {
+                    None
+                };
+                Ok(Stmt::Abandon {
+                    message,
+                    span: start,
+                })
+            }
             TokenKind::Def => Ok(Stmt::FnDef(self.parse_fn_def(vec![])?)),
             TokenKind::At => {
                 let anns = self.parse_annotation_uses()?;
@@ -3000,6 +3013,33 @@ export { Point, distance }
             Item::Function(f) => match &f.body.stmts[0] {
                 Stmt::TryCatch { .. } => {}
                 other => panic!("expected TryCatch stmt, got {other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn abandon_no_message() {
+        let file = parse("def f() -> void { abandon }").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.body.stmts[0] {
+                Stmt::Abandon { message: None, .. } => {}
+                other => panic!("expected Abandon(None), got {other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn abandon_with_message() {
+        let file = parse("def f() -> void { abandon 42 }").unwrap();
+        match &file.items[0] {
+            Item::Function(f) => match &f.body.stmts[0] {
+                Stmt::Abandon {
+                    message: Some(Expr::Int(42, _)),
+                    ..
+                } => {}
+                other => panic!("expected Abandon(Some(Int(42))), got {other:?}"),
             },
             other => panic!("{other:?}"),
         }

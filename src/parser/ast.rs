@@ -362,6 +362,8 @@ pub enum Stmt {
     Return { value: Option<Expr>, span: Span },
     /// `raise expr` or bare `raise` (re-raise)
     Raise { value: Option<Expr>, span: Span },
+    /// `abandon` -- non-catchable process termination for bugs
+    Abandon { message: Option<Expr>, span: Span },
     /// `break`
     Break(Span),
     /// `continue`

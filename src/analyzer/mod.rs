@@ -1823,6 +1823,8 @@ fn analyze_inner(
                 }
                 let ret = resolve_type_expr(&f.return_type, &env, &mut errors);
                 let mut params: Vec<TypedParam> = Vec::new();
+                let outer_throws = env.throws_context;
+                env.throws_context = f.throws;
                 env.push_scope();
                 for p in &f.params {
                     let pty = resolve_type_expr(&p.ty, &env, &mut errors);
@@ -1844,6 +1846,7 @@ fn analyze_inner(
                 let body =
                     check::check_typed_block(&f.body, &mut env, &registry, &ret, &mut errors);
                 env.pop_scope();
+                env.throws_context = outer_throws;
                 if has_generics {
                     env.pop_scope();
                     // Infer bounds from how the generic params are used in the body.

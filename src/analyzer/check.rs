@@ -659,6 +659,8 @@ pub fn check_fn_def(
         },
     );
 
+    let outer_throws = env.throws_context;
+    env.throws_context = f.throws;
     env.push_scope();
     for p in &params {
         env.define(
@@ -672,6 +674,7 @@ pub fn check_fn_def(
     }
     let body = check_typed_block(&f.body, env, registry, &ret, errors);
     env.pop_scope();
+    env.throws_context = outer_throws;
 
     TypedFnDef {
         name: f.name.clone(),

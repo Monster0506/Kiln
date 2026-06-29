@@ -201,6 +201,9 @@ pub enum AnalysisError {
         /// Span of the terminator that made subsequent code unreachable.
         terminator_span: Span,
     },
+
+    #[error("{span}: call to `throws` function in non-`throws` context -- wrap with `try` or mark this function `throws`")]
+    ThrowsInCleanContext { span: Span },
 }
 
 impl AnalysisError {
@@ -245,6 +248,7 @@ impl AnalysisError {
             AnalysisError::UnusedVariable { .. } => "W005",
             AnalysisError::NeedlessMut { .. } => "W006",
             AnalysisError::UnreachableCode { .. } => "W007",
+            AnalysisError::ThrowsInCleanContext { .. } => "E032",
         }
     }
 
@@ -289,6 +293,7 @@ impl AnalysisError {
             AnalysisError::UnusedVariable { .. } => "warning",
             AnalysisError::NeedlessMut { .. } => "warning",
             AnalysisError::UnreachableCode { .. } => "warning",
+            AnalysisError::ThrowsInCleanContext { .. } => "type error",
         }
     }
 
@@ -430,6 +435,9 @@ impl AnalysisError {
                 format!("variable `{name}` does not need to be mutable")
             }
             AnalysisError::UnreachableCode { .. } => "unreachable statement".into(),
+            AnalysisError::ThrowsInCleanContext { .. } => {
+                "call to `throws` function in non-`throws` context -- wrap with `try` or mark this function `throws`".into()
+            }
         }
     }
 
@@ -553,6 +561,7 @@ impl AnalysisError {
             AnalysisError::UnusedVariable { span, .. } => *span,
             AnalysisError::NeedlessMut { span, .. } => *span,
             AnalysisError::UnreachableCode { span, .. } => *span,
+            AnalysisError::ThrowsInCleanContext { span } => *span,
         }
     }
 }

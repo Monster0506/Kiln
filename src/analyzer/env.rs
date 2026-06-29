@@ -94,6 +94,8 @@ pub struct Env {
     /// Generic param -> [iface names] for each scope level.
     /// Lets `infer_call_field` look up which interfaces a generic param is bound by.
     generic_param_bounds: Vec<HashMap<String, Vec<String>>>,
+    /// Whether the current function being analyzed is declared `throws`.
+    pub throws_context: bool,
 }
 
 impl Env {

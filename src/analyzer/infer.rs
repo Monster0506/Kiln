@@ -1061,10 +1061,14 @@ fn infer_call_ident(
             generic_params: gparams,
             generic_bounds: gbounds,
             inferred_bounds: ibounds,
+            throws: fn_throws,
             span: fn_def_span,
-            ..
         }) => {
+            let fn_throws = *fn_throws;
             let fn_def_span = *fn_def_span;
+            if fn_throws && !env.throws_context {
+                errors.push(AnalysisError::ThrowsInCleanContext { span });
+            }
             if params.len() != typed_args.len() && !params.iter().any(|(_, t)| *t == Ty::Unknown) {
                 errors.push(AnalysisError::ArityMismatch {
                     expected: params.len(),
@@ -1116,6 +1120,9 @@ fn infer_call_ident(
             let overloads = overloads.clone();
             match find_best_overload(&overloads, &typed_args) {
                 Some(overload) => {
+                    if overload.throws && !env.throws_context {
+                        errors.push(AnalysisError::ThrowsInCleanContext { span });
+                    }
                     let ret_ty = overload.ret.clone();
                     let callee_ty = Ty::Callable(
                         overload.params.iter().map(|(_, t)| t.clone()).collect(),

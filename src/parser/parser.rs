@@ -2006,6 +2006,16 @@ impl Parser {
             }
             TokenKind::As => {
                 self.advance();
+                if self.peek() == &TokenKind::Question {
+                    self.advance();
+                    let ty = self.parse_type()?;
+                    let span = Span::new(start.start, self.peek_span().start);
+                    return Ok(Expr::AsDowncast {
+                        expr: Box::new(lhs),
+                        ty,
+                        span,
+                    });
+                }
                 let ty = self.parse_type()?;
                 let span = Span::new(start.start, self.peek_span().start);
                 Ok(Expr::As {

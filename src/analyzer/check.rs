@@ -966,6 +966,7 @@ fn read_expr(kind: &TypedExprKind, reads: &mut std::collections::HashSet<String>
         }
         TypedExprKind::Implements { expr, .. } => read_expr(&expr.kind, reads),
         TypedExprKind::TypeName { expr } => read_expr(&expr.kind, reads),
+        TypedExprKind::AsDowncast { expr, .. } => read_expr(&expr.kind, reads),
         TypedExprKind::Ref { expr, .. } => read_expr(&expr.kind, reads),
         TypedExprKind::Gen { body } => read_block(body, reads),
         TypedExprKind::GenSplice(e) => read_expr(&e.kind, reads),

@@ -1,7 +1,7 @@
 use crate::analyzer::env::{Env, FnOverload, Symbol};
 use crate::analyzer::error::AnalysisError;
 use crate::analyzer::resolve::{resolve_primitive_name, resolve_type_expr};
-use crate::analyzer::ty::{Ty, TypeRegistry};
+use crate::analyzer::ty::{Ty, TypeId, TypeRegistry};
 use crate::analyzer::typed_ast::{
     TypedClosureBody, TypedExpr, TypedExprKind, TypedMatchArm, TypedParam, TypedPattern,
     TypedStringSegment,
@@ -261,6 +261,26 @@ pub fn infer_typed_expr(
                     ty: target.clone(),
                 },
                 target,
+                span,
+            )
+        }
+
+        Expr::AsDowncast { expr, ty, .. } => {
+            let te = infer_typed_expr(expr, env, registry, errors);
+            if !matches!(te.ty, Ty::Interface(..) | Ty::Compound(..)) {
+                errors.push(AnalysisError::ImplementsOnNonInterface {
+                    found: te.ty.to_string(),
+                    span,
+                });
+            }
+            let target = resolve_type_expr(ty, env, errors);
+            let result_ty = Ty::Named(TypeId(0), "Option".into(), vec![target.clone()]);
+            mk(
+                TypedExprKind::AsDowncast {
+                    expr: Box::new(te),
+                    target_ty: target,
+                },
+                result_ty,
                 span,
             )
         }

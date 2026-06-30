@@ -474,6 +474,12 @@ pub enum Expr {
         ty: TypeExpr,
         span: Span,
     },
+    /// `expr as? ConcreteType` -- runtime downcast, returns Option[ConcreteType]
+    AsDowncast {
+        expr: Box<Expr>,
+        ty: TypeExpr,
+        span: Span,
+    },
     /// `match expr { arms }`
     Match {
         scrutinee: Box<Expr>,
@@ -532,6 +538,7 @@ impl Expr {
             Expr::Ignore(_, s) => *s,
             Expr::Unwrap(_, s) => *s,
             Expr::As { span, .. } => *span,
+            Expr::AsDowncast { span, .. } => *span,
             Expr::Match { span, .. } => *span,
             Expr::Closure { span, .. } => *span,
             Expr::Spawn(_, s) => *s,

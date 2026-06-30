@@ -857,3 +857,35 @@ def main() -> void {}
         "expected E031 MissingImplementsAnnotation, got: {errs:?}"
     );
 }
+
+#[test]
+fn as_question_downcast_returns_some_on_match_and_none_otherwise() {
+    let out = kiln_run(
+        r#"
+struct Circle { radius: float }
+struct Square { side: float }
+
+impl Display for Circle {
+    hook to_str() -> str { return "Circle" }
+}
+impl Display for Square {
+    hook to_str() -> str { return "Square" }
+}
+
+def main() -> void {
+    c: Display = Circle { radius: 3.0 }
+    s: Display = Square { side: 4.0 }
+    match c as? Circle {
+        Some { value: circle } => println("got circle r={circle.radius}")
+        None => println("not a circle")
+    }
+    match s as? Circle {
+        Some { value: _ } => println("got circle")
+        None => println("not a circle")
+    }
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["got circle r=3", "not a circle"], "got: {out}");
+}

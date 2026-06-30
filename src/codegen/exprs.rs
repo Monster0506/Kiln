@@ -1145,6 +1145,55 @@ fn lower_typed_expr_inner(
             builder.use_var(result_var)
         }
 
+        TypedExprKind::AsDowncast { expr, target_ty } => {
+            let obj = lower_typed_expr(expr, builder, vars, ctx);
+            let target_name = match target_ty {
+                Ty::Named(_, ref n, _) => n.clone(),
+                _ => String::new(),
+            };
+            let target_id = ctx.layouts.get_type_id(&target_name).unwrap_or(0) as i64;
+            let type_tag = builder.ins().load(types::I64, MemFlags::new(), obj, 0);
+            let expected = builder.ins().iconst(types::I64, target_id);
+            let matches = builder.ins().icmp(IntCC::Equal, type_tag, expected);
+            let (none_disc, some_value_off) = ctx
+                .layouts
+                .get_enum("Option")
+                .and_then(|info| {
+                    let nd = info.variants.get("None")?.discriminant;
+                    let sv = info
+                        .variants
+                        .get("Some")?
+                        .fields
+                        .iter()
+                        .find(|(n, _)| n == "value")?
+                        .1;
+                    Some((nd as i64, sv as i32))
+                })
+                .unwrap_or((1, 8));
+            let some_size = (some_value_off + 8) as u32;
+            let result_var = builder.declare_var(types::I64);
+            let some_bb = builder.create_block();
+            let none_bb = builder.create_block();
+            let merge_bb = builder.create_block();
+            builder.ins().brif(matches, some_bb, &[], none_bb, &[]);
+            builder.switch_to_block(some_bb);
+            builder.seal_block(some_bb);
+            let ptr = emit_malloc(some_size, ctx.module, builder);
+            let disc = builder.ins().iconst(types::I64, 0);
+            store_field(disc, ptr, 0, builder);
+            store_field(obj, ptr, some_value_off as u32, builder);
+            builder.def_var(result_var, ptr);
+            builder.ins().jump(merge_bb, &[]);
+            builder.switch_to_block(none_bb);
+            builder.seal_block(none_bb);
+            let none_val = builder.ins().iconst(types::I64, none_disc);
+            builder.def_var(result_var, none_val);
+            builder.ins().jump(merge_bb, &[]);
+            builder.switch_to_block(merge_bb);
+            builder.seal_block(merge_bb);
+            builder.use_var(result_var)
+        }
+
         TypedExprKind::Ref { expr, .. } => {
             let val = lower_typed_expr(expr, builder, vars, ctx);
             // Struct types are already heap pointers; returning the pointer directly

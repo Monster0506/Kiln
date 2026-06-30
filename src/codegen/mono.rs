@@ -563,6 +563,7 @@ fn seed_expr(
         | TypedExprKind::GenSplice(inner) => seed_expr(inner, generic_fns, queue),
         TypedExprKind::Implements { expr: inner, .. } => seed_expr(inner, generic_fns, queue),
         TypedExprKind::TypeName { expr: inner } => seed_expr(inner, generic_fns, queue),
+        TypedExprKind::AsDowncast { expr: inner, .. } => seed_expr(inner, generic_fns, queue),
         TypedExprKind::As { expr: e, .. } | TypedExprKind::Ref { expr: e, .. } => {
             seed_expr(e, generic_fns, queue)
         }
@@ -1141,6 +1142,13 @@ fn subst_expr(
         },
         TypedExprKind::TypeName { expr: inner } => TypedExprKind::TypeName {
             expr: Box::new(se!(inner)),
+        },
+        TypedExprKind::AsDowncast {
+            expr: inner,
+            target_ty,
+        } => TypedExprKind::AsDowncast {
+            expr: Box::new(se!(inner)),
+            target_ty: subst_ty(target_ty, subst),
         },
         TypedExprKind::Ref { mutable, expr: e } => TypedExprKind::Ref {
             mutable: *mutable,

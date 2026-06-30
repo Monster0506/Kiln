@@ -338,6 +338,11 @@ pub enum TypedExprKind {
     TypeName {
         expr: Box<TypedExpr>,
     },
+    /// `expr as? ConcreteType` -- returns Option[ConcreteType], Some if tag matches
+    AsDowncast {
+        expr: Box<TypedExpr>,
+        target_ty: Ty,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

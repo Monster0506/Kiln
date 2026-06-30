@@ -414,6 +414,7 @@ fn emit_expr_kind(kind: &TypedExprKind) -> String {
             format!("implements({}, {iface_name})", emit_expr(expr))
         }
         TypedExprKind::TypeName { expr } => format!("type_name({})", emit_expr(expr)),
+        TypedExprKind::AsDowncast { expr, .. } => format!("({} as? ...)", emit_expr(expr)),
         TypedExprKind::Ref { mutable, expr } => {
             let kw = if *mutable { "&mut " } else { "&" };
             format!("{}{}", kw, emit_expr(expr))

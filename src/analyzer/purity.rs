@@ -190,6 +190,7 @@ fn expr_touches_impure(
         TypedExprKind::Try(e) | TypedExprKind::Ignore(e) => expr_touches_impure(e, impure),
         TypedExprKind::Implements { expr: e, .. } => expr_touches_impure(e, impure),
         TypedExprKind::TypeName { expr: e } => expr_touches_impure(e, impure),
+        TypedExprKind::AsDowncast { expr: e, .. } => expr_touches_impure(e, impure),
         TypedExprKind::BinOp { left, right, .. } => {
             expr_touches_impure(left, impure) || expr_touches_impure(right, impure)
         }

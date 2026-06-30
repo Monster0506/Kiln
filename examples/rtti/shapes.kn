@@ -1,0 +1,29 @@
+export { Circle, Square }
+
+struct Circle {
+    radius: float
+}
+
+struct Square {
+    side: float
+}
+
+impl Display for Circle {
+    hook to_str() -> str {
+        return "Circle(r={self.radius})"
+    }
+}
+
+impl Comparable for Circle {
+    hook <=>(other: Circle) -> int {
+        if self.radius < other.radius { return -1 }
+        if self.radius > other.radius { return 1 }
+        return 0
+    }
+}
+
+impl Display for Square {
+    hook to_str() -> str {
+        return "Square(s={self.side})"
+    }
+}

@@ -1,0 +1,15 @@
+import shapes { Circle, Square }
+
+def tag(item: Display) -> str {
+    if implements(item, Comparable) {
+        return "orderable: {item}"
+    }
+    return "display-only: {item}"
+}
+
+def main() -> void {
+    c: Circle = Circle { radius: 3.0 }
+    s: Square = Square { side: 4.0 }
+    println(tag(c))
+    println(tag(s))
+}

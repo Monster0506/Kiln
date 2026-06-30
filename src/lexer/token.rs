@@ -61,6 +61,7 @@ pub enum TokenKind {
     Ignore,
     Abandon,
     Implements,
+    TypeName,
 
     // Operators
     Plus,

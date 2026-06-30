@@ -334,6 +334,10 @@ pub enum TypedExprKind {
         expr: Box<TypedExpr>,
         iface_name: String,
     },
+    /// `type_name(expr)` -- str containing the concrete type name at runtime
+    TypeName {
+        expr: Box<TypedExpr>,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

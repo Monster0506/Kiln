@@ -507,6 +507,8 @@ pub enum Expr {
     Block(Vec<Stmt>, Span),
     /// `implements(expr, IfaceName)` -- runtime interface check, yields bool
     Implements(Box<Expr>, String, Span),
+    /// `type_name(expr)` -- runtime concrete type name of an interface value
+    TypeName(Box<Expr>, Span),
 }
 
 impl Expr {
@@ -538,6 +540,7 @@ impl Expr {
             Expr::GenSplice(_, s) => *s,
             Expr::Block(_, s) => *s,
             Expr::Implements(_, _, s) => *s,
+            Expr::TypeName(_, s) => *s,
         }
     }
 }

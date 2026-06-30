@@ -735,6 +735,23 @@ pub fn infer_typed_expr(
             mk(TypedExprKind::Block(typed_stmts), Ty::Void, span)
         }
 
+        Expr::TypeName(inner, _) => {
+            let te = infer_typed_expr(inner, env, registry, errors);
+            let ty_str = te.ty.to_string();
+            let is_valid = matches!(te.ty, Ty::Interface(..) | Ty::Compound(..));
+            if !is_valid {
+                errors.push(AnalysisError::ImplementsOnNonInterface {
+                    found: ty_str,
+                    span,
+                });
+            }
+            mk(
+                TypedExprKind::TypeName { expr: Box::new(te) },
+                Ty::Str,
+                span,
+            )
+        }
+
         Expr::Implements(inner, iface_name, _) => {
             let te = infer_typed_expr(inner, env, registry, errors);
             if !matches!(env.lookup(iface_name), Some(Symbol::Iface { .. })) {

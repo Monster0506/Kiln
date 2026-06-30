@@ -562,6 +562,7 @@ fn seed_expr(
         | TypedExprKind::Ignore(inner)
         | TypedExprKind::GenSplice(inner) => seed_expr(inner, generic_fns, queue),
         TypedExprKind::Implements { expr: inner, .. } => seed_expr(inner, generic_fns, queue),
+        TypedExprKind::TypeName { expr: inner } => seed_expr(inner, generic_fns, queue),
         TypedExprKind::As { expr: e, .. } | TypedExprKind::Ref { expr: e, .. } => {
             seed_expr(e, generic_fns, queue)
         }
@@ -1137,6 +1138,9 @@ fn subst_expr(
         } => TypedExprKind::Implements {
             expr: Box::new(se!(inner)),
             iface_name: iface_name.clone(),
+        },
+        TypedExprKind::TypeName { expr: inner } => TypedExprKind::TypeName {
+            expr: Box::new(se!(inner)),
         },
         TypedExprKind::Ref { mutable, expr: e } => TypedExprKind::Ref {
             mutable: *mutable,

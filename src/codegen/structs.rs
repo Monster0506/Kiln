@@ -311,6 +311,19 @@ impl StructLayouts {
         }
     }
 
+    /// Return the type name for a given type ID (reverse of get_type_id).
+    pub fn type_name_for_id(&self, id: u32) -> Option<&str> {
+        self.type_ids
+            .iter()
+            .find(|(_, &v)| v == id)
+            .map(|(k, _)| k.as_str())
+    }
+
+    /// Iterate over all registered (name, type_id) pairs.
+    pub fn all_type_ids(&self) -> impl Iterator<Item = (&str, u32)> {
+        self.type_ids.iter().map(|(k, &v)| (k.as_str(), v))
+    }
+
     /// Return all type IDs whose concrete type implements `iface_name`.
     pub fn type_ids_for_iface(&self, iface_name: &str) -> &[u32] {
         self.iface_conformance

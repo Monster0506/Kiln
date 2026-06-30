@@ -800,6 +800,36 @@ def main() -> void {
 }
 
 #[test]
+fn type_name_returns_concrete_type_name() {
+    let out = kiln_run(
+        r#"
+struct Dog { name: str }
+struct Cat { lives: int }
+
+impl Display for Dog {
+    hook to_str() -> str { return "Dog({self.name})" }
+}
+impl Display for Cat {
+    hook to_str() -> str { return "Cat({self.lives})" }
+}
+
+def describe(animal: Display) -> void {
+    println(type_name(animal))
+}
+
+def main() -> void {
+    d: Dog = Dog { name: "Rex" }
+    c: Cat = Cat { lives: 9 }
+    describe(d)
+    describe(c)
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["Dog", "Cat"], "got: {out}");
+}
+
+#[test]
 fn inline_hook_missing_implements_is_compile_error() {
     let src = r#"
 struct Bad {

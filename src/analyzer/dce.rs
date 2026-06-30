@@ -340,6 +340,7 @@ fn collect_reads_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
             collect_reads_expr(e, out)
         }
         TypedExprKind::Implements { expr: e, .. } => collect_reads_expr(e, out),
+        TypedExprKind::TypeName { expr: e } => collect_reads_expr(e, out),
         TypedExprKind::Ref { expr, .. } => collect_reads_expr(expr, out),
         TypedExprKind::Array(exprs) => {
             for e in exprs {
@@ -403,6 +404,7 @@ pub fn expr_has_side_effects_ctx(expr: &TypedExpr, impure: &HashSet<String>) -> 
         TypedExprKind::IndirectCall { .. } | TypedExprKind::Spawn(_) => true,
         TypedExprKind::Try(e) | TypedExprKind::Ignore(e) => expr_has_side_effects_ctx(e, impure),
         TypedExprKind::Implements { expr: e, .. } => expr_has_side_effects_ctx(e, impure),
+        TypedExprKind::TypeName { expr: e } => expr_has_side_effects_ctx(e, impure),
         TypedExprKind::BinOp { left, right, .. } => {
             expr_has_side_effects_ctx(left, impure) || expr_has_side_effects_ctx(right, impure)
         }
@@ -458,6 +460,7 @@ pub fn expr_has_side_effects(expr: &TypedExpr) -> bool {
         | TypedExprKind::Spawn(_) => true,
         TypedExprKind::Try(e) | TypedExprKind::Ignore(e) => expr_has_side_effects(e),
         TypedExprKind::Implements { expr: e, .. } => expr_has_side_effects(e),
+        TypedExprKind::TypeName { expr: e } => expr_has_side_effects(e),
         TypedExprKind::BinOp { left, right, .. } => {
             expr_has_side_effects(left) || expr_has_side_effects(right)
         }
@@ -1198,6 +1201,7 @@ fn count_reads_in_expr(expr: &TypedExpr, name: &str) -> usize {
         | TypedExprKind::Ignore(e)
         | TypedExprKind::GenSplice(e) => count_reads_in_expr(e, name),
         TypedExprKind::Implements { expr: e, .. } => count_reads_in_expr(e, name),
+        TypedExprKind::TypeName { expr: e } => count_reads_in_expr(e, name),
         TypedExprKind::As { expr, .. } | TypedExprKind::Ref { expr, .. } => {
             count_reads_in_expr(expr, name)
         }
@@ -1468,6 +1472,9 @@ fn substitute_name_in_expr(expr: TypedExpr, name: &str, replacement: &TypedExpr)
         } => TypedExprKind::Implements {
             expr: Box::new(substitute_name_in_expr(*e, name, replacement)),
             iface_name,
+        },
+        TypedExprKind::TypeName { expr: e } => TypedExprKind::TypeName {
+            expr: Box::new(substitute_name_in_expr(*e, name, replacement)),
         },
         TypedExprKind::GenSplice(e) => {
             TypedExprKind::GenSplice(Box::new(substitute_name_in_expr(*e, name, replacement)))
@@ -2131,6 +2138,9 @@ fn ipc_expr(expr: TypedExpr, map: &HashMap<String, (Vec<String>, TypedExpr)>) ->
         } => TypedExprKind::Implements {
             expr: Box::new(ipc_expr(*e, map)),
             iface_name,
+        },
+        TypedExprKind::TypeName { expr: e } => TypedExprKind::TypeName {
+            expr: Box::new(ipc_expr(*e, map)),
         },
         TypedExprKind::GenSplice(e) => TypedExprKind::GenSplice(Box::new(ipc_expr(*e, map))),
         TypedExprKind::As { expr: e, ty: aty } => TypedExprKind::As {

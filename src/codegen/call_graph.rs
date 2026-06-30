@@ -244,6 +244,7 @@ fn collect_callees_expr(expr: &TypedExpr, out: &mut HashSet<String>) {
             collect_callees_expr(e, out)
         }
         TypedExprKind::Implements { expr: e, .. } => collect_callees_expr(e, out),
+        TypedExprKind::TypeName { expr: e } => collect_callees_expr(e, out),
         TypedExprKind::Ref { expr, .. } => collect_callees_expr(expr, out),
         TypedExprKind::Array(exprs) => {
             for e in exprs {

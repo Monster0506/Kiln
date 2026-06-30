@@ -161,6 +161,7 @@ impl Parser {
             TokenKind::Ignore => Some("ignore"),
             TokenKind::Abandon => Some("abandon"),
             TokenKind::Implements => Some("implements"),
+            TokenKind::TypeName => Some("type_name"),
             _ => None,
         }
     }
@@ -1903,6 +1904,17 @@ impl Parser {
                 Ok(Expr::Implements(
                     Box::new(e),
                     iface_name,
+                    Span::new(start.start, end_span.start),
+                ))
+            }
+            TokenKind::TypeName => {
+                self.advance();
+                self.expect(TokenKind::LParen)?;
+                let e = self.parse_expr(0)?;
+                let end_span = self.peek_span();
+                self.expect(TokenKind::RParen)?;
+                Ok(Expr::TypeName(
+                    Box::new(e),
                     Span::new(start.start, end_span.start),
                 ))
             }

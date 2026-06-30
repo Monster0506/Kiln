@@ -343,6 +343,7 @@ fn collect_expr(expr: &TypedExpr, out: &mut Vec<Constraint>) {
             collect_expr(inner, out)
         }
         TypedExprKind::Implements { expr: inner, .. } => collect_expr(inner, out),
+        TypedExprKind::TypeName { expr: inner } => collect_expr(inner, out),
         TypedExprKind::Ref { expr, .. } => collect_expr(expr, out),
         TypedExprKind::Array(elems) => {
             for e in elems {

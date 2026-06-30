@@ -1108,6 +1108,43 @@ fn lower_typed_expr_inner(
             builder.use_var(result_var)
         }
 
+        TypedExprKind::TypeName { expr } => {
+            let obj = lower_typed_expr(expr, builder, vars, ctx);
+            let type_tag = builder.ins().load(types::I64, MemFlags::new(), obj, 0);
+            let result_var = builder.declare_var(types::I64);
+            let unknown = emit_str_literal("<unknown>", ctx.module, builder);
+            builder.def_var(result_var, unknown);
+            let merge_bb = builder.create_block();
+            let default_bb = builder.create_block();
+            let all_ids: Vec<(String, u32)> = ctx
+                .layouts
+                .all_type_ids()
+                .map(|(n, id)| (n.to_owned(), id))
+                .collect();
+            let case_blocks: Vec<(u32, String, cranelift_codegen::ir::Block)> = all_ids
+                .into_iter()
+                .map(|(name, tid)| (tid, name, builder.create_block()))
+                .collect();
+            let mut sw = cranelift_frontend::Switch::new();
+            for &(tid, _, bb) in &case_blocks {
+                sw.set_entry(tid as u128, bb);
+            }
+            sw.emit(builder, type_tag, default_bb);
+            for (_, name, bb) in case_blocks {
+                builder.switch_to_block(bb);
+                builder.seal_block(bb);
+                let s = emit_str_literal(&name, ctx.module, builder);
+                builder.def_var(result_var, s);
+                builder.ins().jump(merge_bb, &[]);
+            }
+            builder.switch_to_block(default_bb);
+            builder.seal_block(default_bb);
+            builder.ins().jump(merge_bb, &[]);
+            builder.switch_to_block(merge_bb);
+            builder.seal_block(merge_bb);
+            builder.use_var(result_var)
+        }
+
         TypedExprKind::Ref { expr, .. } => {
             let val = lower_typed_expr(expr, builder, vars, ctx);
             // Struct types are already heap pointers; returning the pointer directly

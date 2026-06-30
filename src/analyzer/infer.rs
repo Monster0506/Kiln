@@ -744,6 +744,15 @@ pub fn infer_typed_expr(
                     did_you_mean: None,
                 });
             }
+            // Concrete/generic types have no runtime type tag; only interface values do.
+            let ty_str = te.ty.to_string();
+            let is_valid = matches!(te.ty, Ty::Interface(..) | Ty::Compound(..));
+            if !is_valid {
+                errors.push(AnalysisError::ImplementsOnNonInterface {
+                    found: ty_str,
+                    span,
+                });
+            }
             mk(
                 TypedExprKind::Implements {
                     expr: Box::new(te),

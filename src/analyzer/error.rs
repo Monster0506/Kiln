@@ -204,6 +204,9 @@ pub enum AnalysisError {
 
     #[error("{span}: call to `throws` function in non-`throws` context -- wrap with `try` or mark this function `throws`")]
     ThrowsInCleanContext { span: Span },
+
+    #[error("{span}: `implements` requires an interface-typed value, but found `{found}`")]
+    ImplementsOnNonInterface { found: String, span: Span },
 }
 
 impl AnalysisError {
@@ -249,6 +252,7 @@ impl AnalysisError {
             AnalysisError::NeedlessMut { .. } => "W006",
             AnalysisError::UnreachableCode { .. } => "W007",
             AnalysisError::ThrowsInCleanContext { .. } => "E032",
+            AnalysisError::ImplementsOnNonInterface { .. } => "E033",
         }
     }
 
@@ -294,6 +298,7 @@ impl AnalysisError {
             AnalysisError::NeedlessMut { .. } => "warning",
             AnalysisError::UnreachableCode { .. } => "warning",
             AnalysisError::ThrowsInCleanContext { .. } => "type error",
+            AnalysisError::ImplementsOnNonInterface { .. } => "type error",
         }
     }
 
@@ -438,6 +443,9 @@ impl AnalysisError {
             AnalysisError::ThrowsInCleanContext { .. } => {
                 "call to `throws` function in non-`throws` context -- wrap with `try` or mark this function `throws`".into()
             }
+            AnalysisError::ImplementsOnNonInterface { found, .. } => {
+                format!("`implements` requires an interface-typed value, but found `{found}`")
+            }
         }
     }
 
@@ -562,6 +570,7 @@ impl AnalysisError {
             AnalysisError::NeedlessMut { span, .. } => *span,
             AnalysisError::UnreachableCode { span, .. } => *span,
             AnalysisError::ThrowsInCleanContext { span } => *span,
+            AnalysisError::ImplementsOnNonInterface { span, .. } => *span,
         }
     }
 }

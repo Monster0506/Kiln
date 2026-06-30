@@ -160,6 +160,7 @@ impl Parser {
             TokenKind::Throws => Some("throws"),
             TokenKind::Ignore => Some("ignore"),
             TokenKind::Abandon => Some("abandon"),
+            TokenKind::Implements => Some("implements"),
             _ => None,
         }
     }
@@ -219,7 +220,8 @@ impl Parser {
         while self.peek() == &TokenKind::At {
             let start = self.peek_span().start;
             self.advance();
-            let name = self.expect_ident()?;
+            // Keywords are valid annotation names (e.g. @implements[...]).
+            let name = self.expect_field_name()?;
             let mut args = Vec::new();
             if self.eat(&TokenKind::LBrace) {
                 while self.peek() != &TokenKind::RBrace {
@@ -1889,6 +1891,20 @@ impl Parser {
                 let e = self.parse_expr_inner(15, allow_struct)?;
                 let end = e.span().end;
                 Ok(Expr::Ignore(Box::new(e), Span::new(start.start, end)))
+            }
+            TokenKind::Implements => {
+                self.advance();
+                self.expect(TokenKind::LParen)?;
+                let e = self.parse_expr(0)?;
+                self.expect(TokenKind::Comma)?;
+                let iface_name = self.expect_ident()?;
+                let end_span = self.peek_span();
+                self.expect(TokenKind::RParen)?;
+                Ok(Expr::Implements(
+                    Box::new(e),
+                    iface_name,
+                    Span::new(start.start, end_span.start),
+                ))
             }
             TokenKind::LBracket => {
                 self.advance();

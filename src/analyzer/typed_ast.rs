@@ -329,6 +329,11 @@ pub enum TypedExprKind {
     },
     GenSplice(Box<TypedExpr>),
     Block(Vec<TypedStmt>),
+    /// `implements(expr, IfaceName)` -- true iff expr's runtime type implements the interface
+    Implements {
+        expr: Box<TypedExpr>,
+        iface_name: String,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

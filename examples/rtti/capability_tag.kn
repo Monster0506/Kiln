@@ -1,0 +1,46 @@
+# Runtime interface inspection: tag values by their capability profile.
+# Celsius is Display + Comparable; Label is Display only.
+
+struct Celsius {
+    value: float
+}
+
+struct Label {
+    text: str
+}
+
+impl Display for Celsius {
+    hook to_str() -> str {
+        return "{self.value}C"
+    }
+}
+
+impl Comparable for Celsius {
+    hook <=>(rhs: Self) -> Ordering {
+        if self.value < rhs.value { return Ordering:Less }
+        if self.value > rhs.value { return Ordering:Greater }
+        return Ordering:Equal
+    }
+}
+
+impl Display for Label {
+    hook to_str() -> str {
+        return self.text
+    }
+}
+
+def tag(item: Display) -> str {
+    if implements(item, Comparable) {
+        return "orderable: {item}"
+    }
+    return "display-only: {item}"
+}
+
+def main() -> void {
+    c: Celsius = Celsius { value: 22.5 }
+    l: Label = Label { text: "hello" }
+    a: Vec[Display] = [c,l]
+    for b <- a {
+        println(tag(b))
+    }
+}

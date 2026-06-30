@@ -74,6 +74,8 @@ pub struct StructLayouts {
     next_type_id: u32,
     /// method_name -> [(type_id, func_id)] for vtable dispatch
     vtable_entries: HashMap<String, Vec<(u32, FuncId)>>,
+    /// iface_name -> [type_ids] that implement the interface (for implements())
+    iface_conformance: HashMap<String, Vec<u32>>,
 }
 
 impl Default for StructLayouts {
@@ -84,12 +86,19 @@ impl Default for StructLayouts {
 
 impl StructLayouts {
     pub fn new() -> Self {
+        let mut type_ids = HashMap::new();
+        // Assign stable type IDs to primitives so they don't all share ID 0.
+        type_ids.insert("int".to_string(), 1u32);
+        type_ids.insert("float".to_string(), 2u32);
+        type_ids.insert("bool".to_string(), 3u32);
+        type_ids.insert("str".to_string(), 4u32);
         Self {
             structs: HashMap::new(),
             enums: HashMap::new(),
-            type_ids: HashMap::new(),
-            next_type_id: 1,
+            type_ids,
+            next_type_id: 5,
             vtable_entries: HashMap::new(),
+            iface_conformance: HashMap::new(),
         }
     }
 
@@ -291,6 +300,25 @@ impl StructLayouts {
             .push((type_id, func_id));
     }
 
+    /// Record that `type_id` implements interface `iface_name`.
+    pub fn register_conformance(&mut self, iface_name: &str, type_id: u32) {
+        let ids = self
+            .iface_conformance
+            .entry(iface_name.to_string())
+            .or_default();
+        if !ids.contains(&type_id) {
+            ids.push(type_id);
+        }
+    }
+
+    /// Return all type IDs whose concrete type implements `iface_name`.
+    pub fn type_ids_for_iface(&self, iface_name: &str) -> &[u32] {
+        self.iface_conformance
+            .get(iface_name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+
     /// Return all (type_id, func_id) pairs that implement `method_name`.
     pub fn all_impls_for_method(&self, method_name: &str) -> &[(u32, FuncId)] {
         self.vtable_entries
@@ -435,7 +463,8 @@ mod tests {
         };
         let mut layouts = StructLayouts::new();
         layouts.register_struct(&st);
-        assert_eq!(layouts.get_type_id("MyStruct"), Some(1));
+        // Primitives reserve IDs 1-4; first user struct gets 5.
+        assert_eq!(layouts.get_type_id("MyStruct"), Some(5));
     }
 
     #[test]

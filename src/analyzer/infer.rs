@@ -734,6 +734,25 @@ pub fn infer_typed_expr(
                 .collect();
             mk(TypedExprKind::Block(typed_stmts), Ty::Void, span)
         }
+
+        Expr::Implements(inner, iface_name, _) => {
+            let te = infer_typed_expr(inner, env, registry, errors);
+            if !matches!(env.lookup(iface_name), Some(Symbol::Iface { .. })) {
+                errors.push(AnalysisError::UndefinedName {
+                    name: iface_name.clone(),
+                    span,
+                    did_you_mean: None,
+                });
+            }
+            mk(
+                TypedExprKind::Implements {
+                    expr: Box::new(te),
+                    iface_name: iface_name.clone(),
+                },
+                Ty::Bool,
+                span,
+            )
+        }
     }
 }
 
@@ -984,6 +1003,26 @@ fn infer_call_field(
             .map(|m| m.ret.clone())
             .unwrap_or(Ty::Unknown);
         (field.to_string(), ret)
+    } else if let Ty::Compound(parts) = &to.ty.clone() {
+        // Compound type (intersection): search each interface part for the method.
+        let mut found_ret = Ty::Unknown;
+        for part in parts {
+            if let Ty::Interface(_, iname) = part {
+                if let Some(method) = registry.get_interface_method(iname, field) {
+                    found_ret = method.ret.clone();
+                    break;
+                }
+            }
+        }
+        return mk(
+            TypedExprKind::MethodCall {
+                object: Box::new(to),
+                method_fn: field.to_string(),
+                args: typed_args,
+            },
+            found_ret,
+            span,
+        );
     } else if let Ty::GenericParam(param_name) = &to.ty {
         // Generic param dispatch: find the interface that declares this method
         // via the param's bounds and project any associated-type return values.

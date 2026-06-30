@@ -326,6 +326,7 @@ fn collect_expr(
         TypedExprKind::Spawn(inner) | TypedExprKind::Try(inner) | TypedExprKind::Ignore(inner) => {
             collect_expr(inner, params, registry, out)
         }
+        TypedExprKind::Implements { expr: inner, .. } => collect_expr(inner, params, registry, out),
         TypedExprKind::Ref { expr, .. } => collect_expr(expr, params, registry, out),
         TypedExprKind::Array(elems) => {
             for e in elems {

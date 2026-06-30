@@ -1,0 +1,44 @@
+# Type narrowing via implements: inside the true branch, the variable is
+# usable as the narrowed compound type (Display & Debug here).
+
+struct Event {
+    kind: str
+    payload: int
+}
+
+struct Notice {
+    text: str
+}
+
+impl Display for Event {
+    hook to_str() -> str {
+        return "Event({self.kind})"
+    }
+}
+
+impl Debug for Event {
+    hook debug_str() -> str {
+        return "Event(kind={self.kind}, payload={self.payload})"
+    }
+}
+
+impl Display for Notice {
+    hook to_str() -> str {
+        return self.text
+    }
+}
+
+def log(item: Display) -> void {
+    if implements(item, Debug) {
+        println("[verbose] {item.debug_str()}")
+    } else {
+        println("[info] {item}")
+    }
+}
+
+def main() -> void {
+    e: Event = Event { kind: "click", payload: 42 }
+    n: Notice = Notice { text: "server started" }
+    log(e)
+    log(n)
+}

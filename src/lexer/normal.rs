@@ -265,6 +265,7 @@ fn keyword_or_ident(s: &str) -> TokenKind {
         "throws" => TokenKind::Throws,
         "ignore" => TokenKind::Ignore,
         "abandon" => TokenKind::Abandon,
+        "implements" => TokenKind::Implements,
         "true" => TokenKind::True,
         "false" => TokenKind::False,
         s => TokenKind::Ident(s.to_string()),

@@ -557,7 +557,10 @@ fn lower_typed_expr_inner(
                 .iter()
                 .map(|a| lower_typed_expr(a, builder, vars, ctx))
                 .collect();
-            if matches!(object.ty, crate::analyzer::ty::Ty::Interface(_, _)) {
+            if matches!(
+                object.ty,
+                crate::analyzer::ty::Ty::Interface(_, _) | crate::analyzer::ty::Ty::Compound(_)
+            ) {
                 let impls: Vec<(u32, FuncId)> =
                     ctx.layouts.all_impls_for_method(method_fn).to_vec();
                 lower_vtable_dispatch(obj, method_fn, &extra_args, &impls, builder, ctx)
@@ -1068,6 +1071,43 @@ fn lower_typed_expr_inner(
             lower_typed_expr(inner, builder, vars, ctx)
         }
 
+        TypedExprKind::Implements { expr, iface_name } => {
+            let obj = lower_typed_expr(expr, builder, vars, ctx);
+            let type_ids = ctx.layouts.type_ids_for_iface(iface_name).to_vec();
+            if type_ids.is_empty() {
+                return builder.ins().iconst(types::I64, 0);
+            }
+            // Load the type tag from offset 0 of the fat pointer.
+            let type_tag = builder.ins().load(types::I64, MemFlags::new(), obj, 0);
+            let result_var = builder.declare_var(types::I64);
+            let false_val = builder.ins().iconst(types::I64, 0);
+            builder.def_var(result_var, false_val);
+            let merge_bb = builder.create_block();
+            let default_bb = builder.create_block();
+            let case_blocks: Vec<(u32, cranelift_codegen::ir::Block)> = type_ids
+                .iter()
+                .map(|&tid| (tid, builder.create_block()))
+                .collect();
+            let mut sw = cranelift_frontend::Switch::new();
+            for &(tid, bb) in &case_blocks {
+                sw.set_entry(tid as u128, bb);
+            }
+            sw.emit(builder, type_tag, default_bb);
+            for (_, bb) in case_blocks {
+                builder.switch_to_block(bb);
+                builder.seal_block(bb);
+                let true_val = builder.ins().iconst(types::I64, 1);
+                builder.def_var(result_var, true_val);
+                builder.ins().jump(merge_bb, &[]);
+            }
+            builder.switch_to_block(default_bb);
+            builder.seal_block(default_bb);
+            builder.ins().jump(merge_bb, &[]);
+            builder.switch_to_block(merge_bb);
+            builder.seal_block(merge_bb);
+            builder.use_var(result_var)
+        }
+
         TypedExprKind::Ref { expr, .. } => {
             let val = lower_typed_expr(expr, builder, vars, ctx);
             // Struct types are already heap pointers; returning the pointer directly
@@ -1272,8 +1312,16 @@ fn lower_str_seg(
             if e.ty == Ty::Str {
                 return v;
             }
-            // Use the monomorphized name so LinkedList[int] dispatches to
-            // LinkedList_int_to_str, not the unsubstituted LinkedList_to_str.
+            // Interface/Compound values hold a vtable pointer; dispatch to_str
+            // through the registered vtable rather than a named function.
+            let is_iface_ty = matches!(&e.ty, Ty::Interface(..) | Ty::Compound(..));
+            if is_iface_ty {
+                let impls: Vec<(u32, FuncId)> = ctx.layouts.all_impls_for_method("to_str").to_vec();
+                if !impls.is_empty() {
+                    return lower_vtable_dispatch(v, "to_str", &[], &impls, builder, ctx);
+                }
+            }
+            // Concrete types: call the monomorphized to_str directly.
             let fn_name = format!("{}_to_str", type_mono_name(&e.ty));
             call_fn_by_name(&fn_name, &[v], builder, ctx)
         }

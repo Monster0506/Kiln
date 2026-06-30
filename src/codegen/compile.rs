@@ -266,6 +266,24 @@ pub fn compile(
         move |name: &str| -> bool { is_always_reachable(name) || reachable.contains(name) }
     };
 
+    // Collect user-defined function names to avoid false positive reachability
+    // when an impl method's unqualified name matches a user function.
+    let user_fn_names: std::collections::HashSet<String> = typed_file
+        .items
+        .iter()
+        .filter_map(|item| {
+            if let TypedItem::Function(f) = item {
+                if !f.is_declaration || f.is_builtin {
+                    Some(f.name.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
     // Pass 1: register all function prototypes.
     // Pre-seed func_ids with C runtime imports so Kiln code can call them by name.
     let mut func_ids: HashMap<String, FuncId> = runtime_ids.clone();
@@ -365,9 +383,10 @@ pub fn compile(
                 if !precomputed_reachable(link_name) && !precomputed_reachable(&f.name) {
                     continue;
                 }
-                // If already pre-seeded as a runtime import, skip re-declaration.
-                let id = if let Some(&existing) = func_ids.get(link_name) {
-                    existing
+                // Only use pre-seeded id when it's a C runtime import, not an impl
+                // method that was inserted earlier (which may have wrong signature).
+                let id = if runtime_ids.contains_key(link_name) {
+                    func_ids[link_name]
                 } else {
                     let id =
                         register_fn(link_name, false, &f.params, &f.return_type, &mut cgx.module);
@@ -402,6 +421,7 @@ pub fn compile(
                 if is_generic {
                     let type_name = &impl_block.for_type;
                     let type_id = layouts.get_type_id(type_name).unwrap_or(0);
+                    layouts.register_conformance(&impl_block.interface, type_id);
                     for method in &impl_block.methods {
                         let sig_has_param = method
                             .params
@@ -412,9 +432,9 @@ pub fn compile(
                             continue;
                         }
                         let qualified = format!("{}_{}", type_name, method.name);
-                        if !precomputed_reachable(&qualified)
-                            && !precomputed_reachable(&method.name)
-                        {
+                        let unqual_reachable = precomputed_reachable(&method.name)
+                            && !user_fn_names.contains(&method.name);
+                        if !precomputed_reachable(&qualified) && !unqual_reachable {
                             continue;
                         }
                         let id = register_fn(
@@ -447,11 +467,16 @@ pub fn compile(
                 }
                 let type_name = &impl_block.for_type;
                 let type_id = layouts.get_type_id(type_name).unwrap_or(0);
+                layouts.register_conformance(&impl_block.interface, type_id);
 
                 for method in &impl_block.methods {
                     let qualified = format!("{}_{}", type_name, method.name);
                     // Skip dead methods to avoid Export-declared-but-not-defined panic.
-                    if !precomputed_reachable(&qualified) && !precomputed_reachable(&method.name) {
+                    // Only count unqualified name as reachable if it is not a user function
+                    // (otherwise e.g. stdlib float_log gets declared when user defines "log").
+                    let unqual_reachable = precomputed_reachable(&method.name)
+                        && !user_fn_names.contains(&method.name);
+                    if !precomputed_reachable(&qualified) && !unqual_reachable {
                         continue;
                     }
                     let id = register_fn(

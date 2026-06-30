@@ -49,6 +49,41 @@ pub fn check_typed_block(
     }
 }
 
+/// If `cond` is `implements(varname, Iface)`, return the var name and its
+/// narrowed compound type for use in the true branch.
+fn detect_implements_narrowing(
+    cond: &crate::analyzer::typed_ast::TypedExpr,
+    env: &crate::analyzer::env::Env,
+) -> Option<(String, crate::analyzer::ty::Ty)> {
+    use crate::analyzer::env::Symbol;
+    use crate::analyzer::ty::Ty;
+    use crate::analyzer::typed_ast::TypedExprKind;
+    if let TypedExprKind::Implements { expr, iface_name } = &cond.kind {
+        if let TypedExprKind::Ident(var_name) = &expr.kind {
+            if let Some(Symbol::Var {
+                ty: original_ty, ..
+            }) = env.lookup(var_name)
+            {
+                if let Some(Symbol::Iface { id, .. }) = env.lookup(iface_name) {
+                    let iface_ty = Ty::Interface(id.clone(), iface_name.clone());
+                    let narrowed = match original_ty {
+                        Ty::Compound(parts) => {
+                            let mut p = parts.clone();
+                            if !p.contains(&iface_ty) {
+                                p.push(iface_ty);
+                            }
+                            Ty::Compound(p)
+                        }
+                        other => Ty::Compound(vec![other.clone(), iface_ty]),
+                    };
+                    return Some((var_name.clone(), narrowed));
+                }
+            }
+        }
+    }
+    None
+}
+
 fn is_definite_terminator(ts: &TypedStmt) -> bool {
     matches!(
         ts,
@@ -322,7 +357,22 @@ fn check_typed_stmt(
                         decl_span: None,
                     });
                 }
+                let narrowing = detect_implements_narrowing(&tc, env);
+                if let Some((ref vname, ref nty)) = narrowing {
+                    env.push_scope();
+                    env.define(
+                        vname,
+                        crate::analyzer::env::Symbol::Var {
+                            ty: nty.clone(),
+                            mutable: false,
+                            span: *span,
+                        },
+                    );
+                }
                 let tb = check_typed_block(block, env, registry, return_ty, errors);
+                if narrowing.is_some() {
+                    env.pop_scope();
+                }
                 typed_branches.push((tc, tb));
             }
             let else_typed = else_branch
@@ -914,6 +964,7 @@ fn read_expr(kind: &TypedExprKind, reads: &mut std::collections::HashSet<String>
         TypedExprKind::Spawn(e) | TypedExprKind::Try(e) | TypedExprKind::Ignore(e) => {
             read_expr(&e.kind, reads)
         }
+        TypedExprKind::Implements { expr, .. } => read_expr(&expr.kind, reads),
         TypedExprKind::Ref { expr, .. } => read_expr(&expr.kind, reads),
         TypedExprKind::Gen { body } => read_block(body, reads),
         TypedExprKind::GenSplice(e) => read_expr(&e.kind, reads),

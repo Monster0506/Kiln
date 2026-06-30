@@ -505,6 +505,8 @@ pub enum Expr {
     GenSplice(Box<Expr>, Span),
     /// Block of statements used as a match arm body; always evaluates to void.
     Block(Vec<Stmt>, Span),
+    /// `implements(expr, IfaceName)` -- runtime interface check, yields bool
+    Implements(Box<Expr>, String, Span),
 }
 
 impl Expr {
@@ -535,6 +537,7 @@ impl Expr {
             Expr::Gen { span, .. } => *span,
             Expr::GenSplice(_, s) => *s,
             Expr::Block(_, s) => *s,
+            Expr::Implements(_, _, s) => *s,
         }
     }
 }

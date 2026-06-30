@@ -889,3 +889,39 @@ def main() -> void {
     let lines: Vec<_> = out.lines().map(str::trim).collect();
     assert_eq!(lines, ["got circle r=3", "not a circle"], "got: {out}");
 }
+
+#[test]
+fn match_implements_guard_dispatches_on_interface() {
+    let out = kiln_run(
+        r#"
+struct Circle { radius: float }
+struct Square { side: float }
+
+impl Display for Circle {
+    hook to_str() -> str { return "Circle" }
+}
+impl Display for Square {
+    hook to_str() -> str { return "Square" }
+}
+impl Comparable for Circle {
+    hook <=>(rhs: Circle) -> int { return 0 }
+}
+
+def describe(item: Display) -> void {
+    match item {
+        implements Comparable => println("has order")
+        _ => println("display only")
+    }
+}
+
+def main() -> void {
+    c: Display = Circle { radius: 1.0 }
+    s: Display = Square { side: 2.0 }
+    describe(c)
+    describe(s)
+}
+"#,
+    );
+    let lines: Vec<_> = out.lines().map(str::trim).collect();
+    assert_eq!(lines, ["has order", "display only"], "got: {out}");
+}

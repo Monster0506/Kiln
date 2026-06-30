@@ -2267,6 +2267,16 @@ impl Parser {
                     span: start,
                 })
             }
+            TokenKind::Implements => {
+                self.advance();
+                let iface_name = self.expect_ident()?;
+                let end = self.peek_span();
+                Ok(Pattern::InterfaceGuard {
+                    interface: iface_name,
+                    name: "_".into(),
+                    span: Span::new(start.start, end.start),
+                })
+            }
             found => Err(ParseError::Unexpected {
                 found,
                 expected: "pattern".into(),

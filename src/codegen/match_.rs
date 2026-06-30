@@ -28,12 +28,44 @@ pub fn lower_typed_match(
 
     for arm in arms {
         match &arm.pattern {
-            TypedPattern::Wildcard(_)
-            | TypedPattern::TypeBinding { .. }
-            | TypedPattern::InterfaceGuard { .. } => {
-                if let TypedPattern::TypeBinding { name, .. }
-                | TypedPattern::InterfaceGuard { name, .. } = &arm.pattern
-                {
+            TypedPattern::InterfaceGuard {
+                interface, name, ..
+            } => {
+                let type_ids = ctx.layouts.type_ids_for_iface(interface).to_vec();
+                let arm_bb = builder.create_block();
+                let next_bb = builder.create_block();
+                if type_ids.is_empty() {
+                    builder.ins().jump(next_bb, &[]);
+                } else {
+                    let type_tag = builder
+                        .ins()
+                        .load(types::I64, MemFlags::new(), scrutinee, 0);
+                    let zero = builder.ins().iconst(types::I8, 0);
+                    let mut matches = zero;
+                    for tid in &type_ids {
+                        let expected = builder.ins().iconst(types::I64, *tid as i64);
+                        let cmp = builder.ins().icmp(IntCC::Equal, type_tag, expected);
+                        matches = builder.ins().bor(matches, cmp);
+                    }
+                    builder.ins().brif(matches, arm_bb, &[], next_bb, &[]);
+                }
+                builder.switch_to_block(arm_bb);
+                builder.seal_block(arm_bb);
+                if name != "_" {
+                    let v = vars.declare(name, types::I64, builder);
+                    let coerced = coerce_to_i64(scrutinee, builder);
+                    builder.def_var(v, coerced);
+                }
+                let val = lower_typed_expr(&arm.body, builder, vars, ctx);
+                let result = coerce_to_i64(val, builder);
+                builder.def_var(result_var, result);
+                builder.ins().jump(merge_bb, &[]);
+                builder.switch_to_block(next_bb);
+                builder.seal_block(next_bb);
+            }
+
+            TypedPattern::Wildcard(_) | TypedPattern::TypeBinding { .. } => {
+                if let TypedPattern::TypeBinding { name, .. } = &arm.pattern {
                     let v = vars.declare(name, types::I64, builder);
                     let coerced = coerce_to_i64(scrutinee, builder);
                     builder.def_var(v, coerced);

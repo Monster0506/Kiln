@@ -1313,10 +1313,22 @@ fn lower_str_seg(
                 return v;
             }
             // Interface/Compound values hold a vtable pointer; dispatch to_str
-            // through the registered vtable rather than a named function.
+            // through the registered vtable, restricted to Display implementors.
             let is_iface_ty = matches!(&e.ty, Ty::Interface(..) | Ty::Compound(..));
             if is_iface_ty {
-                let impls: Vec<(u32, FuncId)> = ctx.layouts.all_impls_for_method("to_str").to_vec();
+                let display_ids: std::collections::HashSet<u32> = ctx
+                    .layouts
+                    .type_ids_for_iface("Display")
+                    .iter()
+                    .copied()
+                    .collect();
+                let impls: Vec<(u32, FuncId)> = ctx
+                    .layouts
+                    .all_impls_for_method("to_str")
+                    .iter()
+                    .filter(|(tid, _)| display_ids.contains(tid))
+                    .copied()
+                    .collect();
                 if !impls.is_empty() {
                     return lower_vtable_dispatch(v, "to_str", &[], &impls, builder, ctx);
                 }
